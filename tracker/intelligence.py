@@ -300,6 +300,8 @@ def deal_readiness(row: dict) -> dict:
     comp_conf = int(row.get("comparable_confidence") or 0)
     market_value = _num(row.get("market_value") or row.get("gdv") or row.get("comparable_valuation_mid"))
     lease_years = _num(row.get("legal_lease_years"))
+    if lease_years is None:
+        lease_years = _num(row.get("listing_lease_years"))
 
     checks = []
     def add(name, weight, state, detail="", blocker=False):
@@ -316,16 +318,21 @@ def deal_readiness(row: dict) -> dict:
     works_missing = bool(row.get("works_missing"))
     add("Works / capex", 8, "missing" if works_missing else "complete", "Works estimate required" if works_missing else "No unresolved works-budget gate", blocker=works_missing)
     tenure = str(row.get("tenure") or "Unknown")
-    add("Tenure / lease", 5, "complete" if tenure != "Unknown" else "missing", tenure, blocker=bool(lease_years and lease_years < 80))
+    if lease_years is not None and tenure.lower() == "leasehold":
+        tenure_detail = f"Short lease: approximately {lease_years:.0f} years remaining" if lease_years < 80 else f"Leasehold - approximately {lease_years:.0f} years remaining"
+    else:
+        tenure_detail = tenure
+    add("Tenure / lease", 5, "complete" if tenure != "Unknown" else "missing", tenure_detail, blocker=bool(lease_years and lease_years < 80))
     add("Location/access", 5, "complete" if row.get("latitude") is not None and row.get("longitude") is not None else "missing", row.get("nearest_junction") or "Coordinates/access pending")
 
     total = sum(x["weight"] for x in checks)
     earned = sum(x["earned"] for x in checks)
     percent = int(round(100 * earned / total)) if total else 0
     blockers = [x["detail"] or x["name"] for x in checks if x.get("blocker")]
-    if lease_years and lease_years < 80:
-        blockers.append(f"Short lease: approximately {lease_years:.0f} years remaining")
-    status = "READY FOR FINAL REVIEW" if percent >= 85 and not blockers else "NEARLY READY" if percent >= 70 else "IN PROGRESS" if percent >= 45 else "EARLY STAGE"
+    if blockers:
+        status = "BID BLOCKED"
+    else:
+        status = "READY FOR FINAL REVIEW" if percent >= 85 else "NEARLY READY" if percent >= 70 else "IN PROGRESS" if percent >= 45 else "EARLY STAGE"
     return {"readiness_pct": percent, "readiness_status": status, "readiness_checks": checks, "readiness_blockers": list(dict.fromkeys(blockers))}
 
 
@@ -342,6 +349,8 @@ def next_actions(row: dict, story: dict | None = None) -> list[dict]:
     if row.get("works_missing"):
         add(2, "Obtain a refurbishment / capex estimate", "The listing signals works but the model currently has no reliable works budget.")
     lease = _num(row.get("legal_lease_years"))
+    if lease is None:
+        lease = _num(row.get("listing_lease_years"))
     if lease and lease < 85:
         add(2, "Price the lease-extension / lender impact", f"Approximately {lease:.0f} years remaining can affect value and financeability.")
     if int(row.get("comparable_confidence") or 0) < 65:
@@ -370,7 +379,7 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
     status = str(legal_summary.get("status") or row.get("legal_status") or "").lower()
     if status not in {"parsed", "reviewed"}:
         questions.append("Please confirm we have the latest complete legal pack and every addendum, and identify any missing documents before exchange/bidding.")
-    lease = _num(extracted.get("lease_years_remaining") or row.get("legal_lease_years"))
+    lease = _num(extracted.get("lease_years_remaining") or row.get("legal_lease_years") or row.get("listing_lease_years"))
     tenure = str(row.get("tenure") or "").lower()
     if lease is not None and lease < 85:
         questions.append(f"The lease appears to have approximately {lease:.1f} years remaining. Please confirm the exact unexpired term, statutory/informal extension options, likely premium/costs and lender implications.")
@@ -386,6 +395,8 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
         questions.append("Arrears/outstanding sums are mentioned. Please confirm the amount, who is liable, the apportionment mechanism and whether completion monies must discharge them.")
     if extracted.get("ews1_or_cladding_flag") or extracted.get("fire_safety_flag"):
         questions.append("Please confirm the EWS1/cladding/fire-safety/building-safety position, any remediation liability, landlord certificates and likely mortgageability implications.")
+    elif str(row.get("property_type") or "").lower() in {"flat", "apartment"}:
+        questions.append("Please confirm whether the building requires an EWS1/formal external-wall or fire-safety review, and whether any remediation or Building Safety Act liabilities could affect mortgageability or service charges.")
     if bool(legal_summary.get("vat_flag") or row.get("legal_vat_flag")):
         questions.append("VAT/option-to-tax wording is present. Please confirm whether VAT is payable, whether TOGC treatment is intended and the SDLT consideration/tax implications for the buyer.")
     if extracted.get("seller_costs_amount") is not None or legal_summary.get("buyer_fee_detected"):

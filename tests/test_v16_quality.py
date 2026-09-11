@@ -223,7 +223,7 @@ def test_auctionhouse_backfill_includes_manchester_archive():
     assert event['captured_at'].startswith('2026-07-14')
 
 
-def test_current_post_auction_counts_as_second_failure_when_guide_changed():
+def test_post_auction_availability_is_continuation_not_new_failure_even_if_guide_changed():
     history = [{
         "captured_at": "2026-07-14T12:00:00+00:00",
         "guide_price": 195000,
@@ -237,6 +237,18 @@ def test_current_post_auction_counts_as_second_failure_when_guide_changed():
         "auction_date": "08/09/2026 12:00",
     }
     result = history_metrics(history, current=current, now=datetime(2026, 9, 11, tzinfo=timezone.utc))
+    # Availability after auction is a marketing state, not evidence of a separate
+    # auction attempt. A second failure needs a second concrete result record.
+    assert result["failure_count"] == 1
+    assert result["price_reduction_pct"] == 7.7
+
+
+def test_two_concrete_failed_auction_dates_count_as_two_attempts():
+    history = [
+        {"captured_at": "2026-07-14T12:00:00+00:00", "guide_price": 195000, "status": "No Bids", "auction_date": "14/07/2026 12:00"},
+        {"captured_at": "2026-09-08T12:00:00+00:00", "guide_price": 180000, "status": "Unsold", "auction_date": "08/09/2026 12:00"},
+    ]
+    result = history_metrics(history, now=datetime(2026, 9, 11, tzinfo=timezone.utc))
     assert result["failure_count"] == 2
     assert result["price_reduction_pct"] == 7.7
 

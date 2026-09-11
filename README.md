@@ -1,6 +1,23 @@
 # North West Property Auction Deal Finder
 
-**Version 1.7.0** builds on the auction-style v1.6 interface and turns the Deal Room into an auction-site-style acquisition platform: browse property cards with images and high-level deal numbers, switch between Residential and Commercial, let the system rank the strongest opportunities first, then open a full Deal Room for underwriting, comparables, auction history, planning, legal-pack and location intelligence.
+
+## v1.7.1 accuracy patch
+
+This patch tightens the acquisition evidence hierarchy after live validation against an Auction House leasehold flat:
+
+- explicit auctioneer **Tenure** wording now outranks loose page text, preventing `freeholder` guidance from being mistaken for Freehold tenure
+- guide ranges are preserved as low/high values (for example **GBP 65,000-GBP 85,000**) while the low guide remains the sourcing/filter basis
+- short leases are extracted from detail-page wording, including original lease term, start date and stated/unexpired years
+- leases below 80 years create a visible short-lease warning, a **BID BLOCKED** readiness state and a provisional (not approved) maximum bid
+- post-auction availability is treated as the continuation of the failed sale, not automatically as a second failed auction; repeat failure requires separate concrete auction-result evidence
+- fixed administration charges such as **GBP 1,800 inc VAT** are detected and can replace the generic auction-fee allowance
+- EPC rating, allocated parking, balcony and auctioneer phone/email are extracted when explicitly published on the lot page
+- leasehold flats receive service-charge, ground-rent, major-works and building-safety/EWS1 due-diligence prompts
+- Deal Room wording is neutral across residential/commercial lots, and the evidence metric is labelled **Seller-story confidence**
+
+The automated maximum bid remains acquisition triage, not a valuation or legal conclusion. A short lease or unreviewed legal pack prevents bid approval even where the desktop numbers appear attractive.
+
+**Version 1.7.1** builds on the auction-style v1.6 interface and turns the Deal Room into an auction-site-style acquisition platform: browse property cards with images and high-level deal numbers, switch between Residential and Commercial, let the system rank the strongest opportunities first, then open a full Deal Room for underwriting, comparables, auction history, planning, legal-pack and location intelligence.
 
 The public auction sources currently targeted are:
 

@@ -6,7 +6,7 @@ import requests
 from dateutil import parser as date_parser
 from bs4 import BeautifulSoup, NavigableString
 
-from .common import Lot, clean_text, extract_postcode, parse_money, infer_status, infer_type, is_north_west, area_from_text, make_key, absolute
+from .common import Lot, clean_text, extract_postcode, parse_money, parse_money_range, infer_status, infer_type, is_north_west, area_from_text, make_key, absolute
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151 Safari/537.36",
@@ -45,12 +45,12 @@ def _lot(source, base, text, href="", default_status="Live"):
     if not pc or not is_north_west(text, pc): return None
     url=absolute(base, href) if href else base
     lotno=(LOTNO_RE.search(text).group(1) if LOTNO_RE.search(text) else "")
-    g=_money_text(text); res=_result(text); status=infer_status(text, default_status)
+    g=_money_text(text); guide_low, guide_high = parse_money_range(g); res=_result(text); status=infer_status(text, default_status)
     if default_status=="Available post-auction" and status=="Live": status=default_status
     title=text[:260]
     return Lot(source=source,source_key=make_key(source,url,text),url=url,title=title,address=text,postcode=pc,
                area=area_from_text(text,pc),property_type=infer_type(text),lot_number=lotno,guide_text=g,
-               guide_price=parse_money(g),result_text=res,result_price=parse_money(res),status=status,
+               guide_price=guide_low,guide_price_high=guide_high,result_text=res,result_price=parse_money(res),status=status,
                auction_date=_date(text),raw_text=text)
 
 
@@ -132,6 +132,7 @@ class AuctionHouseScraper:
             "captured_at": captured,
             "guide_text": lot.guide_text,
             "guide_price": lot.guide_price,
+            "guide_price_high": lot.guide_price_high,
             "result_text": lot.result_text,
             "result_price": lot.result_price,
             "status": lot.status,
@@ -179,7 +180,7 @@ class AuctionHouseScraper:
             events=[]; seen=set()
             for old in prior:
                 ev=self._event(old)
-                marker=(ev.get("guide_price"),ev.get("result_price"),ev.get("status"),ev.get("auction_date"))
+                marker=(ev.get("guide_price"),ev.get("guide_price_high"),ev.get("result_price"),ev.get("status"),ev.get("auction_date"))
                 if marker in seen: continue
                 seen.add(marker); events.append(ev)
             if lot.status=="Live" and any(old.status in failure_states for old in prior):

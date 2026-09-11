@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 
 POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b", re.I)
 MONEY_RE = re.compile(r"£\s*([\d,.]+(?:\.\d+)?)\s*([kKmM]?)")
+MONEY_TOKEN_RE = re.compile(r"£?\s*([\d,.]+(?:\.\d+)?)\s*([kKmM]?)")
 
 NW_COUNTIES = {
     "lancashire", "greater manchester", "merseyside", "cheshire", "cumbria",
@@ -57,6 +58,7 @@ class Lot:
     lot_number: str = ""
     guide_text: str = ""
     guide_price: int | None = None
+    guide_price_high: int | None = None
     result_text: str = ""
     result_price: int | None = None
     status: str = "Live"
@@ -131,6 +133,41 @@ def parse_money(text: str) -> int | None:
     elif suffix == "m": n *= 1_000_000
     return int(round(n))
 
+
+
+def parse_money_range(text: str) -> tuple[int | None, int | None]:
+    """Return low/high monetary guide values while preserving single-figure guides.
+
+    Examples: ``£65,000 - £85,000`` -> (65000, 85000), ``£120,000+`` ->
+    (120000, None).  The low value remains the acquisition/filtering basis; callers
+    can use the high value for display and range-aware analysis.
+    """
+    raw = clean_text(text)
+    if not raw:
+        return None, None
+    values = []
+    for m in MONEY_TOKEN_RE.finditer(raw):
+        # Avoid interpreting unrelated numbers unless the token is currency-like.
+        prefix = raw[max(0, m.start()-2):m.start()]
+        token = m.group(0)
+        if "£" not in token and "£" not in prefix and not values:
+            continue
+        n = float(m.group(1).replace(",", ""))
+        suffix = m.group(2).lower()
+        if suffix == "k": n *= 1_000
+        elif suffix == "m": n *= 1_000_000
+        values.append(int(round(n)))
+        if len(values) >= 2:
+            break
+    if not values:
+        first = parse_money(raw)
+        return first, None
+    low = values[0]
+    # Only treat the second currency number as a range where the wording connects it
+    # to the first guide, rather than e.g. an administration fee later in the text.
+    range_like = bool(re.search(r"£\s*[\d,.]+\s*[kKmM]?\s*(?:-|–|—|to)\s*£?\s*[\d,.]+", raw, re.I))
+    high = values[1] if len(values) > 1 and range_like else None
+    return low, high
 
 def infer_status(text: str, default="Live") -> str:
     t = clean_text(text).lower()

@@ -19,6 +19,7 @@ OUTWARD_RE = re.compile(r"\b([A-Z]{1,2}\d{1,2}[A-Z]?)\b", re.I)
 
 COMMERCIAL_TYPES = {"industrial", "commercial", "mixed use", "development", "land"}
 FAILURE_STATUSES = {"no bids", "last bid", "unsold", "available post-auction"}
+CONCRETE_FAILURE_STATUSES = {"no bids", "last bid", "unsold"}
 
 # These are postcode-district corridor signals, not measured road distances. They are
 # deliberately conservative and are shown in the UI as a signal, not an exact mileage.
@@ -94,12 +95,87 @@ def extract_size_sqft(text: str) -> int | None:
 
 
 def infer_tenure(text: str) -> str:
-    t = (text or "").lower()
-    if "freehold" in t:
-        return "Freehold"
-    if "long leasehold" in t or "leasehold" in t:
+    """Infer tenure using explicit tenure wording before loose descriptor text.
+
+    Auction pages often contain the word ``freeholder`` inside lease-extension guidance.
+    A substring search therefore misclassifies short-lease flats as freehold.  Prefer
+    explicit Tenure fields and whole-word estate descriptors, with leasehold winning
+    when both estate concepts appear in explanatory text.
+    """
+    t = clean = re.sub(r"\s+", " ", text or "").strip().lower()
+    if not t:
+        return "Unknown"
+    if re.search(r"\btenure\s*[:|-]?\s*(?:long\s+)?leasehold\b", t):
         return "Leasehold"
+    if re.search(r"\btenure\s*[:|-]?\s*freehold\b", t):
+        return "Freehold"
+    if re.search(r"\b(?:flat|apartment|maisonette)\s+(?:long\s+)?leasehold\b", t):
+        return "Leasehold"
+    if re.search(r"\b(?:long\s+)?leasehold\b", t):
+        return "Leasehold"
+    if re.search(r"\bfreehold\b", t):
+        return "Freehold"
     return "Unknown"
+
+
+def extract_listing_facts(text: str, now=None) -> dict:
+    """Extract high-value factual fields stated on an auction detail page.
+
+    These are listing facts, not legal-pack conclusions. They are intentionally
+    conservative and are used to surface DD blockers before the pack is reviewed.
+    """
+    raw = re.sub(r"\s+", " ", text or "").strip()
+    lower = raw.lower()
+    facts = {
+        "tenure": infer_tenure(raw),
+        "lease_years_remaining": None,
+        "lease_term_years": None,
+        "lease_start_date": None,
+        "epc_rating": None,
+        "allocated_parking": False,
+        "balcony": False,
+        "auctioneer_phone": None,
+        "auctioneer_email": None,
+        "short_lease_warning": False,
+    }
+    # Prefer an explicit unexpired/remaining term.
+    m = re.search(r"(?:approximately|approx\.?|about)?\s*(\d{1,3}(?:\.\d+)?)\s+years?\s+(?:unexpired|remaining)", raw, re.I)
+    if m:
+        facts["lease_years_remaining"] = float(m.group(1))
+    term = re.search(r"(?:term of|held on a|lease is for a term of)\s*(\d{1,3})\s+years?(?:\s+lease)?\s+from\s+([^.;()]+)", raw, re.I)
+    if term:
+        facts["lease_term_years"] = int(term.group(1))
+        start_text = term.group(2).strip()
+        try:
+            start = date_parser.parse(start_text, dayfirst=True, fuzzy=True)
+            facts["lease_start_date"] = start.date().isoformat()
+            if facts["lease_years_remaining"] is None:
+                now_dt = now or datetime.now(timezone.utc)
+                end_year = start.year + int(term.group(1))
+                try:
+                    expiry = start.replace(year=end_year)
+                except ValueError:
+                    expiry = start.replace(year=end_year, day=28)
+                remaining_days = (expiry.replace(tzinfo=timezone.utc) - now_dt).days
+                facts["lease_years_remaining"] = max(0.0, round(remaining_days / 365.2425, 1))
+        except Exception:
+            pass
+    epc = re.search(r"(?:Energy Efficiency Rating\s*\(EPC\)|EPC)[^A-G]{0,80}(?:Current Rating\s*)?([A-G])\b", raw, re.I)
+    if not epc:
+        epc = re.search(r"Current Rating\s*([A-G])\b", raw, re.I)
+    if epc:
+        facts["epc_rating"] = epc.group(1).upper()
+    facts["allocated_parking"] = bool(re.search(r"\ballocated parking\b", lower))
+    facts["balcony"] = bool(re.search(r"\b(?:private )?balcony\b", lower))
+    phone = re.search(r"(?:call (?:the )?team on|tel(?:ephone)?[: ]+)\s*(0\d{2,4}(?:[ \-]?\d){6,10})", raw, re.I)
+    if phone:
+        facts["auctioneer_phone"] = re.sub(r"\s+", " ", phone.group(1)).strip()
+    email = re.search(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", raw, re.I)
+    if email:
+        facts["auctioneer_email"] = email.group(0)
+    years = facts["lease_years_remaining"]
+    facts["short_lease_warning"] = bool((years is not None and years < 80) or "short lease" in lower)
+    return facts
 
 
 def detect_features(text: str) -> dict:
@@ -161,11 +237,12 @@ def history_metrics(history: Iterable[dict] | None, current: dict | None = None,
         latest = {
             "captured_at": current.get("last_seen"),
             "guide_price": current.get("guide_price"),
+            "guide_price_high": current.get("guide_price_high"),
             "result_price": current.get("result_price"),
             "status": current.get("status"),
             "auction_date": current.get("auction_date"),
         }
-        if not rows or any(rows[-1].get(k) != latest.get(k) for k in ["guide_price", "result_price", "status", "auction_date"]):
+        if not rows or any(rows[-1].get(k) != latest.get(k) for k in ["guide_price", "guide_price_high", "result_price", "status", "auction_date"]):
             rows.append(latest)
 
     guide_values = [int(r["guide_price"]) for r in rows if _num(r.get("guide_price")) and _num(r.get("guide_price")) > 0]
@@ -189,11 +266,13 @@ def history_metrics(history: Iterable[dict] | None, current: dict | None = None,
     statuses = [(r.get("status") or "").strip().lower() for r in rows]
     relist_count = sum(s == "relisted" for s in statuses)
 
-    # Count distinct failed-auction events, not just status labels. Current unsold pages
-    # often show "Available post-auction" while the archive shows "No Bids" for the
-    # same auction. Merge those when their guide/date evidence overlaps, but count a
-    # later post-auction appearance at a different guide/date as a new failed attempt.
+    # Count distinct failed-auction attempts conservatively.  A post-auction
+    # availability row is a continuation of a failed sale, not a second failure.
+    # Concrete result states (No Bids / Last Bid / Unsold) define attempts.  Only
+    # when no concrete result has been captured do we use Available post-auction
+    # as evidence of one failed attempt.
     failure_events = []
+    post_auction_candidates = []
     for r in rows:
         status = (r.get("status") or "").strip().lower()
         if status not in FAILURE_STATUSES:
@@ -201,15 +280,17 @@ def history_metrics(history: Iterable[dict] | None, current: dict | None = None,
         auction_dt = _parse_dt(r.get("auction_date"))
         captured_dt = _parse_dt(r.get("captured_at"))
         guide = int(_num(r.get("guide_price"))) if _num(r.get("guide_price")) else None
-        event = {"auction_dt": auction_dt, "captured_dt": captured_dt, "guide": guide}
+        event = {"auction_dt": auction_dt, "captured_dt": captured_dt, "guide": guide, "status": status}
+        if status == "available post-auction":
+            post_auction_candidates.append(event)
+            continue
         duplicate = False
         for existing in failure_events:
             if auction_dt and existing["auction_dt"] and auction_dt.date() == existing["auction_dt"].date():
                 duplicate = True
                 break
-            # If one representation lacks an auction date, identical guide evidence is
-            # the best available signal that it is the same failed sale rather than a
-            # second failure. Two dated auctions at the same guide still count twice.
+            # Archive/result pages may omit the date on one representation.  Where
+            # the guide is identical, merge the undated row into the dated attempt.
             if guide and existing["guide"] == guide and (not auction_dt or not existing["auction_dt"]):
                 duplicate = True
                 if auction_dt and not existing["auction_dt"]:
@@ -217,6 +298,12 @@ def history_metrics(history: Iterable[dict] | None, current: dict | None = None,
                 break
         if not duplicate:
             failure_events.append(event)
+
+    if not failure_events and post_auction_candidates:
+        # We know at least one auction failed because the auctioneer is explicitly
+        # marketing the lot post-auction, but we do not invent multiple attempts.
+        dated = sorted(post_auction_candidates, key=lambda e: e.get("auction_dt") or e.get("captured_dt") or datetime.min.replace(tzinfo=timezone.utc))
+        failure_events.append(dated[-1])
     failure_count = len(failure_events)
 
     failure_dates = []
@@ -316,10 +403,27 @@ def score_property(lot: dict, history=None, strategy="auto", config: DealConfig 
     size = extract_size_sqft(raw)
     size_source = "Detail page" if detail_raw and extract_size_sqft(detail_raw) else ("Catalogue" if size else "Unknown")
     price = _num(lot.get("guide_price"))
+    guide_high = _num(lot.get("guide_price_high"))
+    if guide_high is None:
+        try:
+            from .common import parse_money_range
+            _, parsed_high = parse_money_range(str(lot.get("guide_text") or ""))
+            guide_high = _num(parsed_high)
+        except Exception:
+            guide_high = None
     psf = round(price / size, 2) if price and size else None
-    tenure = infer_tenure(raw)
-    tenure_source = "Detail page" if detail_raw and infer_tenure(detail_raw) != "Unknown" else ("Catalogue" if tenure != "Unknown" else "Unknown")
+    detail_facts = extract_listing_facts(detail_raw) if detail_raw else {}
+    catalogue_facts = extract_listing_facts(catalogue_raw)
+    detail_tenure = detail_facts.get("tenure") or "Unknown"
+    catalogue_tenure = catalogue_facts.get("tenure") or "Unknown"
+    tenure = detail_tenure if detail_tenure != "Unknown" else catalogue_tenure
+    tenure_source = "Detail page" if detail_tenure != "Unknown" else ("Catalogue" if catalogue_tenure != "Unknown" else "Unknown")
     features = detect_features(raw)
+    listing_lease_years = detail_facts.get("lease_years_remaining") or catalogue_facts.get("lease_years_remaining")
+    listing_epc_rating = detail_facts.get("epc_rating") or catalogue_facts.get("epc_rating")
+    if detail_facts.get("allocated_parking"):
+        features["parking"] = True
+    features["balcony"] = bool(detail_facts.get("balcony") or catalogue_facts.get("balcony"))
 
     road_miles = _num(lot.get("motorway_road_miles"))
     air_miles = _num(lot.get("motorway_air_miles"))
@@ -345,6 +449,8 @@ def score_property(lot: dict, history=None, strategy="auto", config: DealConfig 
     points = 0
     reasons = []
     warnings = []
+    if listing_lease_years is not None and float(listing_lease_years) < 80:
+        warnings.append(f"Short lease detected from auctioneer listing: approximately {float(listing_lease_years):.0f} years remaining. Lease-extension cost and lender impact require review.")
 
     status_pts, status_reason = _status_points(lot.get("status") or "")
     points = _add(points, reasons, status_pts, status_reason)
@@ -474,8 +580,16 @@ def score_property(lot: dict, history=None, strategy="auto", config: DealConfig 
         "size_sqft": size,
         "size_source": size_source,
         "price_per_sqft": psf,
+        "guide_price_high": int(guide_high) if guide_high is not None else None,
         "tenure": tenure,
         "tenure_source": tenure_source,
+        "listing_lease_years": float(listing_lease_years) if listing_lease_years is not None else None,
+        "listing_lease_term_years": detail_facts.get("lease_term_years") or catalogue_facts.get("lease_term_years"),
+        "listing_lease_start_date": detail_facts.get("lease_start_date") or catalogue_facts.get("lease_start_date"),
+        "listing_epc_rating": listing_epc_rating,
+        "listing_auctioneer_phone": detail_facts.get("auctioneer_phone") or catalogue_facts.get("auctioneer_phone"),
+        "listing_auctioneer_email": detail_facts.get("auctioneer_email") or catalogue_facts.get("auctioneer_email"),
+        "short_lease_signal": bool(detail_facts.get("short_lease_warning") or catalogue_facts.get("short_lease_warning")),
         "detail_enriched": bool(detail_raw),
         "detail_enriched_at": lot.get("detail_enriched_at"),
         "motorway_signal": motorway,

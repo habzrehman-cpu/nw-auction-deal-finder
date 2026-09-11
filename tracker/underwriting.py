@@ -106,7 +106,18 @@ def extract_listing_fees(lot: dict) -> dict:
     The result is advisory and only fills missing property-specific assumptions.
     """
     text = " ".join(str(lot.get(k) or "") for k in ("title", "raw_text", "detail_text"))
-    out = {"buyer_premium_pct": None, "buyer_premium_minimum": None, "search_fee": None, "fee_evidence": []}
+    out = {"auction_admin_fee_fixed": None, "buyer_premium_pct": None, "buyer_premium_minimum": None, "search_fee": None, "fee_evidence": []}
+
+    # Fixed property-specific administration charge (common on Auction House lots).
+    # Keep this separate from percentage buyer premiums so the acquisition model does
+    # not silently apply both to the same charge.
+    fixed_segment = re.search(r"(?:administration\s+(?:charge|fee)|admin\s+fee)(.{0,180})", text, re.I)
+    if fixed_segment and not re.search(r"\d+(?:\.\d+)?\s*%", fixed_segment.group(0)):
+        fixed = re.search(r"(?:£|GBP)\s*([0-9][0-9,]*(?:\.\d+)?)", fixed_segment.group(0), re.I)
+        if fixed:
+            out["auction_admin_fee_fixed"] = float(fixed.group(1).replace(",", ""))
+            out["fee_evidence"].append(f"Fixed administration charge GBP {out['auction_admin_fee_fixed']:,.0f} detected in listing")
+
     pct_patterns = [
         r"(?:administration|admin|buyers?|buyer'?s)\s*(?:fee|premium)[^%]{0,100}?(\d+(?:\.\d+)?)\s*%",
         r"(\d+(?:\.\d+)?)\s*%[^.]{0,80}(?:administration|admin|buyers?|buyer'?s)\s*(?:fee|premium)",
@@ -541,6 +552,8 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     assumptions = dict(assumptions or {})
     defaults = defaults or UnderwritingDefaults()
     detected_fees = extract_listing_fees(lot)
+    if detected_fees.get("auction_admin_fee_fixed") is not None and "auction_admin_fee" not in assumptions:
+        assumptions["auction_admin_fee"] = detected_fees["auction_admin_fee_fixed"]
     if detected_fees.get("buyer_premium_pct") is not None and assumptions.get("buyer_premium_pct") is None:
         assumptions["buyer_premium_pct"] = detected_fees["buyer_premium_pct"]
         # A published percentage administration fee replaces the generic flat auction allowance unless the user saved one.
@@ -573,6 +586,10 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     features = deal_analysis.get("features") or {}
     works_required_signal = bool(features.get("refurbishment"))
     listed_signal = bool(features.get("listed_building") or deal_analysis.get("planning_listed_flag"))
+    lease_years = _num(deal_analysis.get("legal_lease_years"))
+    if lease_years is None:
+        lease_years = _num(deal_analysis.get("listing_lease_years"))
+    short_lease_signal = bool(deal_analysis.get("short_lease_signal") or (lease_years is not None and lease_years < 80))
     works_missing = works_required_signal and not works_entered
     if works_missing:
         financial_score = min(financial_score, 4.0)
@@ -588,6 +605,7 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     if works_entered: confidence += 8
     if works_missing: confidence -= 15
     if listed_signal and works_required_signal: confidence -= 5
+    if short_lease_signal: confidence -= 15
     if assumptions.get("underwriting_notes"): confidence += 4
     if deal_analysis.get("planning_status") == "ok": confidence += 4
     if deal_analysis.get("legal_status") == "parsed": confidence += 10
@@ -610,6 +628,13 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         warnings.append("The listing indicates modernisation/refurbishment but the works budget is GBP 0. Financial return and maximum bid are provisional until a works estimate is entered.")
     if listed_signal:
         warnings.append("Listed-building / heritage wording or designation detected. Refurbishment and change-of-use assumptions require heritage/planning review.")
+    if short_lease_signal:
+        years_text = f"approximately {lease_years:.0f} years remaining" if lease_years is not None else "a short lease"
+        warnings.append(f"Auctioneer/listing evidence indicates {years_text}. Maximum bid remains provisional until lease-extension cost, service charge, ground rent and lender impact are verified.")
+    if selected == "residential" and str(deal_analysis.get("tenure") or "").lower() == "leasehold":
+        warnings.append("Leasehold DD: confirm service charge, ground rent/review clauses, reserve fund, Section 20/major works, assignment/letting restrictions and any arrears before bid approval.")
+    if selected == "residential" and str(lot.get("property_type") or "").lower() in {"flat", "apartment"}:
+        warnings.append("Flat/building-safety DD: confirm whether EWS1, cladding, fire-safety remediation or Building Safety Act liabilities affect mortgageability or future costs.")
     for fee_note in detected_fees.get("fee_evidence") or []:
         warnings.append(fee_note)
     if status in SOLD_STATUSES:
@@ -632,9 +657,13 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         recommendation = "WATCH"
         action = "Automatic comparable evidence is not yet strong enough for a PURSUE decision; verify valuation evidence or enter a manual GDV/market value."
         reasons.append("Comparable valuation confidence is below the 65% pursue threshold")
+    elif short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}:
+        recommendation = "WATCH"
+        action = "Short-lease impact must be priced before bid approval. Confirm extension premium, service charge, ground rent and lender position."
+        reasons.append("Short lease remains a material acquisition blocker")
     elif str(deal_analysis.get("legal_status") or "").lower() not in {"parsed", "reviewed"}:
         recommendation = "WATCH"
-        action = "Commercially attractive, but do not progress to bid approval until the latest legal pack and addendum are parsed/reviewed."
+        action = "Attractive on current desktop assumptions, but do not progress to bid approval until the latest legal pack and addendum are parsed/reviewed."
         reasons.append("Legal pack has not yet passed the acquisition gate")
         warnings.append("Auction legal packs can be revised up to the sale. Confirm the latest complete pack with your solicitor immediately before bidding.")
     else:
@@ -683,12 +712,15 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         "underwriting_confidence": confidence,
         "overall_opportunity_score": overall,
         "max_bid": max_bid,
-        "max_bid_provisional": bool(max_bid and works_missing),
-        "bid_ceiling_approved": bool(max_bid and not works_missing and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}),
+        "max_bid_provisional": bool(max_bid and (works_missing or short_lease_signal or str(deal_analysis.get("legal_status") or "").lower() not in {"parsed", "reviewed"})),
+        "bid_ceiling_approved": bool(max_bid and not works_missing and not short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}),
         "works_required_signal": works_required_signal,
         "works_missing": works_missing,
         "listed_building_signal": listed_signal,
+        "short_lease_signal": short_lease_signal,
+        "effective_lease_years": lease_years,
         "detected_fee_evidence": detected_fees.get("fee_evidence") or [],
+        "detected_auction_admin_fee_fixed": detected_fees.get("auction_admin_fee_fixed"),
         "detected_buyer_premium_pct": detected_fees.get("buyer_premium_pct"),
         "detected_buyer_premium_minimum": detected_fees.get("buyer_premium_minimum"),
         "detected_search_fee": detected_fees.get("search_fee"),

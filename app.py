@@ -79,6 +79,19 @@ def pct(value):
         return str(value)
 
 
+def guide_display(row):
+    """Human-readable guide preserving auctioneer guide ranges."""
+    low = row.get("guide_price")
+    high = row.get("guide_price_high")
+    if high and low and float(high) > float(low):
+        return f"{money(low)}-{money(high)}"
+    text = " ".join(str(row.get("guide_text") or "").split())
+    # guide_text is already isolated by the scraper; retain a range if one is present.
+    if text and ("-" in text or "–" in text or " to " in text.lower()):
+        return text.replace(" (plus fees)", "").replace("(plus fees)", "").strip()
+    return money(low)
+
+
 def is_commercial(row):
     return (row.get("property_type") or "").strip().lower() in COMMERCIAL_TYPES
 
@@ -320,6 +333,11 @@ for row in rows:
         "legal_extracted_fields": legal.get("extracted_fields") or {},
         "legal_contacts": legal.get("contacts") or [],
     })
+    # Parsed legal evidence outranks listing inference. A stated lease term is
+    # definitive evidence that the interest being sold is leasehold.
+    if row.get("legal_lease_years") is not None:
+        row["tenure"] = "Leasehold"
+        row["effective_lease_years"] = row.get("legal_lease_years")
     uw = underwrite_property(
         row,
         row,
@@ -351,6 +369,12 @@ def render_badges(row):
         tags.append('<span class="badge">Vacant</span>')
     if row.get("listed_building_signal") or row.get("planning_listed_flag"):
         tags.append('<span class="badge badge-risk">Listed / heritage</span>')
+    if row.get("short_lease_signal"):
+        yrs = row.get("effective_lease_years") or row.get("listing_lease_years") or row.get("legal_lease_years")
+        label = f"Short lease ~{float(yrs):.0f}y" if yrs else "Short lease"
+        tags.append(f'<span class="badge badge-risk">{label}</span>')
+    if row.get("max_bid_provisional"):
+        tags.append('<span class="badge badge-risk">Max buy provisional</span>')
     if legal_state(row) == "UNKNOWN":
         tags.append('<span class="badge badge-risk">Legal not reviewed</span>')
     st.markdown("".join(tags), unsafe_allow_html=True)
@@ -370,13 +394,13 @@ def render_property_card(row):
             render_badges(row)
             if is_commercial(row):
                 a, b, c, d = st.columns(4)
-                a.metric("Guide", money(row.get("guide_price")))
+                a.metric("Guide", guide_display(row))
                 b.metric("GIA", f"{int(row.get('size_sqft')):,} sq ft" if row.get("size_sqft") else "-")
                 c.metric("Guide / sq ft", money(row.get("price_per_sqft"), 0) if row.get("price_per_sqft") else "-")
                 d.metric("Max buy", money(row.get("max_bid")))
             else:
                 a, b, c, d = st.columns(4)
-                a.metric("Guide", money(row.get("guide_price")))
+                a.metric("Guide", guide_display(row))
                 b.metric("Desktop GDV", money(row.get("market_value") or row.get("comparable_valuation_mid")))
                 c.metric("Max buy", money(row.get("max_bid")))
                 d.metric("Est. profit", money(row.get("profit")))
@@ -429,7 +453,9 @@ def underwriting_form(chosen):
             detected_pct = chosen.get("detected_buyer_premium_pct")
             detected_min = chosen.get("detected_buyer_premium_minimum")
             detected_search = chosen.get("detected_search_fee")
-            auction_admin_fee = st.number_input("Extra auction/admin fixed fee", min_value=0.0, value=float(saved.get("auction_admin_fee") if saved.get("auction_admin_fee") is not None else (0.0 if detected_pct is not None else underwriting_defaults.auction_admin_fee)), step=250.0)
+            detected_fixed = chosen.get("detected_auction_admin_fee_fixed")
+            auction_admin_default = detected_fixed if detected_fixed is not None else (0.0 if detected_pct is not None else underwriting_defaults.auction_admin_fee)
+            auction_admin_fee = st.number_input("Auction/admin fixed fee", min_value=0.0, value=float(saved.get("auction_admin_fee") if saved.get("auction_admin_fee") is not None else auction_admin_default), step=100.0)
             buyer_premium_pct = st.number_input("Buyer/admin fee %", min_value=0.0, value=float(saved.get("buyer_premium_pct") if saved.get("buyer_premium_pct") is not None else (detected_pct or 0.0)), step=0.25)
             buyer_premium_minimum = st.number_input("Minimum buyer/admin fee", min_value=0.0, value=float(saved.get("buyer_premium_minimum") if saved.get("buyer_premium_minimum") is not None else (detected_min or 0.0)), step=100.0)
             search_fee = st.number_input("Search fee", min_value=0.0, value=float(saved.get("search_fee") if saved.get("search_fee") is not None else (detected_search or 0.0)), step=50.0)
@@ -511,10 +537,10 @@ def render_deal_room(chosen):
         c.metric("Buyer leverage", f"{story.get('buyer_leverage_score', 0):.1f}/10")
         d.metric("Deal readiness", f"{readiness.get('readiness_pct', 0)}%")
         e, f, g, h = st.columns(4)
-        e.metric("Guide", money(chosen.get("guide_price")))
+        e.metric("Guide", guide_display(chosen))
         f.metric("Opening offer", money(chosen.get("opening_offer")))
         g.metric("Max buy", money(chosen.get("max_bid")), delta="PROVISIONAL" if chosen.get("max_bid_provisional") else None)
-        h.metric("Evidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
+        h.metric("Seller-story confidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
         if chosen.get("recommended_action"):
             if chosen.get("recommendation") == "PURSUE":
                 st.success(f"PURSUE - {chosen.get('recommended_action')}")
@@ -595,7 +621,15 @@ def render_deal_room(chosen):
             ["Auction date", chosen.get("auction_date")],
             ["Property type", chosen.get("property_type")],
             ["Tenure", chosen.get("tenure")],
-            ["Lease remaining", f"{float(chosen.get('legal_lease_years')):.1f} years" if chosen.get("legal_lease_years") else "Unknown"],
+            ["Lease remaining", f"{float(chosen.get('legal_lease_years') or chosen.get('listing_lease_years')):.1f} years" if (chosen.get("legal_lease_years") or chosen.get("listing_lease_years")) else "Unknown"],
+            ["Lease start", chosen.get("listing_lease_start_date") or "Unknown"],
+            ["Guide range", guide_display(chosen)],
+            ["EPC", chosen.get("listing_epc_rating") or "Unknown"],
+            ["Allocated parking", "Yes" if (chosen.get("features") or {}).get("parking") else "Not confirmed"],
+            ["Balcony", "Yes" if (chosen.get("features") or {}).get("balcony") else "Not confirmed"],
+            ["Auctioneer phone", chosen.get("listing_auctioneer_phone") or "Unknown"],
+            ["Auctioneer email", chosen.get("listing_auctioneer_email") or "Unknown"],
+            ["Published admin fee", money(chosen.get("detected_auction_admin_fee_fixed")) if chosen.get("detected_auction_admin_fee_fixed") is not None else "Not detected"],
             ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Unknown"],
             ["Title number", extracted.get("title_number") or "Unknown"],
             ["Floor area", f"{int(chosen.get('size_sqft')):,} sq ft" if chosen.get("size_sqft") else "Unknown"],

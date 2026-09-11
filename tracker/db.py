@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS properties (
   lot_number TEXT,
   guide_text TEXT,
   guide_price INTEGER,
+  guide_price_high INTEGER,
   result_text TEXT,
   result_price INTEGER,
   status TEXT,
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS history (
   captured_at TEXT NOT NULL,
   guide_text TEXT,
   guide_price INTEGER,
+  guide_price_high INTEGER,
   result_text TEXT,
   result_price INTEGER,
   status TEXT,
@@ -236,6 +238,7 @@ CREATE TABLE IF NOT EXISTS shortlist (
 """
 
 PROPERTY_MIGRATIONS = {
+    "guide_price_high": "INTEGER",
     "image_url": "TEXT",
     "detail_text": "TEXT",
     "detail_enriched_at": "TEXT",
@@ -248,6 +251,11 @@ PROPERTY_MIGRATIONS = {
     "motorway_road_miles": "REAL",
     "motorway_distance_kind": "TEXT",
     "motorway_updated_at": "TEXT",
+}
+
+
+HISTORY_MIGRATIONS = {
+    "guide_price_high": "INTEGER",
 }
 
 LEGAL_SUMMARY_MIGRATIONS = {
@@ -285,6 +293,10 @@ class Database:
             for name, sql_type in PROPERTY_MIGRATIONS.items():
                 if name not in existing:
                     con.execute(f"ALTER TABLE properties ADD COLUMN {name} {sql_type}")
+            history_existing = {r[1] for r in con.execute("PRAGMA table_info(history)").fetchall()}
+            for name, sql_type in HISTORY_MIGRATIONS.items():
+                if name not in history_existing:
+                    con.execute(f"ALTER TABLE history ADD COLUMN {name} {sql_type}")
             legal_existing = {r[1] for r in con.execute("PRAGMA table_info(legal_summaries)").fetchall()}
             for name, sql_type in LEGAL_SUMMARY_MIGRATIONS.items():
                 if name not in legal_existing:
@@ -297,13 +309,13 @@ class Database:
 
     def upsert(self, lot: dict):
         now = datetime.now(timezone.utc).isoformat()
-        watched = ("guide_text", "guide_price", "result_text", "result_price", "status", "auction_date")
+        watched = ("guide_text", "guide_price", "guide_price_high", "result_text", "result_price", "status", "auction_date")
         with closing(self.connect()) as con:
             old = con.execute("SELECT * FROM properties WHERE source_key=?", (lot["source_key"],)).fetchone()
             if old is None:
                 cols = [
                     "source", "source_key", "url", "title", "address", "postcode", "area", "property_type",
-                    "lot_number", "guide_text", "guide_price", "result_text", "result_price", "status",
+                    "lot_number", "guide_text", "guide_price", "guide_price_high", "result_text", "result_price", "status",
                     "auction_date", "raw_text", "image_url", "first_seen", "last_seen"
                 ]
                 vals = [lot.get(c) for c in cols[:-2]] + [now, now]
@@ -323,22 +335,22 @@ class Database:
                 con.execute(
                     """
                     UPDATE properties SET url=?,title=?,address=?,postcode=?,area=?,property_type=?,lot_number=?,
-                    guide_text=?,guide_price=?,result_text=?,result_price=?,status=?,auction_date=COALESCE(NULLIF(?,''),auction_date),raw_text=?,image_url=COALESCE(NULLIF(?,''),image_url),last_seen=?
+                    guide_text=?,guide_price=?,guide_price_high=?,result_text=?,result_price=?,status=?,auction_date=COALESCE(NULLIF(?,''),auction_date),raw_text=?,image_url=COALESCE(NULLIF(?,''),image_url),last_seen=?
                     WHERE id=?
                     """,
                     (
                         lot.get("url"), lot.get("title"), lot.get("address"), lot.get("postcode"), lot.get("area"),
-                        lot.get("property_type"), lot.get("lot_number"), lot.get("guide_text"), lot.get("guide_price"),
+                        lot.get("property_type"), lot.get("lot_number"), lot.get("guide_text"), lot.get("guide_price"), lot.get("guide_price_high"),
                         lot.get("result_text"), lot.get("result_price"), lot.get("status"), lot.get("auction_date"),
                         lot.get("raw_text"), lot.get("image_url") or "", now, pid,
                     ),
                 )
             if changed:
                 con.execute(
-                    """INSERT INTO history(property_id,captured_at,guide_text,guide_price,result_text,result_price,status,auction_date)
-                    VALUES(?,?,?,?,?,?,?,?)""",
+                    """INSERT INTO history(property_id,captured_at,guide_text,guide_price,guide_price_high,result_text,result_price,status,auction_date)
+                    VALUES(?,?,?,?,?,?,?,?,?)""",
                     (
-                        pid, now, lot.get("guide_text"), lot.get("guide_price"), lot.get("result_text"),
+                        pid, now, lot.get("guide_text"), lot.get("guide_price"), lot.get("guide_price_high"), lot.get("result_text"),
                         lot.get("result_price"), lot.get("status"), lot.get("auction_date"),
                     ),
                 )
@@ -393,20 +405,20 @@ class Database:
             for event in events:
                 captured = event.get("captured_at") or now
                 key = (
-                    property_id, event.get("guide_price"), event.get("result_price"),
+                    property_id, event.get("guide_price"), event.get("guide_price_high"), event.get("result_price"),
                     event.get("status"), event.get("auction_date"),
                 )
                 exists = con.execute(
                     """SELECT 1 FROM history WHERE property_id=? AND COALESCE(guide_price,-1)=COALESCE(?,-1)
-                    AND COALESCE(result_price,-1)=COALESCE(?,-1) AND COALESCE(status,'')=COALESCE(?,'')
-                    AND COALESCE(auction_date,'')=COALESCE(?,'') LIMIT 1""", key
+                    AND COALESCE(guide_price_high,-1)=COALESCE(?,-1) AND COALESCE(result_price,-1)=COALESCE(?,-1)
+                    AND COALESCE(status,'')=COALESCE(?,'') AND COALESCE(auction_date,'')=COALESCE(?,'') LIMIT 1""", key
                 ).fetchone()
                 if exists:
                     continue
                 con.execute(
-                    """INSERT INTO history(property_id,captured_at,guide_text,guide_price,result_text,result_price,status,auction_date)
-                    VALUES(?,?,?,?,?,?,?,?)""",
-                    (property_id, captured, event.get("guide_text"), event.get("guide_price"),
+                    """INSERT INTO history(property_id,captured_at,guide_text,guide_price,guide_price_high,result_text,result_price,status,auction_date)
+                    VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (property_id, captured, event.get("guide_text"), event.get("guide_price"), event.get("guide_price_high"),
                      event.get("result_text"), event.get("result_price"), event.get("status"), event.get("auction_date")),
                 )
                 inserted += 1
