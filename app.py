@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from tracker.db import Database
-from tracker.pipeline import refresh_all
+from tracker.pipeline import refresh_all, refresh_geography
 from tracker.deal_engine import DealConfig, score_property
 from tracker.underwriting import UnderwritingDefaults, underwrite_property
 from tracker.comparables import refresh_due_comparables, refresh_property_comparables
@@ -15,6 +15,8 @@ from tracker.diligence import (
     refresh_due_diligence,
     refresh_property_planning,
     refresh_property_legal,
+    refresh_property_company,
+    refresh_due_company_intelligence,
     save_uploaded_legal_documents,
 )
 from tracker.legal import uploaded_document, uploaded_documents
@@ -69,6 +71,14 @@ except Exception:
     _secrets_mapping = {}
 cloud_config = config_from_mapping(_secrets_mapping)
 cloud_store = SupabaseStorage(cloud_config) if cloud_config.configured else None
+try:
+    _ch_mapping = _secrets_mapping.get("companies_house", {}) if _secrets_mapping else {}
+except Exception:
+    _ch_mapping = {}
+companies_house_api_key = str(
+    os.environ.get("COMPANIES_HOUSE_API_KEY") or
+    (_ch_mapping.get("api_key", "") if hasattr(_ch_mapping, "get") else "")
+).strip()
 cloud_bootstrap = {"restored": False, "reason": "not-configured"}
 cloud_bootstrap_error = ""
 cloud_probe = st.session_state.get("cloud_probe", {}) if cloud_store else {}
@@ -200,6 +210,11 @@ def browse_rank(row):
         value -= 0.35
     if 0 < float(row.get("comparable_confidence") or 0) < 60:
         value -= 0.15
+    corporate_pressure = float(row.get("corporate_pressure_score") or 0)
+    if corporate_pressure >= 8:
+        value += 0.25
+    elif corporate_pressure >= 6:
+        value += 0.15
     return round(max(0.0, min(10.0, value)), 1)
 
 
@@ -231,6 +246,7 @@ def render_refresh_summary():
     geo = refresh.get("geography", {})
     comps = refresh.get("comparables", {})
     dd = refresh.get("diligence", {})
+    company = refresh.get("companies_house", {})
     ok = sum(x.get("status") == "ok" for x in sources)
     found = sum(int(x.get("found") or 0) for x in sources)
     changed = sum(int(x.get("changed") or 0) for x in sources)
@@ -243,10 +259,12 @@ def render_refresh_summary():
         f"Location: {geo.get('postcodes_newly_geocoded', 0)} new postcodes | "
         f"{geo.get('motorway_enriched', 0)} junction distances. Comparable evidence: "
         f"{comps.get('ok', 0)}/{comps.get('attempted', 0)}. Due diligence: planning "
-        f"{dd.get('planning_ok', 0)}/{dd.get('planning_attempted', 0)}, legal {dd.get('legal_ok', 0)}/{dd.get('legal_attempted', 0)}."
+        f"{dd.get('planning_ok', 0)}/{dd.get('planning_attempted', 0)}, legal {dd.get('legal_ok', 0)}/{dd.get('legal_attempted', 0)}"
+        + (f", Companies House {company.get('ok', 0)}/{company.get('attempted', 0)}." if company.get("configured") else ".")
     )
     errors = [x for x in sources if x.get("status") != "ok"] + [{"source": "Geography", "error": e} for e in geo.get("errors", [])]
     errors += [{"source": "Planning/legal", "error": e} for e in (dd.get("planning_errors", []) + dd.get("legal_errors", []))]
+    errors += [{"source": "Companies House", "error": e} for e in company.get("errors", [])]
     if errors:
         with st.expander("Refresh warnings"):
             for item in errors:
@@ -294,6 +312,13 @@ with st.sidebar:
     else:
         st.warning("Local-only storage")
         st.caption("Streamlit can reset local data on reboot. Configure the private Supabase bucket in Streamlit Secrets to make history, notes and legal evidence persistent.")
+    st.divider()
+    st.caption("Ownership intelligence")
+    if companies_house_api_key:
+        st.success("Companies House API configured")
+    else:
+        st.info("Companies House API not configured")
+        st.caption("Corporate seller links still work; add a free Companies House API key in Streamlit Secrets for automatic status, charges, insolvency and director intelligence.")
 
 config = DealConfig(
     commercial_target_psf=int(commercial_target_psf),
@@ -318,7 +343,7 @@ head1, head2, head3, head4 = st.columns([1.05, 1.0, 1.0, 2.7])
 with head1:
     if st.button("Refresh live data", type="primary", use_container_width=True):
         with st.spinner("Pulling live auction stock and priority intelligence..."):
-            st.session_state["refresh_summary"] = refresh_all(db)
+            st.session_state["refresh_summary"] = refresh_all(db, companies_house_api_key=companies_house_api_key)
             sync_cloud("live refresh", quiet=False)
         st.rerun()
 with head2:
@@ -330,8 +355,10 @@ with head2:
 with head3:
     if st.button("Refresh planning/legal", use_container_width=True):
         with st.spinner("Refreshing priority due diligence..."):
-            st.session_state["dd_summary"] = refresh_due_diligence(db, max_planning=35, max_legal=20)
-            sync_cloud("planning/legal refresh", quiet=False)
+            dd_result = refresh_due_diligence(db, max_planning=35, max_legal=20)
+            company_result = refresh_due_company_intelligence(db, companies_house_api_key, max_companies=20)
+            st.session_state["dd_summary"] = {**dd_result, "companies_house": company_result}
+            sync_cloud("planning/legal/company refresh", quiet=False)
         st.rerun()
 with head4:
     runs = db.latest_runs()
@@ -356,6 +383,7 @@ underwriting_map = db.underwriting_map() if rows else {}
 comparable_map = db.comparable_summary_map() if rows else {}
 planning_map = db.planning_summary_map() if rows else {}
 legal_map = db.legal_summary_map() if rows else {}
+company_map = db.company_intelligence_map() if rows else {}
 planning_flags_map = db.planning_constraint_flags_map() if rows else {}
 shortlist_ids = db.shortlist_ids() if rows else set()
 
@@ -418,12 +446,25 @@ for row in rows:
         "legal_pack_completeness_pct": int(legal.get("pack_completeness_pct") or 0) if legal else 0,
         "legal_missing_components": legal.get("missing_components") or [],
         "legal_available_components": legal.get("available_components") or [],
+        "legal_pack_changed": bool(legal.get("pack_changed")) if legal else False,
+        "legal_pack_change": legal.get("pack_change") or {},
     })
     # Parsed legal evidence outranks listing inference. A stated lease term is
     # definitive evidence that the interest being sold is leasehold.
     if row.get("legal_lease_years") is not None:
         row["tenure"] = "Leasehold"
         row["effective_lease_years"] = row.get("legal_lease_years")
+    company = company_map.get(row["id"], {})
+    row.update({
+        "company_intelligence_status": company.get("status"),
+        "company_number_verified": company.get("company_number"),
+        "company_name_verified": company.get("company_name"),
+        "company_status": company.get("company_status"),
+        "company_registered_office": company.get("registered_office"),
+        "corporate_pressure_score": float(company.get("corporate_pressure_score") or 0),
+        "corporate_pressure_label": company.get("corporate_pressure_label"),
+        "company_intelligence": company,
+    })
     uw = underwrite_property(
         row,
         row,
@@ -452,6 +493,8 @@ def render_badges(row):
         tags.append(f'<span class="badge badge-hot">Failed {int(row.get("failure_count") or 0)}x</span>')
     if (row.get("price_reduction_pct") or 0) > 0:
         tags.append(f'<span class="badge badge-good">Guide down {float(row.get("price_reduction_pct")):.1f}%</span>')
+    if float(row.get("corporate_pressure_score") or 0) >= 7:
+        tags.append(f'<span class="badge badge-risk">Corporate pressure {float(row.get("corporate_pressure_score")):.1f}/10</span>')
     if (row.get("features") or {}).get("vacant"):
         tags.append('<span class="badge">Vacant</span>')
     if row.get("listed_building_signal") or row.get("planning_listed_flag"):
@@ -602,13 +645,14 @@ def render_deal_room(chosen):
     hist = db.history_for(chosen["id"])
     planning_items = db.planning_items_for(chosen["id"])
     legal_summary = db.legal_summary_for(chosen["id"])
+    company_summary = db.company_intelligence_for(chosen["id"])
     chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or chosen.get("legal_extracted_fields") or {}
     chosen["legal_contacts"] = legal_summary.get("contacts") or chosen.get("legal_contacts") or []
     chosen["legal_evidence"] = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
     chosen["legal_pack_completeness_pct"] = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
     chosen["legal_missing_components"] = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
     chosen["legal_available_components"] = legal_summary.get("available_components") or chosen.get("legal_available_components") or []
-    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items)
+    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items, company_summary)
     readiness = deal_readiness(chosen)
     actions = next_actions(chosen, story)
     profile = story.get("seller_profile") or {}
@@ -750,6 +794,77 @@ def render_deal_room(chosen):
             ["Title price date", profile.get("title_price_paid_date") or "Not extracted"],
         ]
         st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
+
+        st.markdown("### Ownership / company intelligence")
+        company_number = profile.get("company_number") or company_summary.get("company_number")
+        seller_name = profile.get("seller_name") or company_summary.get("company_name")
+        if companies_house_api_key and (company_number or seller_name):
+            if st.button("Refresh official Companies House intelligence", key=f"ch_refresh_{chosen['id']}", use_container_width=True):
+                try:
+                    with st.spinner("Checking Companies House profile, charges, insolvency, officers and filings..."):
+                        refresh_property_company(db, chosen, companies_house_api_key)
+                        sync_cloud("Companies House refresh", quiet=False)
+                    st.success("Companies House intelligence refreshed.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Companies House refresh failed: {exc}")
+        elif company_number or (seller_name and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I)):
+            st.info("Corporate seller identified. Add a free Companies House API key in Streamlit Secrets to enrich company status, charges, insolvency, directors, PSCs and filings automatically.")
+
+        if company_summary.get("status") == "ok":
+            ci1, ci2, ci3, ci4 = st.columns(4)
+            ci1.metric("Company status", company_summary.get("company_status") or "Unknown")
+            ci2.metric("Corporate pressure", f"{float(company_summary.get('corporate_pressure_score') or 0):.1f}/10", delta=company_summary.get("corporate_pressure_label"))
+            ci3.metric("Outstanding charges", int(company_summary.get("outstanding_charge_count") or 0))
+            ci4.metric("Insolvency cases", int(company_summary.get("insolvency_case_count") or 0))
+            company_rows = [
+                ["Verified company", company_summary.get("company_name") or "-"],
+                ["Company number", company_summary.get("company_number") or "-"],
+                ["Registered office", company_summary.get("registered_office") or "-"],
+                ["Incorporated", company_summary.get("incorporation_date") or "-"],
+                ["Accounts overdue", "Yes" if company_summary.get("accounts_overdue") else "No"],
+                ["Confirmation statement overdue", "Yes" if company_summary.get("confirmation_overdue") else "No"],
+                ["SIC codes", ", ".join(company_summary.get("sic_codes") or []) or "-"],
+            ]
+            st.dataframe(pd.DataFrame(company_rows, columns=["Corporate fact", "Official record"]), hide_index=True, use_container_width=True)
+            reasons = company_summary.get("corporate_pressure_reasons") or []
+            if reasons:
+                with st.expander("Corporate pressure evidence"):
+                    for reason in reasons:
+                        st.write(f"- {reason}")
+                    st.caption("Outstanding charges show secured financing but are not treated as proof of distress on their own.")
+            directors = company_summary.get("active_directors") or []
+            pscs = company_summary.get("persons_with_significant_control") or []
+            charges = company_summary.get("charges") or []
+            filings = company_summary.get("recent_filings") or []
+            if directors:
+                with st.expander("Active directors"):
+                    st.dataframe(pd.DataFrame(directors), hide_index=True, use_container_width=True)
+            if pscs:
+                with st.expander("Persons with significant control"):
+                    psc_frame = pd.DataFrame([{
+                        "Name": x.get("name"), "Kind": x.get("kind"),
+                        "Control": ", ".join(x.get("natures_of_control") or []),
+                    } for x in pscs if not x.get("ceased_on")])
+                    if not psc_frame.empty:
+                        st.dataframe(psc_frame, hide_index=True, use_container_width=True)
+            if charges:
+                with st.expander("Company charges"):
+                    st.dataframe(pd.DataFrame([{
+                        "Status": x.get("status"), "Created": x.get("created_on"),
+                        "Holder": ", ".join(x.get("persons_entitled") or []),
+                        "Type": x.get("classification"),
+                    } for x in charges]), hide_index=True, use_container_width=True)
+            if filings:
+                with st.expander("Recent Companies House filings"):
+                    st.dataframe(pd.DataFrame(filings[:15]), hide_index=True, use_container_width=True)
+        elif company_summary.get("status") == "unresolved":
+            st.warning("A corporate seller name was found but the Companies House match was not definitive, so the app has not guessed the company identity.")
+            candidates = (company_summary.get("resolution") or {}).get("candidates") or []
+            if candidates:
+                st.dataframe(pd.DataFrame(candidates), hide_index=True, use_container_width=True)
+        elif company_summary.get("status") == "error":
+            st.warning(f"Companies House intelligence needs refreshing: {company_summary.get('error') or 'last lookup failed'}")
 
         fact_col, inference_col = st.columns(2)
         with fact_col:
@@ -934,7 +1049,12 @@ def render_deal_room(chosen):
                 try:
                     with st.spinner("Checking public legal-pack links..."):
                         refresh_property_legal(db, chosen)
-                        sync_cloud("property legal refresh")
+                        if companies_house_api_key:
+                            try:
+                                refresh_property_company(db, chosen, companies_house_api_key)
+                            except Exception:
+                                pass
+                        sync_cloud("property legal/company refresh")
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
@@ -949,6 +1069,18 @@ def render_deal_room(chosen):
             lm3.metric("Documents parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
             if miss:
                 st.warning("Missing / not yet evidenced: " + ", ".join(miss))
+            pack_change = legal_summary.get("pack_change") or {}
+            if legal_summary.get("pack_changed") or pack_change.get("changed"):
+                st.error("LEGAL PACK CHANGED since the previous saved snapshot - re-review before bidding.")
+                change_bits = []
+                if pack_change.get("added"):
+                    change_bits.append("Added: " + ", ".join(pack_change.get("added") or []))
+                if pack_change.get("modified"):
+                    change_bits.append("Modified: " + ", ".join(pack_change.get("modified") or []))
+                if pack_change.get("removed"):
+                    change_bits.append("Removed: " + ", ".join(pack_change.get("removed") or []))
+                if change_bits:
+                    st.caption(" | ".join(change_bits))
 
             if legal_state(chosen) == "REVIEWED" or any(v not in (None, "", False, 0) for v in extracted.values()):
                 st.markdown("#### Key information extracted")
@@ -965,6 +1097,15 @@ def render_deal_room(chosen):
                     ["Ground rent", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else "Not found"],
                     ["Service charge", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else "Not found"],
                     ["Seller costs charged to buyer", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else "Not found"],
+                    ["Tenancy / occupation", extracted.get("tenancy_type") or "Not found"],
+                    ["Passing rent", (money(extracted.get("tenancy_rent_amount")) + (f" per {extracted.get('tenancy_rent_period')}" if extracted.get("tenancy_rent_period") else "")) if extracted.get("tenancy_rent_amount") is not None else "Not found"],
+                    ["Tenancy end / expiry", extracted.get("tenancy_end_date") or "Not found"],
+                    ["Reserve / sinking fund wording", "Detected" if extracted.get("reserve_fund_flag") else "Not detected"],
+                    ["Section 20 / major works wording", "Detected" if extracted.get("section20_or_major_works_flag") else "Not detected"],
+                    ["Assignment restriction wording", "Detected" if extracted.get("assignment_restriction_flag") else "Not detected"],
+                    ["Rights / easements wording", "Detected" if extracted.get("rights_easements_flag") else "Not detected"],
+                    ["Restrictive covenant wording", "Detected" if extracted.get("restrictive_covenant_flag") else "Not detected"],
+                    ["Overage / clawback wording", "Detected" if extracted.get("overage_clawback_flag") else "Not detected"],
                     ["Registered charge references", extracted.get("registered_charge_count") or 0],
                     ["Arrears wording", "Detected" if extracted.get("arrears_flag") else "Not detected"],
                     ["EWS1 / cladding wording", "Detected" if extracted.get("ews1_or_cladding_flag") else "Not detected"],
@@ -1036,7 +1177,12 @@ def render_deal_room(chosen):
                                         doc.setdefault("metadata", {})["cloud_storage_error"] = str(cloud_exc)[:300]
                                 parsed.append(doc)
                         save_uploaded_legal_documents(db, chosen, parsed)
-                        sync_cloud("legal pack upload", quiet=False)
+                        if companies_house_api_key:
+                            try:
+                                refresh_property_company(db, chosen, companies_house_api_key)
+                            except Exception:
+                                pass
+                        sync_cloud("legal pack/company upload", quiet=False)
                     st.success(f"Analysed {len(parsed)} legal document(s).")
                     st.rerun()
                 except Exception as exc:
@@ -1056,6 +1202,18 @@ def render_deal_room(chosen):
             st.caption("Automated legal-pack analysis is triage only. The latest complete pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.")
 
     with tabs[6]:
+        if st.button("Retry location / motorway enrichment", key=f"geo_retry_{chosen['id']}", use_container_width=True):
+            try:
+                with st.spinner("Refreshing postcode and motorway-junction evidence..."):
+                    result = refresh_geography(db)
+                    sync_cloud("geography refresh", quiet=False)
+                if result.get("errors"):
+                    st.warning("Location refresh completed with a fallback/warning: " + " | ".join(result.get("errors") or []))
+                else:
+                    st.success(f"Location refresh complete: {result.get('motorway_enriched', 0)} junction distances updated.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Location refresh failed: {exc}")
         l1, l2, l3, l4 = st.columns(4)
         l1.metric("Nearest motorway", chosen.get("nearest_motorway") or "Pending")
         l2.metric("Nearest junction", chosen.get("nearest_junction") or "Pending")

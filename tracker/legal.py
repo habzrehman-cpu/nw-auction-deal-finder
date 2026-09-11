@@ -136,23 +136,40 @@ def _looks_restricted(text: str, url: str) -> bool:
 
 
 def fetch_public_legal_documents(lot_url: str, session=None, max_docs: int = MAX_AUTO_DOCS) -> tuple[list[dict], list[str]]:
+    """Discover and parse public legal evidence, following one level of legal-pack pages.
+
+    Auctioneers often link to an intermediate legal-pack page rather than directly to
+    PDFs. The crawler follows only links that themselves look legal-pack related and
+    never attempts login, registration, paywall or anti-bot bypasses.
+    """
     s = _session(session)
     warnings = []
     r = s.get(lot_url, timeout=25, allow_redirects=True)
     r.raise_for_status()
-    links = discover_legal_links(r.text, r.url)
+    initial = discover_legal_links(r.text, r.url)
+    queue = list(initial)
+    links: list[dict] = []
+    seen_urls = set()
     downloaded = 0
     attempted = 0
-    for item in links:
-        if downloaded >= max_docs or attempted >= max_docs * 2:
-            break
+    max_attempts = max(8, max_docs * 5)
+
+    while queue and downloaded < max_docs and attempted < max_attempts:
+        item = queue.pop(0)
+        url = str(item.get("url") or "")
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        links.append(item)
         attempted += 1
-        url = item["url"]
         try:
             doc = s.get(url, timeout=30, allow_redirects=True, stream=True)
             doc.raise_for_status()
             ctype = (doc.headers.get("Content-Type") or "").lower()
-            length = int(doc.headers.get("Content-Length") or 0)
+            try:
+                length = int(doc.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                length = 0
             if length and length > MAX_DOC_BYTES:
                 item["access_status"] = "public link; document too large for auto-analysis"
                 continue
@@ -179,31 +196,75 @@ def fetch_public_legal_documents(lot_url: str, session=None, max_docs: int = MAX
                 item["access_status"] = "public PDF parsed" if text else "public PDF; no extractable text"
                 item["url"] = final_url
                 downloaded += 1
-            elif "text/html" in ctype:
+            elif "text/html" in ctype or data.lstrip().lower().startswith((b"<!doctype html", b"<html")):
                 soup = BeautifulSoup(data, "html.parser")
                 for node in soup.select("script,style,noscript,svg,template"):
                     node.decompose()
                 text = " ".join(soup.get_text(" ", strip=True).split())[:40_000]
                 if _looks_restricted(text[:5000], final_url):
                     item["access_status"] = "registration/login likely required"
-                elif len(text) > 500 and LEGAL_HINT_RE.search(text):
+                    continue
+                # Follow legal-looking nested links from an intermediary pack page.
+                nested = discover_legal_links(data.decode("utf-8", errors="ignore"), final_url)
+                for child in nested:
+                    if child.get("url") not in seen_urls and all(child.get("url") != q.get("url") for q in queue):
+                        queue.append(child)
+                if len(text) > 500 and LEGAL_HINT_RE.search(text):
                     item["text_content"] = text
                     item["sha256"] = hashlib.sha256(data).hexdigest()
                     item["access_status"] = "public legal page parsed"
                     downloaded += 1
                 else:
-                    item["access_status"] = "public link; manual review required"
+                    item["access_status"] = "public legal index/page; nested documents checked"
             else:
                 item["access_status"] = "public link; unsupported document type"
         except Exception as exc:
             item["access_status"] = "link found; manual access required"
             item["error"] = str(exc)[:300]
+
     if links and not any(x.get("text_content") for x in links):
         warnings.append("Legal-pack link(s) were found but no public text could be parsed automatically; registration or manual download may be required.")
     if not links:
         warnings.append("No legal-pack/addendum link was detected on the public lot page. Check the auctioneer lot page manually before bidding.")
     return links, warnings
 
+
+def legal_pack_fingerprint(documents: list[dict]) -> str:
+    """Stable fingerprint of the current legal-pack evidence set."""
+    parts = []
+    for doc in documents or []:
+        key = str(doc.get("url") or doc.get("name") or "").strip().lower()
+        digest = str(doc.get("sha256") or "").strip().lower()
+        dtype = str(doc.get("doc_type") or "").strip().lower()
+        parts.append(f"{key}|{dtype}|{digest}")
+    if not parts:
+        return ""
+    return hashlib.sha256("\n".join(sorted(parts)).encode("utf-8")).hexdigest()
+
+
+def compare_legal_documents(previous: list[dict], current: list[dict]) -> dict:
+    """Explain pack changes without treating first discovery as an alarming change."""
+    def key(doc):
+        url = str(doc.get("url") or "").split("?")[0].rstrip("/").lower()
+        name = str(doc.get("name") or "").strip().lower()
+        return url or name
+    old = {key(d): d for d in previous or [] if key(d)}
+    new = {key(d): d for d in current or [] if key(d)}
+    added = [new[k].get("name") or new[k].get("url") for k in new.keys() - old.keys()]
+    removed = [old[k].get("name") or old[k].get("url") for k in old.keys() - new.keys()]
+    changed = []
+    for k in new.keys() & old.keys():
+        old_hash = str(old[k].get("sha256") or "")
+        new_hash = str(new[k].get("sha256") or "")
+        if old_hash and new_hash and old_hash != new_hash:
+            changed.append(new[k].get("name") or new[k].get("url"))
+    return {
+        "is_first_snapshot": not bool(previous),
+        "changed": bool(previous) and bool(added or removed or changed),
+        "added": sorted(x for x in added if x),
+        "removed": sorted(x for x in removed if x),
+        "modified": sorted(x for x in changed if x),
+    }
 
 def _first_number(pattern: str, text: str, low=0, high=9999):
     m = re.search(pattern, text, re.I | re.S)
@@ -347,8 +408,8 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
         seller_name = re.split(r"\s+(?:of|whose registered office is)\s+", seller_name, maxsplit=1, flags=re.I)[0].strip(" ,;.-")
 
     registered_office = _first_text([
-        r"whose registered office is\s+([^\n;]{5,260})",
-        r"registered office\s*[:\-]\s*([^\n;]{5,260})",
+        r"whose registered office is(?: at)?\s+([^\n;]{5,260})",
+        r"registered office(?: is| is at)?\s*[:\-]?\s*([^\n;]{5,260})",
     ], text)
     company_number = _first_text([
         r"(?:company\s*(?:number|no\.?|registration\s*number)|co\.?\s*regn\.?\s*no\.?)\s*[:.)\-]?\s*([A-Z0-9]{6,10})",
@@ -380,6 +441,35 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
     arrears_flag = arrears_positive and not arrears_negative_only
     ews1_flag = bool(re.search(r"\bEWS1\b|external\s+wall\s+system|cladding", text, re.I))
     fire_safety_flag = bool(re.search(r"fire\s+risk\s+assessment|building\s+safety\s+act|fire\s+safety", text, re.I))
+    tenancy_rent, tenancy_rent_context = _money_near(r"(?:current\s+)?(?:rent|rental\s+income|passing\s+rent)", text)
+    tenancy_type = None
+    if re.search(r"assured\s+shorthold|\bAST\b", text, re.I):
+        tenancy_type = "Assured Shorthold Tenancy (AST)"
+    elif re.search(r"assured\s+tenancy", text, re.I):
+        tenancy_type = "Assured tenancy"
+    elif re.search(r"commercial\s+lease|business\s+tenancy|contracted\s+out", text, re.I):
+        tenancy_type = "Commercial/business tenancy"
+    elif re.search(r"tenanted|tenant\s+in\s+occupation|occupational\s+lease", text, re.I):
+        tenancy_type = "Occupational tenancy"
+    tenancy_rent_period = None
+    if tenancy_rent_context:
+        if re.search(r"per\s+calendar\s+month|\bpcm\b|per\s+month", tenancy_rent_context, re.I):
+            tenancy_rent_period = "month"
+        elif re.search(r"per\s+annum|per\s+year|\bp\.?a\.?\b", tenancy_rent_context, re.I):
+            tenancy_rent_period = "year"
+        elif re.search(r"per\s+week|\bpw\b", tenancy_rent_context, re.I):
+            tenancy_rent_period = "week"
+    tenancy_end_date = _first_text([
+        r"(?:tenancy|lease).{0,50}?(?:expires|expiry|ending|ends)\s*(?:on)?\s*[:\-]?\s*([^\n;]{6,40})",
+        r"term\s+expir(?:es|y)\s*(?:on)?\s*[:\-]?\s*([^\n;]{6,40})",
+    ], text, 40)
+    reserve_fund_flag = bool(re.search(r"reserve\s+fund|sinking\s+fund", text, re.I))
+    section20_flag = bool(re.search(r"section\s*20|major\s+works", text, re.I))
+    assignment_restriction_flag = bool(re.search(r"licen[cs]e\s+to\s+assign|consent\s+to\s+assign|alienation", text, re.I))
+    rights_easements_flag = bool(re.search(r"easement|rights?\s+of\s+way|rights\s+of\s+access|rights\s+reserved", text, re.I))
+    restrictive_covenant_flag = bool(re.search(r"restrictive\s+covenant|covenant\s+not\s+to|restriction\s+on\s+use", text, re.I))
+    overage_flag = bool(re.search(r"overage|clawback|uplift\s+provision", text, re.I))
+    insurance_flag = bool(re.search(r"buildings?\s+insurance|insurance\s+premium|insured\s+by\s+the\s+landlord", text, re.I))
 
     extracted = {
         "title_number": title_number,
@@ -403,6 +493,18 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
         "arrears_flag": arrears_flag,
         "ews1_or_cladding_flag": ews1_flag,
         "fire_safety_flag": fire_safety_flag,
+        "tenancy_type": tenancy_type,
+        "tenancy_rent_amount": tenancy_rent,
+        "tenancy_rent_period": tenancy_rent_period,
+        "tenancy_rent_context": tenancy_rent_context,
+        "tenancy_end_date": tenancy_end_date,
+        "reserve_fund_flag": reserve_fund_flag,
+        "section20_or_major_works_flag": section20_flag,
+        "assignment_restriction_flag": assignment_restriction_flag,
+        "rights_easements_flag": rights_easements_flag,
+        "restrictive_covenant_flag": restrictive_covenant_flag,
+        "overage_clawback_flag": overage_flag,
+        "insurance_wording_flag": insurance_flag,
     }
     return extracted, _extract_professional_contacts(text)
 
@@ -518,6 +620,13 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         (r"completion.{0,100}?\d{1,3}\s*(?:working\s*)?days", "Completion period", completion_days),
         (r"deposit.{0,80}?\d{1,2}(?:\.\d+)?\s*%", "Deposit", deposit_pct),
         (r"vat.{0,80}(?:payable|chargeable|applicable)|option to tax|opted to tax", "VAT / option to tax", "Detected" if vat_flag else None),
+        (r"assured\s+shorthold|\bAST\b|commercial\s+lease|business\s+tenancy|tenanted", "Tenancy / occupation", extracted_fields.get("tenancy_type")),
+        (r"(?:current\s+)?(?:rent|rental\s+income|passing\s+rent).{0,100}?(?:£|GBP)", "Passing rent", extracted_fields.get("tenancy_rent_amount")),
+        (r"section\s*20|major\s+works", "Section 20 / major works", "Detected" if extracted_fields.get("section20_or_major_works_flag") else None),
+        (r"reserve\s+fund|sinking\s+fund", "Reserve / sinking fund", "Detected" if extracted_fields.get("reserve_fund_flag") else None),
+        (r"restrictive\s+covenant|covenant\s+not\s+to|restriction\s+on\s+use", "Restrictive covenant", "Detected" if extracted_fields.get("restrictive_covenant_flag") else None),
+        (r"easement|rights?\s+of\s+way|rights\s+of\s+access|rights\s+reserved", "Rights / easements", "Detected" if extracted_fields.get("rights_easements_flag") else None),
+        (r"overage|clawback|uplift\s+provision", "Overage / clawback", "Detected" if extracted_fields.get("overage_clawback_flag") else None),
     ]
     for pattern, label, value in evidence_specs:
         if value in (None, "", False):
@@ -555,6 +664,9 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         "pack_completeness_pct": completeness_pct,
         "missing_components": missing_components,
         "available_components": available_components,
+        "pack_fingerprint": legal_pack_fingerprint(documents),
+        "pack_changed": False,
+        "pack_change": {},
         "methodology": "Pattern-based auction legal triage across public or user-supplied legal documents. It highlights issues for solicitor review and does not determine legal acceptability.",
         "warnings": [
             "Legal documents can be incomplete, revised or replaced. Confirm the latest complete pack and addendum with the auctioneer/solicitor before bidding."

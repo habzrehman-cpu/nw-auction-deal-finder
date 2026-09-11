@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import requests
+import re
 
-from .legal import analyse_online_legal_pack, analyse_legal_documents
+from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents
 from .planning import analyse_planning_property
+from .companies_house import CompaniesHouseClient, company_due
 
 SOLD = {"sold", "sold prior", "sold after"}
 PRIORITY_STATUS = {
@@ -40,6 +42,13 @@ def refresh_property_legal(db, row, session=None):
         summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
             "User-uploaded documents are included in this analysis alongside any public auctioneer documents."
         ]))
+    change = compare_legal_documents(existing, combined)
+    summary["pack_changed"] = bool(change.get("changed"))
+    summary["pack_change"] = change
+    if change.get("changed"):
+        summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
+            "Legal-pack evidence changed since the previous saved snapshot. Review added, removed or modified documents before bidding."
+        ]))
     db.save_legal_bundle(row["id"], summary, combined)
     return summary
 
@@ -53,6 +62,9 @@ def save_uploaded_legal_documents(db, row, uploaded_docs):
     no_hash = [d for d in existing if not d.get("sha256")]
     combined = no_hash + list(by_hash.values())
     summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
+    change = compare_legal_documents(existing, combined)
+    summary["pack_changed"] = bool(change.get("changed"))
+    summary["pack_change"] = change
     cloud_retained = any((d.get("metadata") or {}).get("cloud_storage_path") for d in uploaded_docs or [])
     retention_note = (
         "User-uploaded legal originals are retained in the configured private cloud storage and extracted text is stored with the deal."
@@ -62,6 +74,75 @@ def save_uploaded_legal_documents(db, row, uploaded_docs):
     summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [retention_note]))
     db.save_legal_bundle(row["id"], summary, combined)
     return summary
+
+
+def refresh_property_company(db, row, api_key: str, session=None):
+    """Refresh Companies House intelligence for a property where corporate seller evidence exists."""
+    legal = db.legal_summary_for(row["id"])
+    extracted = legal.get("extracted_fields") or {}
+    company_number = str(extracted.get("company_number") or "").strip()
+    seller_name = str(extracted.get("seller_name") or extracted.get("proprietor_name") or "").strip()
+    registered_office = str(extracted.get("registered_office") or "").strip()
+    client = CompaniesHouseClient(api_key, session=session)
+    resolution = None
+    if not company_number and seller_name:
+        resolution = client.resolve_company(seller_name, registered_office)
+        if resolution.get("resolved"):
+            company_number = resolution.get("company_number") or ""
+    if not company_number:
+        summary = {
+            "provider": "Companies House Public Data API",
+            "status": "unresolved",
+            "company_number": None,
+            "company_name": seller_name or None,
+            "resolution": resolution or {},
+            "error": "No definitive company number is available from the legal evidence.",
+        }
+        db.save_company_intelligence(row["id"], summary)
+        return summary
+    summary = client.fetch_bundle(company_number)
+    if resolution:
+        summary["resolution"] = resolution
+    db.save_company_intelligence(row["id"], summary)
+    return summary
+
+
+def refresh_due_company_intelligence(db, api_key: str, rows=None, max_companies=12):
+    """Refresh official corporate intelligence for priority lots with identified company sellers."""
+    result = {"attempted": 0, "ok": 0, "unresolved": 0, "errors": []}
+    if not str(api_key or "").strip():
+        result["configured"] = False
+        return result
+    result["configured"] = True
+    rows = list(rows or db.list_properties())
+    candidates = []
+    for row in rows:
+        legal = db.legal_summary_for(row["id"])
+        extracted = legal.get("extracted_fields") or {}
+        seller_name = str(extracted.get("seller_name") or extracted.get("proprietor_name") or "")
+        company_number = str(extracted.get("company_number") or "")
+        companyish = bool(company_number) or bool(re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))
+        if not companyish:
+            continue
+        existing = db.company_intelligence_for(row["id"])
+        if company_due(existing):
+            candidates.append(row)
+    candidates.sort(key=_priority)
+    session = requests.Session()
+    for row in candidates[:max_companies]:
+        result["attempted"] += 1
+        try:
+            summary = refresh_property_company(db, row, api_key, session=session)
+            if summary.get("status") == "ok":
+                result["ok"] += 1
+            else:
+                result["unresolved"] += 1
+        except Exception as exc:
+            legal = db.legal_summary_for(row["id"])
+            number = (legal.get("extracted_fields") or {}).get("company_number")
+            db.record_company_error(row["id"], exc, number)
+            result["errors"].append(f"{row.get('postcode') or row.get('title')}: {exc}")
+    return result
 
 
 def refresh_due_diligence(db, rows=None, max_planning=20, max_legal=12):

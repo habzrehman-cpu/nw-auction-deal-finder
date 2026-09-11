@@ -1,5 +1,52 @@
 # North West Property Auction Deal Finder
 
+## v1.9.0 - ownership intelligence + legal-pack change control
+
+Version 1.9 builds on the now-verified persistent Supabase workspace and adds the next professional deal-sourcing layer: **official company-owner intelligence**, a richer **Vendor Story**, stronger **legal-pack automation/change detection**, and more resilient motorway enrichment.
+
+### Ownership / Companies House intelligence
+
+When a legal pack identifies a corporate seller and a free Companies House API key is configured in Streamlit Secrets, the app can automatically retrieve and persist official public-data evidence including:
+
+- verified company name, number, status, registered office and incorporation date
+- active directors (name/role/appointment date only)
+- persons with significant control
+- outstanding/satisfied company charges and charge holders
+- insolvency cases
+- overdue accounts / confirmation-statement flags
+- recent relevant filings
+- a separate **Corporate pressure** score with transparent reasons
+
+Corporate facts are added to the Vendor Story timeline and buyer-leverage analysis. The app explicitly treats company charges, late filings and similar indicators as evidence to investigate rather than proof of seller distress. It deliberately does not surface dates of birth or personal residential addresses.
+
+See `COMPANIES_HOUSE_SETUP.md` for the optional API-key setup.
+
+### Legal Pack Intelligence v2
+
+The public legal-pack crawler now follows legal-looking intermediary/index pages one level deeper to find accessible PDFs without attempting to bypass logins or registration. The legal engine also extracts more structured information, including tenancy/occupation type, passing rent and frequency, tenancy expiry wording, reserve/sinking-fund references, Section 20/major works, assignment restrictions, rights/easements, restrictive covenants and overage/clawback wording.
+
+Every saved legal pack now gets a fingerprint. On a later refresh, the tracker compares the saved and current pack and highlights **added, removed or modified documents**. A changed pack becomes a bid blocker until it is re-reviewed.
+
+### Vendor Story v2
+
+The Vendor Story can now combine:
+
+- auction attempts, guide reductions, relists and post-auction exposure
+- title price-paid evidence
+- planning approvals/refusals
+- seller/disposal context from legal documents
+- Companies House status, insolvency cases and relevant filings
+
+Confirmed facts remain separate from negotiation hypotheses. Corporate pressure can increase the separate **Buyer leverage** score only when official evidence supports it.
+
+### Location resilience
+
+The motorway engine now rotates through the current public Overpass endpoints listed by the OpenStreetMap community, including Private.coffee, the main FOSSGIS endpoint and VK Maps. If the live network is temporarily unavailable but a prior junction cache exists, the app retains the stale last-known junction network instead of blanking motorway intelligence. A Deal Room button can retry location/motorway enrichment independently from the auction refresh.
+
+### Persistence
+
+The tested single-user deployment uses the private `nw-auction-private` Supabase bucket. After a successful sync/reboot test, unchanged live stock should return `0 new/changed`, allowing the tracker to build meaningful longitudinal auction history. See `SUPABASE_SETUP.md`.
+
 
 ## v1.8.2 - persistent cloud workspace + legal-pack evidence trail
 
@@ -29,28 +76,9 @@ The app deliberately does not search the internet for private personal contact d
 
 ### Free persistent setup with Supabase
 
-The preferred v1.8.2 connection uses Supabase Storage's **S3-compatible server credentials**, because that is a standard server-to-server storage path for private files.
+The current verified Streamlit deployment uses Supabase Storage through the **server-side REST API with a Supabase Secret API key**. Earlier v1.8 builds also supported the S3-compatible path, but v1.9 documentation should be treated as authoritative.
 
-1. Create a free Supabase project.
-2. In **Storage**, create a private bucket named `nw-auction-private`.
-3. Open **Storage > Configuration > S3**, enable the S3 protocol and generate an **Access Key ID** and **Secret Access Key**. Copy the endpoint and region shown on the same screen. These S3 credentials are server-only and must stay in Streamlit Secrets.
-4. In Streamlit Community Cloud open **Manage app > Settings > Secrets** and add:
-
-```toml
-[supabase]
-bucket = "nw-auction-private"
-database_object = "state/auction_tracker.db"
-s3_endpoint = "https://YOUR_PROJECT_REF.storage.supabase.co/storage/v1/s3"
-s3_region = "YOUR_PROJECT_REGION"
-s3_access_key_id = "YOUR_S3_ACCESS_KEY_ID"
-s3_secret_access_key = "YOUR_S3_SECRET_ACCESS_KEY"
-```
-
-5. Save Streamlit Secrets and reboot the app. Never commit these credentials to GitHub or place them in `.streamlit/secrets.toml` inside the repository.
-6. The sidebar should change from **Local-only storage** to **Private cloud connected**.
-7. Run **Refresh live data** once. At the end of the refresh the current SQLite state is uploaded to the private bucket. On a future cold start, v1.8.2 restores that snapshot before opening the database.
-
-A backwards-compatible Supabase REST configuration is also supported for existing deployments using a server key, but the S3 configuration above is the recommended setup for this build.
+See `SUPABASE_SETUP.md` for the exact current configuration. The important requirements are a private `nw-auction-private` bucket, the project URL and a backend-only Supabase Secret API key stored in Streamlit Secrets. Never commit the key to GitHub.
 
 A `.gitignore` is included to exclude the local SQLite file, Streamlit secrets, Python caches and `.env` files from GitHub.
 

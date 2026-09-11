@@ -1,65 +1,39 @@
-# Supabase private persistence setup (v1.8.1)
+# Supabase private persistence setup (v1.9)
 
-This is the recommended free-test setup for keeping auction history, shortlist, underwriting, CRM notes and uploaded legal originals across Streamlit reboots.
+The verified setup for the current single-user Streamlit deployment is a private Supabase Storage bucket accessed server-side through the Supabase Storage REST API.
 
-## 1. Create the bucket
+## 1. Private bucket
 
-1. Open your Supabase project.
-2. Go to **Storage**.
-3. Create a new **private** bucket called `nw-auction-private`.
+Create a private Storage bucket named:
 
-## 2. Create S3 server credentials
+`nw-auction-private`
 
-1. In Supabase go to **Storage > Configuration > S3**.
-2. Enable the S3 protocol if required.
-3. Generate an **Access Key ID** and **Secret Access Key**.
-4. Copy the **Endpoint** and **Region** shown by Supabase.
-5. Keep these values private. Do not paste them into GitHub or any public code/file.
+## 2. Server secret
 
-## 3. Add them to Streamlit Secrets
+Create a Supabase **Secret API key** for the Streamlit backend. Keep it only in Streamlit Secrets; never commit it to GitHub or expose it in browser/client code.
 
-Open the deployed Streamlit app, then **Manage app > Settings > Secrets** and paste:
+## 3. Streamlit Secrets
 
 ```toml
 [supabase]
 bucket = "nw-auction-private"
 database_object = "state/auction_tracker.db"
-s3_endpoint = "https://YOUR_PROJECT_REF.storage.supabase.co/storage/v1/s3"
-s3_region = "YOUR_PROJECT_REGION"
-s3_access_key_id = "YOUR_S3_ACCESS_KEY_ID"
-s3_secret_access_key = "YOUR_S3_SECRET_ACCESS_KEY"
+url = "https://YOUR_PROJECT_REF.supabase.co"
+secret_key = "YOUR_SUPABASE_SECRET_KEY"
 ```
 
-Replace the four placeholder values with the exact values shown by Supabase.
+Save the secrets and reboot the app. The sidebar should show **Private cloud read/write verified** after a successful sync.
 
-## 4. Save and reboot
+The app saves the SQLite snapshot at `state/auction_tracker.db` and stores uploaded legal originals under `legal-packs/<property-id>/...`.
 
-1. Save the Streamlit Secrets.
-2. Reboot the app.
-3. In the app sidebar, **Persistence** should show **Private cloud connected**.
-4. Click **Refresh live data** once.
-5. When the refresh completes, the database is snapshotted to the private bucket.
+### Optional S3 mode
 
-On a future cold start, if the local Streamlit database is absent, the app restores `state/auction_tracker.db` from Supabase before opening the dashboard.
-
-## Legal packs
-
-In a Deal Room, open **Planning & legal** and upload PDF/TXT documents or a ZIP legal pack. When cloud persistence is connected:
-
-- supported documents are parsed individually;
-- the original files are stored under `legal-packs/<property-id>/...` in the private bucket;
-- extracted text, findings and source/page evidence are stored in the deal database;
-- stored originals can be retrieved from the Deal Room.
+Supabase S3-compatible credentials are still supported, but are not required for this deployment. If both S3 and REST credentials are supplied, the current code may prefer the configured S3 path. Use one persistence mode at a time to keep troubleshooting simple.
 
 ## Security
 
-Supabase S3 access keys are server credentials with broad Storage access. Store them only in Streamlit Secrets (or secure environment variables for another server). Never commit them to GitHub, paste them into source code, or expose them in a browser-facing component.
+The Supabase secret key is a backend credential with elevated access. Store it only in Streamlit Secrets or another secure server-side secret store. Never send it in chat, email, URLs or source code.
 
-## Current architecture note
+## Architecture
 
-v1.8.1 uses a cloud-synchronised SQLite snapshot because the current deployment is single-user and on a free test stack. If this becomes a concurrent multi-user product, migrate the tables to Postgres so multiple users cannot overwrite the same SQLite snapshot.
-
-
-## v1.8.2 connection status
-
-`Private cloud connected - write not yet verified` means the app successfully listed the configured private bucket. After the first successful `Sync cloud snapshot`, the status changes to `Private cloud read/write verified`. If an S3 request fails, v1.8.2 surfaces the HTTP/S3 error detail rather than a generic upload message.
+The current free-test build cloud-synchronises one SQLite database snapshot. This is appropriate for the present single-user workflow. Before multi-user/concurrent production use, migrate the transactional data model to Postgres rather than allowing multiple writers to overwrite one SQLite snapshot.

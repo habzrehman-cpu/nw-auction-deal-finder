@@ -24,9 +24,13 @@ TARGET_MOTORWAYS = {
 NW_BBOX = (52.80, -3.85, 55.25, -1.55)  # south, west, north, east
 POSTCODES_URL = "https://api.postcodes.io/postcodes?filter=postcode,longitude,latitude"
 OVERPASS_URLS = [
+    # Current public/global instances listed by the OpenStreetMap community.
+    # Rotate because public Overpass services can be temporarily overloaded.
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    # Britain/Ireland instance; useful as a final regional fallback where reachable.
+    "https://overpass.atownsend.org.uk/api/interpreter",
 ]
 OSRM_BASE = "https://router.project-osrm.org"
 
@@ -87,17 +91,31 @@ class MotorwayNetwork:
         if headers is not None:
             headers.update({"User-Agent": "NW-Auction-Deal-Finder/1.6 contact: browser-app"})
         self.timeout = timeout
+        self.last_warning = ""
+        self.last_source = ""
 
     def load(self, max_age_days=30) -> list[dict]:
         cached = self._read_cache(max_age_days)
         if cached is not None:
+            self.last_source = "fresh cache"
             return cached
-        junctions = self.fetch()
+        # Keep a stale last-known network available. A temporary public Overpass
+        # outage should not blank previously known motorway proximity in the app.
+        stale = self._read_cache(None)
+        try:
+            junctions = self.fetch()
+        except Exception as exc:
+            if stale:
+                self.last_warning = f"Live OpenStreetMap junction refresh unavailable; using last-known cached network ({exc})."
+                self.last_source = "stale cache"
+                return stale
+            raise
         if junctions:
             self._write_cache(junctions)
+            self.last_source = "OpenStreetMap/Overpass"
         return junctions
 
-    def _read_cache(self, max_age_days: int):
+    def _read_cache(self, max_age_days: int | None):
         if not self.cache_path.exists():
             return None
         try:
@@ -105,7 +123,7 @@ class MotorwayNetwork:
             stamp = datetime.fromisoformat(payload.get("updated_at", "").replace("Z", "+00:00"))
             if stamp.tzinfo is None:
                 stamp = stamp.replace(tzinfo=timezone.utc)
-            if _utcnow() - stamp > timedelta(days=max_age_days):
+            if max_age_days is not None and _utcnow() - stamp > timedelta(days=max_age_days):
                 return None
             return payload.get("junctions") or []
         except (OSError, ValueError, json.JSONDecodeError, TypeError):

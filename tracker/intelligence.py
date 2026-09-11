@@ -109,8 +109,9 @@ def _auction_timeline(history: Iterable[dict]) -> list[dict]:
     return out
 
 
-def seller_profile(legal_summary: dict | None, lot: dict | None = None) -> dict:
+def seller_profile(legal_summary: dict | None, lot: dict | None = None, company_intelligence: dict | None = None) -> dict:
     legal_summary = legal_summary or {}
+    company_intelligence = company_intelligence or {}
     extracted = legal_summary.get("extracted_fields") or {}
     lot = lot or {}
     seller_type = _clean(extracted.get("seller_type"), 60)
@@ -129,19 +130,26 @@ def seller_profile(legal_summary: dict | None, lot: dict | None = None) -> dict:
         "seller_name": seller_name or None,
         "seller_type": seller_type or None,
         "title_number": extracted.get("title_number"),
-        "company_number": extracted.get("company_number"),
-        "registered_office": extracted.get("registered_office"),
+        "company_number": extracted.get("company_number") or company_intelligence.get("company_number"),
+        "registered_office": extracted.get("registered_office") or company_intelligence.get("registered_office"),
         "title_price_paid": extracted.get("title_price_paid"),
         "title_price_paid_date": extracted.get("title_price_paid_date"),
         "contacts": legal_summary.get("contacts") or [],
+        "company_name_verified": company_intelligence.get("company_name"),
+        "company_status": company_intelligence.get("company_status"),
+        "company_registered_office": company_intelligence.get("registered_office"),
+        "company_url": company_intelligence.get("company_url"),
+        "corporate_pressure_score": company_intelligence.get("corporate_pressure_score"),
+        "corporate_pressure_label": company_intelligence.get("corporate_pressure_label"),
     }
 
 
 def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: dict | None = None,
-                   planning_items: Iterable[dict] | None = None) -> dict:
+                   planning_items: Iterable[dict] | None = None, company_intelligence: dict | None = None) -> dict:
     """Score negotiating leverage separately from seller motivation."""
     deal_analysis = deal_analysis or {}
     legal_summary = legal_summary or {}
+    company_intelligence = company_intelligence or {}
     status = str(lot.get("status") or "").lower()
     points = {
         "available post-auction": 45,
@@ -188,7 +196,7 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
         points += 5
         reasons.append("Vacant possession signal")
 
-    profile = seller_profile(legal_summary, lot)
+    profile = seller_profile(legal_summary, lot, company_intelligence)
     seller_type = str(profile.get("seller_type") or "").lower()
     if any(term in seller_type for term in DISTRESS_SELLER_TYPES):
         points += 10
@@ -205,21 +213,68 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
         points += min(8, refused * 4)
         reasons.append(f"{refused} subject planning refusal(s) may have weakened the prior strategy")
 
+    corporate_pressure = _num(company_intelligence.get("corporate_pressure_score"), 0) or 0
+    company_status = str(company_intelligence.get("company_status") or "").strip()
+    if corporate_pressure >= 8:
+        points += 17
+        reasons.append(f"Official corporate-pressure evidence is very high ({company_status or 'Companies House'})")
+    elif corporate_pressure >= 6:
+        points += 8
+        reasons.append(f"Official corporate-pressure evidence is elevated ({company_status or 'Companies House'})")
+    elif corporate_pressure >= 3:
+        points += 4
+        reasons.append("Some official corporate-pressure indicators are present")
+
     score = round(max(0, min(100, points)) / 10, 1)
     label = "Very High" if score >= 8.5 else "High" if score >= 7 else "Medium" if score >= 5 else "Low" if score >= 3 else "Very Low"
     return {"buyer_leverage_score": score, "buyer_leverage_label": label, "buyer_leverage_reasons": reasons}
 
 
+def _company_timeline(company: dict | None) -> list[dict]:
+    company = company or {}
+    out = []
+    if company.get("incorporation_date"):
+        out.append({
+            "date": _date_key(company.get("incorporation_date")),
+            "display_date": _clean(company.get("incorporation_date")),
+            "type": "company", "label": "Company incorporated",
+            "detail": _clean(company.get("company_name") or company.get("company_number"), 180),
+            "source_url": company.get("company_url") or "",
+        })
+    for case in company.get("insolvency_cases") or []:
+        dates = case.get("dates") or []
+        date = next((d.get("date") for d in dates if d.get("date")), None)
+        out.append({
+            "date": _date_key(date), "display_date": _clean(date) or "Date not captured",
+            "type": "company", "label": f"Insolvency record: {_clean(case.get('type'), 100) or 'case'}",
+            "detail": f"Companies House insolvency case {_clean(case.get('number'), 50)}".strip(),
+            "source_url": company.get("company_url") or "",
+        })
+    for filing in (company.get("recent_filings") or [])[:8]:
+        desc = _clean(filing.get("description") or filing.get("type"), 150)
+        probe = f"{desc} {filing.get('category') or ''}".lower()
+        if not any(x in probe for x in ("charge", "receiver", "insolv", "liquid", "administr", "strike", "accounts")):
+            continue
+        out.append({
+            "date": _date_key(filing.get("date")), "display_date": _clean(filing.get("date")) or "Date not captured",
+            "type": "company", "label": "Companies House filing", "detail": desc,
+            "source_url": company.get("company_url") or "",
+        })
+    return out
+
+
 def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_analysis: dict | None = None,
-                       legal_summary: dict | None = None, planning_items: Iterable[dict] | None = None) -> dict:
+                       legal_summary: dict | None = None, planning_items: Iterable[dict] | None = None,
+                       company_intelligence: dict | None = None) -> dict:
     """Build an evidence-led seller story with clearly labelled inferences."""
     deal_analysis = deal_analysis or {}
     legal_summary = legal_summary or {}
+    company_intelligence = company_intelligence or {}
     planning_items = list(planning_items or [])
-    profile = seller_profile(legal_summary, lot)
-    leverage = buyer_leverage(lot, deal_analysis, legal_summary, planning_items)
+    profile = seller_profile(legal_summary, lot, company_intelligence)
+    leverage = buyer_leverage(lot, deal_analysis, legal_summary, planning_items, company_intelligence)
 
-    timeline = _auction_timeline(history or []) + _planning_timeline(planning_items)
+    timeline = _auction_timeline(history or []) + _planning_timeline(planning_items) + _company_timeline(company_intelligence)
     if profile.get("title_price_paid"):
         paid_date = profile.get("title_price_paid_date") or ""
         timeline.append({
@@ -267,6 +322,15 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
         facts.append(f"{len(subject_refusals)} likely subject-property planning refusal(s) found")
     if subject_approvals:
         facts.append(f"{len(subject_approvals)} likely subject-property planning approval(s) found")
+    if company_intelligence.get("status") == "ok":
+        if company_intelligence.get("company_status"):
+            facts.append(f"Companies House company status is {company_intelligence.get('company_status')}")
+        if company_intelligence.get("outstanding_charge_count"):
+            facts.append(f"Companies House records {int(company_intelligence.get('outstanding_charge_count') or 0)} outstanding/unsatisfied charge(s)")
+        if company_intelligence.get("insolvency_case_count"):
+            facts.append(f"Companies House records {int(company_intelligence.get('insolvency_case_count') or 0)} insolvency case(s)")
+        if company_intelligence.get("accounts_overdue"):
+            facts.append("Companies House shows accounts as overdue")
 
     inferences = []
     if failures >= 2:
@@ -281,6 +345,11 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
         inferences.append("If the asset is genuinely vacant, ongoing finance, rates, insurance, service-charge or security costs may increase pressure to transact; these costs are not confirmed unless evidenced separately.")
     if profile.get("seller_type") and any(term in str(profile["seller_type"]).lower() for term in DISTRESS_SELLER_TYPES):
         inferences.append("The identified disposal context can favour certainty and speed of execution, but it does not by itself prove that a discounted offer will be accepted.")
+    corporate_pressure = _num(company_intelligence.get("corporate_pressure_score"), 0) or 0
+    if corporate_pressure >= 7:
+        inferences.append("Official corporate records show material pressure indicators. A buyer offering certainty, speed and clean execution may have stronger negotiating leverage, but seller instructions still need confirming with the auctioneer/solicitor.")
+    elif corporate_pressure >= 3:
+        inferences.append("Some corporate-record indicators merit checking, but they are not sufficient on their own to infer a distressed sale.")
 
     confidence_points = 25
     if len(timeline) >= 2:
@@ -294,6 +363,8 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
     if subject_refusals or subject_approvals:
         confidence_points += 10
     if legal_summary.get("status") in {"parsed", "reviewed"}:
+        confidence_points += 10
+    if company_intelligence.get("status") == "ok":
         confidence_points += 10
     confidence = max(0, min(100, confidence_points))
     confidence_label = "High" if confidence >= 75 else "Medium" if confidence >= 50 else "Low"
@@ -330,7 +401,10 @@ def deal_readiness(row: dict) -> dict:
     add("Comparable valuation", 14, "complete" if comp_conf >= 70 else "partial" if comp_conf >= 50 else "missing", f"Comparable confidence {comp_conf}%", blocker=comp_conf < 60)
     add("Market value / GDV", 12, "complete" if market_value else "missing", "Valuation basis present" if market_value else "Market value/GDV required", blocker=not bool(market_value))
     add("Planning screen", 10, "complete" if planning_status == "ok" else "missing", "Official screen run" if planning_status == "ok" else "Planning risk unknown")
-    add("Legal pack", 20, "complete" if legal_status in {"parsed", "reviewed"} else "partial" if legal_status == "links-only" else "missing", "Legal evidence parsed/reviewed" if legal_status in {"parsed", "reviewed"} else "Legal pack not parsed", blocker=legal_status not in {"parsed", "reviewed"})
+    legal_pack_changed = bool(row.get("legal_pack_changed"))
+    add("Legal pack", 20, "partial" if legal_pack_changed else "complete" if legal_status in {"parsed", "reviewed"} else "partial" if legal_status == "links-only" else "missing",
+        "Legal pack changed since the previous snapshot - re-review required" if legal_pack_changed else ("Legal evidence parsed/reviewed" if legal_status in {"parsed", "reviewed"} else "Legal pack not parsed"),
+        blocker=legal_pack_changed or legal_status not in {"parsed", "reviewed"})
     works_missing = bool(row.get("works_missing"))
     add("Works / capex", 8, "missing" if works_missing else "complete", "Works estimate required" if works_missing else "No unresolved works-budget gate", blocker=works_missing)
     tenure = str(row.get("tenure") or "Unknown")
@@ -360,7 +434,9 @@ def next_actions(row: dict, story: dict | None = None) -> list[dict]:
         actions.append({"priority": priority, "action": action, "reason": reason})
 
     legal_status = str(row.get("legal_status") or "").lower()
-    if legal_status not in {"parsed", "reviewed"}:
+    if row.get("legal_pack_changed"):
+        add(1, "Re-review the changed legal pack / addendum", "The auctioneer legal evidence has changed since the previous saved snapshot, so prior legal conclusions may be stale.")
+    elif legal_status not in {"parsed", "reviewed"}:
         add(1, "Obtain and review the latest legal pack + addendum", "Bid approval is blocked until legal evidence is parsed/reviewed.")
     if row.get("works_missing"):
         add(2, "Obtain a refurbishment / capex estimate", "The listing signals works but the model currently has no reliable works budget.")
@@ -393,6 +469,8 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
     extracted = legal_summary.get("extracted_fields") or row.get("legal_extracted_fields") or {}
     questions = []
     status = str(legal_summary.get("status") or row.get("legal_status") or "").lower()
+    if row.get("legal_pack_changed") or legal_summary.get("pack_changed"):
+        questions.append("The tracker detected a legal-pack change since the previous snapshot. Please identify exactly what was added, removed or amended and confirm whether any prior advice must change.")
     if status not in {"parsed", "reviewed"}:
         questions.append("Please confirm we have the latest complete legal pack and every addendum, and identify any missing documents before exchange/bidding.")
     lease = _num(extracted.get("lease_years_remaining") or row.get("legal_lease_years") or row.get("listing_lease_years"))
@@ -450,6 +528,9 @@ def deal_brief_markdown(row: dict, story: dict, readiness: dict, actions: list[d
         f"- Registered proprietor / seller: {profile.get('seller_name') or 'Not extracted'}",
         f"- Disposal type: {profile.get('seller_type') or 'Not identified'}",
         f"- Title number: {profile.get('title_number') or 'Not extracted'}",
+        f"- Company number: {profile.get('company_number') or 'Not extracted'}",
+        f"- Company status: {profile.get('company_status') or 'Not enriched'}",
+        f"- Corporate pressure: {float(profile.get('corporate_pressure_score') or 0):.1f}/10" if profile.get("corporate_pressure_score") is not None else "- Corporate pressure: not enriched",
         "",
         "## Confirmed motivation evidence",
     ]
@@ -458,6 +539,8 @@ def deal_brief_markdown(row: dict, story: dict, readiness: dict, actions: list[d
     lines += ["", "## Interpretation (not confirmed fact)"]
     for item in story.get("inferences") or ["Insufficient evidence for a useful seller-pressure inference."]:
         lines.append(f"- {item}")
+    if row.get("legal_pack_changed"):
+        lines += ["", "## Legal pack change alert", "- Legal evidence changed since the previous saved snapshot. Re-review all changed/addendum documents before bidding."]
     lines += ["", "## Bid blockers / DD gaps"]
     for blocker in readiness.get("readiness_blockers") or ["No automated blocker recorded; normal legal and physical due diligence still required."]:
         lines.append(f"- {blocker}")

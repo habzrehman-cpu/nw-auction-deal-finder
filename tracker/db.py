@@ -198,6 +198,9 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   pack_completeness_pct INTEGER DEFAULT 0,
   missing_components_json TEXT,
   available_components_json TEXT,
+  pack_fingerprint TEXT,
+  pack_changed INTEGER DEFAULT 0,
+  pack_change_json TEXT,
   methodology TEXT,
   warnings_json TEXT,
   attribution TEXT,
@@ -218,6 +221,21 @@ CREATE TABLE IF NOT EXISTS legal_documents (
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
 CREATE INDEX IF NOT EXISTS idx_legal_documents_property ON legal_documents(property_id);
+CREATE TABLE IF NOT EXISTS company_intelligence (
+  property_id INTEGER PRIMARY KEY,
+  provider TEXT,
+  status TEXT NOT NULL DEFAULT 'not-run',
+  updated_at TEXT NOT NULL,
+  company_number TEXT,
+  company_name TEXT,
+  company_status TEXT,
+  registered_office TEXT,
+  corporate_pressure_score REAL DEFAULT 0,
+  summary_json TEXT,
+  error TEXT,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
+CREATE INDEX IF NOT EXISTS idx_company_intelligence_number ON company_intelligence(company_number);
 CREATE TABLE IF NOT EXISTS deal_workspace (
   property_id INTEGER PRIMARY KEY,
   stage TEXT NOT NULL DEFAULT 'New',
@@ -269,6 +287,9 @@ LEGAL_SUMMARY_MIGRATIONS = {
     "pack_completeness_pct": "INTEGER DEFAULT 0",
     "missing_components_json": "TEXT",
     "available_components_json": "TEXT",
+    "pack_fingerprint": "TEXT",
+    "pack_changed": "INTEGER DEFAULT 0",
+    "pack_change_json": "TEXT",
 }
 
 
@@ -792,6 +813,10 @@ class Database:
             out["available_components"] = json.loads(out.get("available_components_json") or "[]")
         except (TypeError, json.JSONDecodeError):
             out["available_components"] = []
+        try:
+            out["pack_change"] = json.loads(out.get("pack_change_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            out["pack_change"] = {}
         return out
 
     def legal_summary_map(self):
@@ -827,6 +852,10 @@ class Database:
                 row["available_components"] = json.loads(row.get("available_components_json") or "[]")
             except (TypeError, json.JSONDecodeError):
                 row["available_components"] = []
+            try:
+                row["pack_change"] = json.loads(row.get("pack_change_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                row["pack_change"] = {}
             out[row["property_id"]] = row
         return out
 
@@ -870,8 +899,9 @@ class Database:
                 """INSERT INTO legal_summaries(
                 property_id,provider,status,updated_at,risk_score,document_count,parsed_document_count,completion_days,deposit_pct,
                 lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,evidence_json,
-                pack_completeness_pct,missing_components_json,available_components_json,methodology,warnings_json,attribution,error
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                pack_completeness_pct,missing_components_json,available_components_json,pack_fingerprint,pack_changed,pack_change_json,
+                methodology,warnings_json,attribution,error
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(property_id) DO UPDATE SET
                 provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,risk_score=excluded.risk_score,
                 document_count=excluded.document_count,parsed_document_count=excluded.parsed_document_count,
@@ -880,6 +910,7 @@ class Database:
                 extracted_json=excluded.extracted_json,contacts_json=excluded.contacts_json,risk_flags_json=excluded.risk_flags_json,
                 evidence_json=excluded.evidence_json,pack_completeness_pct=excluded.pack_completeness_pct,
                 missing_components_json=excluded.missing_components_json,available_components_json=excluded.available_components_json,
+                pack_fingerprint=excluded.pack_fingerprint,pack_changed=excluded.pack_changed,pack_change_json=excluded.pack_change_json,
                 methodology=excluded.methodology,warnings_json=excluded.warnings_json,attribution=excluded.attribution,error=excluded.error""",
                 (property_id, summary.get("provider"), summary.get("status") or "not-found", now, summary.get("risk_score") or 0,
                  summary.get("document_count") or 0, summary.get("parsed_document_count") or 0, summary.get("completion_days"),
@@ -892,8 +923,70 @@ class Database:
                  int(summary.get("pack_completeness_pct") or 0),
                  json.dumps(summary.get("missing_components") or [], ensure_ascii=False),
                  json.dumps(summary.get("available_components") or [], ensure_ascii=False),
+                 summary.get("pack_fingerprint"), int(bool(summary.get("pack_changed"))),
+                 json.dumps(summary.get("pack_change") or {}, ensure_ascii=False),
                  summary.get("methodology"), json.dumps(summary.get("warnings") or [], ensure_ascii=False),
                  summary.get("attribution"), summary.get("error")),
+            )
+            con.commit()
+
+    def company_intelligence_for(self, property_id):
+        with closing(self.connect()) as con:
+            row = con.execute("SELECT * FROM company_intelligence WHERE property_id=?", (property_id,)).fetchone()
+        if not row:
+            return {}
+        out = dict(row)
+        try:
+            out.update(json.loads(out.get("summary_json") or "{}"))
+        except (TypeError, json.JSONDecodeError):
+            pass
+        return out
+
+    def company_intelligence_map(self):
+        with closing(self.connect()) as con:
+            rows = [dict(r) for r in con.execute("SELECT * FROM company_intelligence").fetchall()]
+        out = {}
+        for row in rows:
+            try:
+                row.update(json.loads(row.get("summary_json") or "{}"))
+            except (TypeError, json.JSONDecodeError):
+                pass
+            out[row["property_id"]] = row
+        return out
+
+    def save_company_intelligence(self, property_id, summary):
+        now = summary.get("updated_at") or datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO company_intelligence(
+                property_id,provider,status,updated_at,company_number,company_name,company_status,registered_office,
+                corporate_pressure_score,summary_json,error
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(property_id) DO UPDATE SET
+                provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,
+                company_number=excluded.company_number,company_name=excluded.company_name,company_status=excluded.company_status,
+                registered_office=excluded.registered_office,corporate_pressure_score=excluded.corporate_pressure_score,
+                summary_json=excluded.summary_json,error=excluded.error""",
+                (property_id, summary.get("provider"), summary.get("status") or "ok", now,
+                 summary.get("company_number"), summary.get("company_name"), summary.get("company_status"),
+                 summary.get("registered_office"), summary.get("corporate_pressure_score") or 0,
+                 json.dumps(summary or {}, ensure_ascii=False), summary.get("error")),
+            )
+            con.commit()
+
+    def record_company_error(self, property_id, error, company_number=None):
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "provider": "Companies House Public Data API", "status": "error", "updated_at": now,
+            "company_number": company_number, "error": str(error)[:1000],
+        }
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO company_intelligence(property_id,provider,status,updated_at,company_number,summary_json,error)
+                VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(property_id) DO UPDATE SET provider=excluded.provider,status='error',updated_at=excluded.updated_at,
+                company_number=COALESCE(excluded.company_number,company_intelligence.company_number),summary_json=excluded.summary_json,error=excluded.error""",
+                (property_id, payload["provider"], "error", now, company_number, json.dumps(payload), str(error)[:1000]),
             )
             con.commit()
 

@@ -4,7 +4,7 @@ from .enrichment import fetch_detail_metadata, is_detail_url
 from .geo import MotorwayNetwork, bulk_geocode, nearest_motorway
 from .scrapers import SCRAPERS, Fetcher
 from .comparables import refresh_due_comparables
-from .diligence import refresh_due_diligence
+from .diligence import refresh_due_diligence, refresh_due_company_intelligence
 
 COMMERCIAL_TYPES = {"industrial", "commercial", "mixed use", "development", "land"}
 
@@ -42,7 +42,10 @@ def _enrich_geography(db, max_road_routes=60):
     fallback_air = 0
     if needs_motorway:
         try:
-            junctions = MotorwayNetwork(session=session).load()
+            network = MotorwayNetwork(session=session)
+            junctions = network.load()
+            if network.last_warning:
+                geo_errors.append(network.last_warning)
             if not junctions:
                 raise RuntimeError("No North West motorway junctions returned by OpenStreetMap/Overpass")
             # Commercial rows first because road proximity is part of the acquisition strategy.
@@ -74,7 +77,12 @@ def _enrich_geography(db, max_road_routes=60):
     }
 
 
-def refresh_all(db, selected=None):
+def refresh_geography(db, max_road_routes=60):
+    """Retry location/motorway enrichment independently from auction-source refresh."""
+    return _enrich_geography(db, max_road_routes=max_road_routes)
+
+
+def refresh_all(db, selected=None, companies_house_api_key=""):
     source_summary = []
     fetcher = Fetcher()
 
@@ -132,4 +140,10 @@ def refresh_all(db, selected=None):
     current_rows = db.list_properties()
     comparables = refresh_due_comparables(db, rows=current_rows, max_properties=20)
     diligence = refresh_due_diligence(db, rows=current_rows, max_planning=15, max_legal=8)
-    return {"sources": source_summary, "geography": geography, "comparables": comparables, "diligence": diligence}
+    companies = refresh_due_company_intelligence(
+        db, companies_house_api_key, rows=db.list_properties(), max_companies=8
+    )
+    return {
+        "sources": source_summary, "geography": geography, "comparables": comparables,
+        "diligence": diligence, "companies_house": companies,
+    }
