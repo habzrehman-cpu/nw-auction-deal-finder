@@ -18,6 +18,7 @@ from tracker.diligence import (
     save_uploaded_legal_documents,
 )
 from tracker.legal import uploaded_document
+from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -316,6 +317,8 @@ for row in rows:
         "legal_risk_flags": legal.get("risk_flags") or [],
         "legal_warnings": legal.get("warnings") or [],
         "legal_error": legal.get("error"),
+        "legal_extracted_fields": legal.get("extracted_fields") or {},
+        "legal_contacts": legal.get("contacts") or [],
     })
     uw = underwrite_property(
         row,
@@ -481,7 +484,18 @@ def render_deal_room(chosen):
         st.session_state.pop("selected_deal_id", None)
         st.rerun()
 
-    left, right = st.columns([1.45, 2.55], vertical_alignment="top")
+    # Assemble evidence-led intelligence for this property only when its Deal Room is opened.
+    hist = db.history_for(chosen["id"])
+    planning_items = db.planning_items_for(chosen["id"])
+    legal_summary = db.legal_summary_for(chosen["id"])
+    chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or chosen.get("legal_extracted_fields") or {}
+    chosen["legal_contacts"] = legal_summary.get("contacts") or chosen.get("legal_contacts") or []
+    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items)
+    readiness = deal_readiness(chosen)
+    actions = next_actions(chosen, story)
+    profile = story.get("seller_profile") or {}
+
+    left, right = st.columns([1.35, 2.65], vertical_alignment="top")
     with left:
         if chosen.get("image_url"):
             st.image(chosen["image_url"], use_container_width=True)
@@ -494,8 +508,13 @@ def render_deal_room(chosen):
         a, b, c, d = st.columns(4)
         a.metric("Deal potential", f"{chosen.get('browse_score', 0):.1f}/10")
         b.metric("Vendor motivation", f"{chosen.get('motivation_score', 0):.1f}/10")
-        c.metric("Guide", money(chosen.get("guide_price")))
-        d.metric("Max buy", money(chosen.get("max_bid")), delta="PROVISIONAL" if chosen.get("max_bid_provisional") else None)
+        c.metric("Buyer leverage", f"{story.get('buyer_leverage_score', 0):.1f}/10")
+        d.metric("Deal readiness", f"{readiness.get('readiness_pct', 0)}%")
+        e, f, g, h = st.columns(4)
+        e.metric("Guide", money(chosen.get("guide_price")))
+        f.metric("Opening offer", money(chosen.get("opening_offer")))
+        g.metric("Max buy", money(chosen.get("max_bid")), delta="PROVISIONAL" if chosen.get("max_bid_provisional") else None)
+        h.metric("Evidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
         if chosen.get("recommended_action"):
             if chosen.get("recommendation") == "PURSUE":
                 st.success(f"PURSUE - {chosen.get('recommended_action')}")
@@ -503,15 +522,18 @@ def render_deal_room(chosen):
                 st.error(f"PASS - {chosen.get('recommended_action')}")
             else:
                 st.warning(f"WATCH - {chosen.get('recommended_action')}")
-        act1, act2 = st.columns(2)
+        act1, act2, act3 = st.columns(3)
         with act1:
             if st.button("Remove from shortlist" if chosen.get("shortlisted") else "Add to shortlist", key=f"deal_short_{chosen['id']}", use_container_width=True):
                 toggle_shortlist(chosen)
         with act2:
             if chosen.get("url"):
                 st.link_button("Open auctioneer listing", chosen["url"], use_container_width=True)
+        with act3:
+            if profile.get("company_number"):
+                st.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
 
-    tabs = st.tabs(["Overview", "Financials", "Comparables", "Auction history", "Planning & legal", "Location"])
+    tabs = st.tabs(["Overview", "Vendor story", "Financials", "Comparables", "Auction history", "Planning & legal", "Location", "Workspace"])
 
     with tabs[0]:
         m1, m2, m3, m4, m5 = st.columns(5)
@@ -520,6 +542,17 @@ def render_deal_room(chosen):
         m3.metric("Profit / equity", money(chosen.get("profit")))
         m4.metric("ROI", pct(chosen.get("roi_pct")))
         m5.metric("UW confidence", f"{int(chosen.get('underwriting_confidence') or 0)}%")
+
+        st.markdown("### Acquisition readiness")
+        st.progress(readiness.get("readiness_pct", 0) / 100.0, text=f"{readiness.get('readiness_status')} - {readiness.get('readiness_pct')}% complete")
+        if readiness.get("readiness_blockers"):
+            st.error("Bid blockers: " + " | ".join(readiness.get("readiness_blockers")[:5]))
+        with st.expander("Readiness checklist"):
+            readiness_frame = pd.DataFrame([{
+                "Check": x.get("name"), "Status": x.get("state").title(), "Detail": x.get("detail"), "Bid blocker": bool(x.get("blocker"))
+            } for x in readiness.get("readiness_checks") or []])
+            st.dataframe(readiness_frame, hide_index=True, use_container_width=True)
+
         good, concern = st.columns(2)
         with good:
             st.markdown("### Why this may be a deal")
@@ -545,16 +578,29 @@ def render_deal_room(chosen):
                 concerns = ["No major automated warning is currently recorded; normal auction due diligence still applies."]
             for item in concerns[:10]:
                 st.write(f"- {item}")
+
+        st.markdown("### Recommended next actions")
+        if actions:
+            for n, action in enumerate(actions, start=1):
+                st.markdown(f"**{n}. {action['action']}**  ")
+                st.caption(action["reason"])
+        else:
+            st.caption("No automated action queue has been generated yet.")
+
         st.markdown("### Key property facts")
+        extracted = chosen.get("legal_extracted_fields") or {}
         facts = pd.DataFrame([
             ["Auction house", chosen.get("source")],
             ["Status", chosen.get("status")],
             ["Auction date", chosen.get("auction_date")],
             ["Property type", chosen.get("property_type")],
             ["Tenure", chosen.get("tenure")],
+            ["Lease remaining", f"{float(chosen.get('legal_lease_years')):.1f} years" if chosen.get("legal_lease_years") else "Unknown"],
+            ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Unknown"],
+            ["Title number", extracted.get("title_number") or "Unknown"],
             ["Floor area", f"{int(chosen.get('size_sqft')):,} sq ft" if chosen.get("size_sqft") else "Unknown"],
             ["Guide / sq ft", money(chosen.get("price_per_sqft"), 2) if chosen.get("price_per_sqft") else "Unknown"],
-            ["Failed auction signals", int(chosen.get("failure_count") or 0)],
+            ["Failed auction attempts", int(chosen.get("failure_count") or 0)],
             ["Observed guide reduction", pct(chosen.get("price_reduction_pct"))],
             ["Legal status", legal_state(chosen)],
             ["Planning status", planning_state(chosen)],
@@ -562,6 +608,51 @@ def render_deal_room(chosen):
         st.dataframe(facts, hide_index=True, use_container_width=True)
 
     with tabs[1]:
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Vendor motivation", f"{chosen.get('motivation_score', 0):.1f}/10", delta=chosen.get("motivation_label"))
+        s2.metric("Buyer leverage", f"{story.get('buyer_leverage_score', 0):.1f}/10", delta=story.get("buyer_leverage_label"))
+        s3.metric("Story confidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
+
+        st.markdown("### Seller profile")
+        seller_rows = [
+            ["Registered proprietor / seller", profile.get("seller_name") or "Not extracted yet"],
+            ["Seller / disposal type", profile.get("seller_type") or "Not identified"],
+            ["Title number", profile.get("title_number") or "Not extracted"],
+            ["Company number", profile.get("company_number") or "Not extracted"],
+        ]
+        st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
+
+        fact_col, inference_col = st.columns(2)
+        with fact_col:
+            st.markdown("### Confirmed evidence")
+            facts = story.get("confirmed_facts") or ["No material seller-motivation facts beyond the auction listing have been confirmed yet."]
+            for fact in facts:
+                st.write(f"- {fact}")
+        with inference_col:
+            st.markdown("### What the evidence may indicate")
+            inferences = story.get("inferences") or ["There is not enough evidence to form a useful seller-pressure interpretation yet."]
+            for item in inferences:
+                st.write(f"- {item}")
+            st.caption("Interpretations are hypotheses for negotiation planning, not statements of fact about the seller.")
+
+        st.markdown("### Vendor story timeline")
+        timeline = story.get("timeline") or []
+        if timeline:
+            for event in timeline:
+                source = f" [source]({event.get('source_url')})" if event.get("source_url") else ""
+                st.markdown(f"**{event.get('display_date')} - {event.get('label')}**{source}")
+                if event.get("detail"):
+                    st.caption(event.get("detail"))
+        else:
+            st.info("No dated auction/planning story has been assembled yet. Historical backfill and planning/legal refreshes will strengthen this section.")
+
+        contacts = story.get("seller_profile", {}).get("contacts") or []
+        if contacts:
+            st.markdown("### Professional contacts found in legal evidence")
+            st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
+            st.caption("Only professional/business contact details found in the supplied/public legal evidence are surfaced here; the app does not hunt for private personal contact details.")
+
+    with tabs[2]:
         f1, f2, f3, f4, f5 = st.columns(5)
         f1.metric("Working purchase", money(chosen.get("working_purchase_price")))
         f2.metric("All-in cost", money(chosen.get("all_in_cost")))
@@ -572,6 +663,38 @@ def render_deal_room(chosen):
             st.error("Works/refurbishment is indicated in the listing but the works budget is GBP 0. The return score is capped and the maximum bid is provisional until a works estimate is entered.")
         if chosen.get("detected_fee_evidence"):
             st.info("Auction fee evidence detected: " + " | ".join(chosen.get("detected_fee_evidence") or []))
+
+        st.markdown("### Purchase-price scenario compare")
+        guide = float(chosen.get("guide_price") or 0)
+        candidates = [chosen.get("opening_offer"), guide * 0.90 if guide else None, guide or None, chosen.get("max_bid")]
+        labels = ["Opening offer", "90% of guide", "Guide", "Maximum bid"]
+        saved = db.underwriting_for(chosen["id"])
+        scenario_data = []
+        seen_prices = set()
+        for label, price in zip(labels, candidates):
+            if not price:
+                continue
+            price = int(round(float(price) / 1000) * 1000)
+            if price in seen_prices:
+                continue
+            seen_prices.add(price)
+            assumptions = dict(saved)
+            assumptions["purchase_price"] = price
+            result = underwrite_property(chosen, chosen, assumptions=assumptions, defaults=underwriting_defaults, strategy="auto")
+            scenario_data.append({
+                "Scenario": label, "Purchase": price, "All-in": result.get("all_in_cost"),
+                "Profit/equity": result.get("profit"), "ROI %": result.get("roi_pct"),
+                "Financial score": result.get("financial_score"), "Decision": result.get("recommendation"),
+            })
+        if scenario_data:
+            st.dataframe(pd.DataFrame(scenario_data), hide_index=True, use_container_width=True, column_config={
+                "Purchase": st.column_config.NumberColumn(format="GBP %d"),
+                "All-in": st.column_config.NumberColumn(format="GBP %d"),
+                "Profit/equity": st.column_config.NumberColumn(format="GBP %d"),
+                "ROI %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Financial score": st.column_config.NumberColumn(format="%.1f"),
+            })
+
         underwriting_form(chosen)
         st.markdown("### Cost stack at working purchase price")
         costs = pd.DataFrame([
@@ -591,7 +714,7 @@ def render_deal_room(chosen):
         ], columns=["Cost", "GBP"])
         st.dataframe(costs, hide_index=True, use_container_width=True, column_config={"GBP": st.column_config.NumberColumn(format="GBP %d")})
 
-    with tabs[2]:
+    with tabs[3]:
         c1, c2 = st.columns([1, 3])
         with c1:
             if st.button("Refresh this property's comparables", key=f"comp_{chosen['id']}", use_container_width=True):
@@ -614,19 +737,20 @@ def render_deal_room(chosen):
         for warning in chosen.get("comparable_warnings") or []:
             st.caption(f"Comparable note: {warning}")
 
-    with tabs[3]:
+    with tabs[4]:
         h1, h2, h3 = st.columns(3)
-        h1.metric("Failed auction signals", int(chosen.get("failure_count") or 0))
+        h1.metric("Failed auction attempts", int(chosen.get("failure_count") or 0))
         h2.metric("Guide reductions", int(chosen.get("price_reduction_events") or 0))
         h3.metric("Observed guide drop", pct(chosen.get("price_reduction_pct")))
-        hist = db.history_for(chosen["id"])
         if hist:
             chronological = list(reversed(hist))
             st.markdown("### Property auction timeline")
             for event in chronological:
                 when = event.get("auction_date") or str(event.get("captured_at") or "")[:10]
                 line = f"**{when}** - {event.get('status') or 'Observed'}"
-                if event.get("guide_price"):
+                if event.get("guide_text"):
+                    line += f" | {event.get('guide_text')}"
+                elif event.get("guide_price"):
                     line += f" | Guide {money(event.get('guide_price'))}"
                 if event.get("result_price"):
                     line += f" | Result {money(event.get('result_price'))}"
@@ -636,7 +760,7 @@ def render_deal_room(chosen):
         else:
             st.info("No auction-history observations stored yet. Future refreshes and historical backfill will populate this timeline.")
 
-    with tabs[4]:
+    with tabs[5]:
         pcol, lcol = st.columns(2)
         with pcol:
             st.markdown("### Planning intelligence")
@@ -654,16 +778,16 @@ def render_deal_room(chosen):
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
-            items = db.planning_items_for(chosen["id"])
-            if items:
+            if planning_items:
                 frame = pd.DataFrame([{
                     "Type": i.get("kind"), "Dataset": i.get("dataset"), "Reference": i.get("reference"),
                     "Record": i.get("name"), "Severity": i.get("severity"), "Subject": bool(i.get("likely_subject")),
                     "Distance": i.get("distance_miles"), "Source": i.get("source_url"),
-                } for i in items])
+                } for i in planning_items])
                 st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"Source": st.column_config.LinkColumn("Source"), "Distance": st.column_config.NumberColumn(format="%.2f mi")})
             else:
                 st.caption("No planning records are stored for this property. A zero count is not a clean-planning certificate.")
+
         with lcol:
             st.markdown("### Legal-pack intelligence")
             lstate = legal_state(chosen)
@@ -682,8 +806,39 @@ def render_deal_room(chosen):
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
+
+            extracted = chosen.get("legal_extracted_fields") or {}
+            if legal_state(chosen) == "REVIEWED" or any(v not in (None, "", False, 0) for v in extracted.values()):
+                st.markdown("#### Key information extracted")
+                legal_facts = [
+                    ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Not found"],
+                    ["Seller / disposal type", extracted.get("seller_type") or "Not identified"],
+                    ["Title number", extracted.get("title_number") or "Not found"],
+                    ["Company number", extracted.get("company_number") or "Not found"],
+                    ["Lease remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else "Not found"],
+                    ["Lease start", extracted.get("lease_start_date") or "Not found"],
+                    ["Ground rent", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else "Not found"],
+                    ["Service charge", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else "Not found"],
+                    ["Seller costs charged to buyer", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else "Not found"],
+                    ["Registered charge references", extracted.get("registered_charge_count") or 0],
+                    ["Arrears wording", "Detected" if extracted.get("arrears_flag") else "Not detected"],
+                    ["EWS1 / cladding wording", "Detected" if extracted.get("ews1_or_cladding_flag") else "Not detected"],
+                    ["Fire/building safety wording", "Detected" if extracted.get("fire_safety_flag") else "Not detected"],
+                    ["Completion", f"{chosen.get('legal_completion_days')} days" if chosen.get("legal_completion_days") else "Not extracted"],
+                    ["Deposit", pct(chosen.get("legal_deposit_pct")) if chosen.get("legal_deposit_pct") is not None else "Not extracted"],
+                    ["VAT wording", "Detected" if chosen.get("legal_vat_flag") else "Not detected"],
+                    ["Addendum", "Detected - verify latest" if chosen.get("legal_has_addendum") else "Not detected"],
+                ]
+                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal item", "Extracted evidence"]), hide_index=True, use_container_width=True)
+
+            contacts = chosen.get("legal_contacts") or []
+            if contacts:
+                st.markdown("#### Professional contacts in the pack")
+                st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
+
             docs = db.legal_documents_for(chosen["id"])
             if docs:
+                st.markdown("#### Legal documents")
                 frame = pd.DataFrame([{"Name": d.get("name"), "Type": d.get("doc_type"), "Access": d.get("access_status"), "URL": d.get("url")} for d in docs])
                 st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"URL": st.column_config.LinkColumn("Document")})
             uploads = st.file_uploader("Upload legal pack documents for local parsing", type=["pdf", "txt"], accept_multiple_files=True, key=f"upload_{chosen['id']}")
@@ -691,12 +846,14 @@ def render_deal_room(chosen):
                 parsed = [uploaded_document(f.name, f.getvalue()) for f in uploads]
                 save_uploaded_legal_documents(db, chosen, parsed)
                 st.rerun()
-            if chosen.get("legal_completion_days"):
-                st.caption(f"Completion: {chosen.get('legal_completion_days')} days | Deposit: {pct(chosen.get('legal_deposit_pct'))} | Lease: {chosen.get('legal_lease_years') or '-'} years")
             for flag in chosen.get("legal_risk_flags") or []:
                 st.write(f"- {flag.get('label')} (severity {flag.get('severity')}/5)")
+            st.markdown("#### Questions for your solicitor")
+            for question in solicitor_questions(chosen, legal_summary):
+                st.write(f"- {question}")
+            st.caption("Automated legal-pack analysis is triage only. The latest complete pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.")
 
-    with tabs[5]:
+    with tabs[6]:
         l1, l2, l3, l4 = st.columns(4)
         l1.metric("Nearest motorway", chosen.get("nearest_motorway") or "Pending")
         l2.metric("Nearest junction", chosen.get("nearest_junction") or "Pending")
@@ -706,6 +863,69 @@ def render_deal_room(chosen):
             st.map(pd.DataFrame([{"lat": chosen.get("latitude"), "lon": chosen.get("longitude")}]), latitude="lat", longitude="lon", zoom=12)
         else:
             st.info("Postcode coordinates not yet available.")
+
+    with tabs[7]:
+        st.markdown("### Deal workspace")
+        brief = deal_brief_markdown(chosen, story, readiness, actions)
+        st.download_button(
+            "Download one-page deal brief", brief,
+            file_name=f"deal-brief-{chosen.get('postcode') or chosen.get('id')}.md".replace(" ", "-"),
+            mime="text/markdown", use_container_width=True,
+        )
+        workspace = db.workspace_for(chosen["id"])
+        stages = ["New", "Reviewing", "Auctioneer Contacted", "Viewing", "Legal Review", "Offer Made", "Negotiating", "Bid Approved", "Won", "Lost", "Archived"]
+        w1, w2, w3 = st.columns([1.1, 2.0, 1.1])
+        with w1:
+            current_stage = workspace.get("stage") if workspace.get("stage") in stages else "New"
+            stage = st.selectbox("Stage", stages, index=stages.index(current_stage), key=f"stage_{chosen['id']}")
+        with w2:
+            next_action = st.text_input("Next action", value=workspace.get("next_action") or "", key=f"next_{chosen['id']}")
+        with w3:
+            follow_up = st.text_input("Follow-up date", value=workspace.get("follow_up_date") or "", placeholder="YYYY-MM-DD", key=f"follow_{chosen['id']}")
+        if st.button("Save deal stage", key=f"save_workspace_{chosen['id']}", type="primary"):
+            db.save_workspace(chosen["id"], stage, next_action, follow_up)
+            st.success("Deal workspace saved.")
+
+        st.markdown("### Action centre")
+        q1, q2, q3, q4 = st.columns(4)
+        if chosen.get("url"):
+            q1.link_button("Auction listing", chosen["url"], use_container_width=True)
+        else:
+            q1.caption("Auction link unavailable")
+        legal_docs = [d for d in db.legal_documents_for(chosen["id"]) if d.get("url")]
+        if legal_docs:
+            q2.link_button("Legal document", legal_docs[0]["url"], use_container_width=True)
+        else:
+            q2.caption("Legal document link pending")
+        plan_links = [i for i in planning_items if i.get("source_url")]
+        if plan_links:
+            q3.link_button("Planning record", plan_links[0]["source_url"], use_container_width=True)
+        else:
+            q3.caption("Planning record link pending")
+        if profile.get("company_number"):
+            q4.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
+        else:
+            q4.caption("Company owner not identified")
+
+        st.markdown("### Deal notes")
+        note = st.text_area("Add call, viewing, negotiation or due-diligence note", key=f"new_note_{chosen['id']}", height=100)
+        if st.button("Add note", key=f"add_note_{chosen['id']}"):
+            db.add_note(chosen["id"], note)
+            st.rerun()
+        notes = db.notes_for(chosen["id"])
+        if notes:
+            for item in notes:
+                c1, c2 = st.columns([8, 1])
+                with c1:
+                    st.markdown(f"**{str(item.get('created_at') or '')[:16].replace('T', ' ')}**")
+                    st.write(item.get("note"))
+                with c2:
+                    if st.button("Delete", key=f"del_note_{item['id']}"):
+                        db.delete_note(item["id"], chosen["id"])
+                        st.rerun()
+                st.divider()
+        else:
+            st.caption("No deal notes yet.")
 
 
 selected_id = st.session_state.get("selected_deal_id")

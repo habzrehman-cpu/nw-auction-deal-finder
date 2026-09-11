@@ -67,7 +67,7 @@ OPPORTUNITY_TERMS = re.compile(
 
 def _session(session=None):
     s = session or requests.Session()
-    s.headers.update({"User-Agent": "NW-Auction-Deal-Finder/1.5 planning due-diligence", "Accept": "application/json"})
+    s.headers.update({"User-Agent": "NW-Auction-Deal-Finder/1.7 planning due-diligence", "Accept": "application/json"})
     return s
 
 

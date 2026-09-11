@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   buyer_fee_detected REAL,
   vat_flag INTEGER DEFAULT 0,
   has_addendum INTEGER DEFAULT 0,
+  extracted_json TEXT,
+  contacts_json TEXT,
   risk_flags_json TEXT,
   methodology TEXT,
   warnings_json TEXT,
@@ -210,6 +212,22 @@ CREATE TABLE IF NOT EXISTS legal_documents (
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
 CREATE INDEX IF NOT EXISTS idx_legal_documents_property ON legal_documents(property_id);
+CREATE TABLE IF NOT EXISTS deal_workspace (
+  property_id INTEGER PRIMARY KEY,
+  stage TEXT NOT NULL DEFAULT 'New',
+  next_action TEXT,
+  follow_up_date TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
+CREATE TABLE IF NOT EXISTS deal_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  property_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  note TEXT NOT NULL,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
+CREATE INDEX IF NOT EXISTS idx_deal_notes_property ON deal_notes(property_id);
 CREATE TABLE IF NOT EXISTS shortlist (
   property_id INTEGER PRIMARY KEY,
   added_at TEXT NOT NULL,
@@ -231,6 +249,12 @@ PROPERTY_MIGRATIONS = {
     "motorway_distance_kind": "TEXT",
     "motorway_updated_at": "TEXT",
 }
+
+LEGAL_SUMMARY_MIGRATIONS = {
+    "extracted_json": "TEXT",
+    "contacts_json": "TEXT",
+}
+
 
 UNDERWRITING_MIGRATIONS = {
     "purchase_vat_pct": "REAL",
@@ -261,6 +285,10 @@ class Database:
             for name, sql_type in PROPERTY_MIGRATIONS.items():
                 if name not in existing:
                     con.execute(f"ALTER TABLE properties ADD COLUMN {name} {sql_type}")
+            legal_existing = {r[1] for r in con.execute("PRAGMA table_info(legal_summaries)").fetchall()}
+            for name, sql_type in LEGAL_SUMMARY_MIGRATIONS.items():
+                if name not in legal_existing:
+                    con.execute(f"ALTER TABLE legal_summaries ADD COLUMN {name} {sql_type}")
             uw_existing = {r[1] for r in con.execute("PRAGMA table_info(underwriting_overrides)").fetchall()}
             for name, sql_type in UNDERWRITING_MIGRATIONS.items():
                 if name not in uw_existing:
@@ -724,6 +752,14 @@ class Database:
             out["risk_flags"] = json.loads(out.get("risk_flags_json") or "[]")
         except (TypeError, json.JSONDecodeError):
             out["risk_flags"] = []
+        try:
+            out["extracted_fields"] = json.loads(out.get("extracted_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            out["extracted_fields"] = {}
+        try:
+            out["contacts"] = json.loads(out.get("contacts_json") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            out["contacts"] = []
         return out
 
     def legal_summary_map(self):
@@ -739,6 +775,14 @@ class Database:
                 row["risk_flags"] = json.loads(row.get("risk_flags_json") or "[]")
             except (TypeError, json.JSONDecodeError):
                 row["risk_flags"] = []
+            try:
+                row["extracted_fields"] = json.loads(row.get("extracted_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                row["extracted_fields"] = {}
+            try:
+                row["contacts"] = json.loads(row.get("contacts_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                row["contacts"] = []
             out[row["property_id"]] = row
         return out
 
@@ -781,19 +825,21 @@ class Database:
             con.execute(
                 """INSERT INTO legal_summaries(
                 property_id,provider,status,updated_at,risk_score,document_count,parsed_document_count,completion_days,deposit_pct,
-                lease_years,buyer_fee_detected,vat_flag,has_addendum,risk_flags_json,methodology,warnings_json,attribution,error
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,methodology,warnings_json,attribution,error
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(property_id) DO UPDATE SET
                 provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,risk_score=excluded.risk_score,
                 document_count=excluded.document_count,parsed_document_count=excluded.parsed_document_count,
                 completion_days=excluded.completion_days,deposit_pct=excluded.deposit_pct,lease_years=excluded.lease_years,
                 buyer_fee_detected=excluded.buyer_fee_detected,vat_flag=excluded.vat_flag,has_addendum=excluded.has_addendum,
-                risk_flags_json=excluded.risk_flags_json,methodology=excluded.methodology,warnings_json=excluded.warnings_json,
+                extracted_json=excluded.extracted_json,contacts_json=excluded.contacts_json,risk_flags_json=excluded.risk_flags_json,methodology=excluded.methodology,warnings_json=excluded.warnings_json,
                 attribution=excluded.attribution,error=excluded.error""",
                 (property_id, summary.get("provider"), summary.get("status") or "not-found", now, summary.get("risk_score") or 0,
                  summary.get("document_count") or 0, summary.get("parsed_document_count") or 0, summary.get("completion_days"),
                  summary.get("deposit_pct"), summary.get("lease_years"), summary.get("buyer_fee_detected"),
                  int(bool(summary.get("vat_flag"))), int(bool(summary.get("has_addendum"))),
+                 json.dumps(summary.get("extracted_fields") or {}, ensure_ascii=False),
+                 json.dumps(summary.get("contacts") or [], ensure_ascii=False),
                  json.dumps(summary.get("risk_flags") or [], ensure_ascii=False), summary.get("methodology"),
                  json.dumps(summary.get("warnings") or [], ensure_ascii=False), summary.get("attribution"), summary.get("error")),
             )
@@ -807,6 +853,45 @@ class Database:
                 ON CONFLICT(property_id) DO UPDATE SET status='error',updated_at=excluded.updated_at,error=excluded.error""",
                 (property_id, "Auctioneer legal pack", "error", now, str(error)[:1000]),
             )
+            con.commit()
+
+    def workspace_for(self, property_id):
+        with closing(self.connect()) as con:
+            row = con.execute("SELECT * FROM deal_workspace WHERE property_id=?", (property_id,)).fetchone()
+        return dict(row) if row else {"property_id": property_id, "stage": "New", "next_action": "", "follow_up_date": ""}
+
+    def save_workspace(self, property_id, stage="New", next_action="", follow_up_date=""):
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO deal_workspace(property_id,stage,next_action,follow_up_date,updated_at) VALUES(?,?,?,?,?)
+                ON CONFLICT(property_id) DO UPDATE SET stage=excluded.stage,next_action=excluded.next_action,
+                follow_up_date=excluded.follow_up_date,updated_at=excluded.updated_at""",
+                (property_id, stage or "New", next_action or "", follow_up_date or "", now),
+            )
+            con.commit()
+
+    def notes_for(self, property_id):
+        with closing(self.connect()) as con:
+            return [dict(r) for r in con.execute(
+                "SELECT * FROM deal_notes WHERE property_id=? ORDER BY created_at DESC, id DESC", (property_id,)
+            ).fetchall()]
+
+    def add_note(self, property_id, note):
+        note = str(note or "").strip()
+        if not note:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute("INSERT INTO deal_notes(property_id,created_at,note) VALUES(?,?,?)", (property_id, now, note[:8000]))
+            con.commit()
+
+    def delete_note(self, note_id, property_id=None):
+        with closing(self.connect()) as con:
+            if property_id is None:
+                con.execute("DELETE FROM deal_notes WHERE id=?", (note_id,))
+            else:
+                con.execute("DELETE FROM deal_notes WHERE id=? AND property_id=?", (note_id, property_id))
             con.commit()
 
     def start_run(self, source):

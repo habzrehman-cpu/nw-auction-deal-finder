@@ -1,6 +1,6 @@
 # North West Property Auction Deal Finder
 
-**Version 1.6.0** turns the tracker into an auction-site-style acquisition platform: browse property cards with images and high-level deal numbers, switch between Residential and Commercial, let the system rank the strongest opportunities first, then open a full Deal Room for underwriting, comparables, auction history, planning, legal-pack and location intelligence.
+**Version 1.7.0** builds on the auction-style v1.6 interface and turns the Deal Room into an auction-site-style acquisition platform: browse property cards with images and high-level deal numbers, switch between Residential and Commercial, let the system rank the strongest opportunities first, then open a full Deal Room for underwriting, comparables, auction history, planning, legal-pack and location intelligence.
 
 The public auction sources currently targeted are:
 
@@ -10,6 +10,57 @@ The public auction sources currently targeted are:
 - Auction House North West **and Auction House Manchester** (kept under the Auction House NW source label for database continuity)
 
 It is designed for **on-demand refresh**, not scheduled alerts. Press **Refresh live data** and the backend fetches the current public auction pages, filters to North West England, stores them in SQLite, follows public lot-detail pages when enrichment is due, geocodes the property postcode, measures motorway access, records price/status/date changes, refreshes priority comparable evidence, screens official planning data, discovers public legal-pack material, and recalculates a transparent deal score and underwriting decision.
+
+
+## Version 1.7 - acquisition intelligence workspace
+
+Version 1.7 is the first build aimed at making the tool a one-stop professional deal-sourcing workspace rather than only an auction search engine.
+
+### Vendor Story & Motivation
+
+Every Deal Room now assembles an evidence-led seller story from auction history, planning records, listing facts and any parsed legal evidence. It shows **Vendor Motivation**, a separate **Buyer Leverage** score and a story-confidence percentage.
+
+The story deliberately separates:
+
+- **Confirmed evidence** - facts actually captured from auction, planning or legal sources.
+- **Interpretation** - negotiation hypotheses such as increasing price flexibility or holding-cost pressure. These are clearly labelled as inference rather than fact.
+- **Timeline** - auction attempts, guide/status changes and likely subject-property planning events in chronological order.
+
+### Structured legal-pack extraction
+
+When text is available from a public pack or a user-uploaded PDF/TXT file, the legal engine now attempts to extract and display:
+
+- registered proprietor / seller name
+- seller/disposal context such as receiver, mortgagee, administrator, liquidator, executor/probate or fund disposal
+- title number and company number where stated
+- lease start, term and estimated years remaining
+- ground-rent and service-charge amounts where clearly stated
+- seller costs charged to the buyer
+- registered-charge references
+- arrears wording
+- EWS1/cladding and fire/building-safety wording
+- completion period, deposit, VAT and addendum signals
+- professional/business contacts appearing in the legal evidence, such as seller solicitor, auctioneer or managing agent
+
+The app does **not** search for private personal contact details outside the supplied/public documents. Owner/proprietor names are surfaced only where the legal evidence contains them; professional contact details are surfaced only when present in that evidence.
+
+The legal screen also generates a tailored **Questions for your solicitor** checklist from the issues detected. Automated extraction remains legal triage, not a substitute for the buyer's solicitor reviewing the latest complete pack and addendum.
+
+### Deal Readiness
+
+The Overview now includes an acquisition-readiness meter and explicit bid blockers. It checks auction status, detail enrichment, history, comparables, valuation, planning, legal pack, works/capex, tenure/lease and location evidence. Missing legal evidence, a short lease, weak valuation evidence or a required-but-zero works budget remains visible as an unresolved blocker.
+
+### Financial scenario compare
+
+The Financials tab compares the current assumptions at the opening offer, 90% of guide, guide price and calculated maximum bid where those values are available. It shows purchase price, all-in cost, profit/equity, ROI, financial score and recommendation side by side.
+
+### Deal Workspace / mini CRM
+
+Each property now has a persistent local workspace with a deal stage, next action, follow-up date and timestamped notes. Current stages include New, Reviewing, Auctioneer Contacted, Viewing, Legal Review, Offer Made, Negotiating, Bid Approved, Won, Lost and Archived.
+
+The workspace also provides an **Action Centre** linking directly to the auction listing, a discovered legal document, planning record and Companies House when a company number has been extracted.
+
+A **Download one-page deal brief** button creates a portable Markdown acquisition brief containing headline economics, seller story, bid blockers and next actions.
 
 
 ## Version 1.6 - professional sourcing workflow
@@ -31,14 +82,16 @@ Each property card is designed as a fast sourcing snapshot: property image, addr
 
 ### Deal Room
 
-Click **View deal** to open the full acquisition record. The Deal Room separates information into:
+Click **View deal** to open the full acquisition record. The Deal Room now separates information into:
 
 1. Overview
-2. Financials
-3. Comparables
-4. Auction history
-5. Planning & legal
-6. Location
+2. Vendor story
+3. Financials
+4. Comparables
+5. Auction history
+6. Planning & legal
+7. Location
+8. Workspace
 
 The screen highlights both **why the deal may be attractive** and **what still needs checking**. Missing planning/legal evidence is displayed as **UNKNOWN**, never as zero risk.
 
@@ -75,7 +128,7 @@ Motorway-junction enrichment now tries multiple public Overpass endpoints and ha
 
 ### Property images
 
-The detail-page enrichment captures the auctioneer's representative social/gallery image URL where publicly exposed. Existing databases will treat missing images as due for detail enrichment, so images will progressively populate after the first v1.6 live refresh.
+The detail-page enrichment captures the auctioneer's representative social/gallery image URL where publicly exposed. Existing databases will treat missing images as due for detail enrichment, so images will progressively populate after the first upgraded live refresh.
 
 ## Windows quick start
 
@@ -92,7 +145,7 @@ The first run installs the Python dependencies. The SQLite database `auction_tra
 
 If an earlier version is already deployed from GitHub:
 
-1. Extract the v1.6 ZIP locally.
+1. Extract the latest ZIP locally.
 2. Upload/replace the project files in the **root** of the existing GitHub repository (keep `app.py`, `requirements.txt` and `tracker/` at repository root).
 3. Commit the changes to the `main` branch.
 4. Streamlit Community Cloud normally detects the GitHub commit and redeploys automatically.
