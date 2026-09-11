@@ -20,6 +20,7 @@ from tracker.diligence import (
     save_uploaded_legal_documents,
 )
 from tracker.legal import uploaded_document, uploaded_documents
+from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status
 from tracker.cloud import SupabaseStorage, config_from_mapping
 from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
@@ -204,7 +205,7 @@ def browse_rank(row):
     # Unknown evidence must never improve a rank simply because its numeric risk is
     # currently blank/zero. Keep good sourcing leads visible, but slightly penalise
     # incomplete DD and zero-works assumptions until the evidence is supplied.
-    if legal_state(row) != "REVIEWED":
+    if legal_state(row) != "VERIFIED":
         value -= 0.35
     if planning_state(row) != "SCREENED":
         value -= 0.15
@@ -222,10 +223,17 @@ def browse_rank(row):
 
 def legal_state(row):
     status = str(row.get("legal_status") or "").lower()
-    if status in {"parsed", "reviewed"}:
-        return "REVIEWED"
-    if status == "links-only":
-        return "LINKS ONLY"
+    policy = str(row.get("legal_evidence_policy_version") or "")
+    verified = int(row.get("legal_verified_document_count") or 0)
+    # Any old pre-firewall extraction is deliberately downgraded until refreshed.
+    if status in {"parsed", "reviewed"} and policy != EVIDENCE_POLICY_VERSION:
+        return "UNVERIFIED"
+    if status == "verified" and verified > 0 and policy == EVIDENCE_POLICY_VERSION:
+        return "VERIFIED"
+    if status == "verified-no-text" and verified > 0:
+        return "VERIFIED NO TEXT"
+    if status in {"candidates-only", "links-only"}:
+        return "CANDIDATES ONLY"
     if status == "error":
         return "ERROR"
     return "UNKNOWN"
@@ -432,6 +440,9 @@ for row in rows:
     })
     planning = planning_map.get(row["id"], {})
     legal = legal_map.get(row["id"], {})
+    legal_current = str(legal.get("evidence_policy_version") or "") == EVIDENCE_POLICY_VERSION
+    legal_fields_current = (legal.get("extracted_fields") or {}) if legal_current else {}
+    legal_field_sources = (legal_fields_current.get("field_sources") or {}) if isinstance(legal_fields_current, dict) else {}
     flags = planning_flags_map.get(row["id"], {})
     row.update({
         "planning_provider": planning.get("provider"),
@@ -448,24 +459,29 @@ for row in rows:
         "legal_provider": legal.get("provider"),
         "legal_status": legal.get("status"),
         "legal_updated_at": legal.get("updated_at"),
-        "legal_risk_score": float(legal.get("risk_score") or 0) if legal and str(legal.get("status") or "").lower() in {"parsed", "reviewed"} else None,
+        "legal_risk_score": float(legal.get("risk_score") or 0) if legal and str(legal.get("status") or "").lower() == "verified" and str(legal.get("evidence_policy_version") or "") == EVIDENCE_POLICY_VERSION else None,
         "legal_document_count": int(legal.get("document_count") or 0) if legal else 0,
+        "legal_candidate_document_count": int(legal.get("candidate_document_count") if legal.get("candidate_document_count") is not None else (legal.get("document_count") or 0)) if legal else 0,
+        "legal_verified_document_count": int(legal.get("verified_document_count") or 0) if legal else 0,
         "legal_parsed_document_count": int(legal.get("parsed_document_count") or 0) if legal else 0,
-        "legal_completion_days": legal.get("completion_days"),
-        "legal_deposit_pct": legal.get("deposit_pct"),
-        "legal_lease_years": legal.get("lease_years"),
-        "legal_buyer_fee_detected": legal.get("buyer_fee_detected"),
-        "legal_vat_flag": bool(legal.get("vat_flag")) if legal else False,
-        "legal_has_addendum": bool(legal.get("has_addendum")) if legal else False,
-        "legal_risk_flags": legal.get("risk_flags") or [],
+        "legal_auctioneer_evidence_count": int(legal.get("auctioneer_evidence_count") or 0) if legal else 0,
+        "legal_verification_status": legal.get("verification_status"),
+        "legal_evidence_policy_version": legal.get("evidence_policy_version"),
+        "legal_completion_days": legal.get("completion_days") if legal_current else None,
+        "legal_deposit_pct": legal.get("deposit_pct") if legal_current else None,
+        "legal_lease_years": legal.get("lease_years") if legal_current and legal_field_sources.get("lease_years_remaining") == "verified legal document" else None,
+        "legal_buyer_fee_detected": legal.get("buyer_fee_detected") if legal_current else None,
+        "legal_vat_flag": bool(legal.get("vat_flag")) if legal_current else False,
+        "legal_has_addendum": bool(legal.get("has_addendum")) if legal_current else False,
+        "legal_risk_flags": (legal.get("risk_flags") or []) if legal_current else [],
         "legal_warnings": legal.get("warnings") or [],
         "legal_error": legal.get("error"),
-        "legal_extracted_fields": legal.get("extracted_fields") or {},
-        "legal_contacts": legal.get("contacts") or [],
-        "legal_evidence": legal.get("evidence") or [],
-        "legal_pack_completeness_pct": int(legal.get("pack_completeness_pct") or 0) if legal else 0,
-        "legal_missing_components": legal.get("missing_components") or [],
-        "legal_available_components": legal.get("available_components") or [],
+        "legal_extracted_fields": legal_fields_current if isinstance(legal_fields_current, dict) else {},
+        "legal_contacts": (legal.get("contacts") or []) if legal_current else [],
+        "legal_evidence": (legal.get("evidence") or []) if legal_current else [],
+        "legal_pack_completeness_pct": int(legal.get("pack_completeness_pct") or 0) if legal_current else 0,
+        "legal_missing_components": (legal.get("missing_components") or []) if legal_current else [],
+        "legal_available_components": (legal.get("available_components") or []) if legal_current else [],
         "legal_pack_changed": bool(legal.get("pack_changed")) if legal else False,
         "legal_pack_change": legal.get("pack_change") or {},
     })
@@ -475,6 +491,9 @@ for row in rows:
         row["tenure"] = "Leasehold"
         row["effective_lease_years"] = row.get("legal_lease_years")
     company = company_map.get(row["id"], {})
+    legal_identity_ok = bool((row.get("legal_extracted_fields") or {}).get("company_identity_verified")) and str(row.get("legal_status") or "").lower() == "verified"
+    if not legal_identity_ok:
+        company = {}
     row.update({
         "company_intelligence_status": company.get("status"),
         "company_number_verified": company.get("company_number"),
@@ -525,8 +544,9 @@ def render_badges(row):
         tags.append(f'<span class="badge badge-risk">{label}</span>')
     if row.get("max_bid_provisional"):
         tags.append('<span class="badge badge-risk">Max buy provisional</span>')
-    if legal_state(row) == "UNKNOWN":
-        tags.append('<span class="badge badge-risk">Legal not reviewed</span>')
+    if legal_state(row) != "VERIFIED":
+        label = "Legal unverified" if legal_state(row) in {"CANDIDATES ONLY", "UNVERIFIED", "VERIFIED NO TEXT"} else "Legal not reviewed"
+        tags.append(f'<span class="badge badge-risk">{label}</span>')
     st.markdown("".join(tags), unsafe_allow_html=True)
 
 
@@ -664,15 +684,34 @@ def render_deal_room(chosen):
     # Assemble evidence-led intelligence for this property only when its Deal Room is opened.
     hist = db.history_for(chosen["id"])
     planning_items = db.planning_items_for(chosen["id"])
-    legal_summary = db.legal_summary_for(chosen["id"])
+    raw_legal_summary = db.legal_summary_for(chosen["id"])
+    legal_summary = raw_legal_summary
+    if raw_legal_summary and str(raw_legal_summary.get("evidence_policy_version") or "") != EVIDENCE_POLICY_VERSION:
+        # Pre-firewall extractions are deliberately quarantined. They can remain in
+        # storage for audit/history but cannot drive the live deal decision or seller story.
+        legal_summary = dict(raw_legal_summary)
+        legal_summary.update({
+            "status": "candidates-only" if raw_legal_summary.get("document_count") else "not-found",
+            "risk_score": 0, "verified_document_count": 0, "parsed_document_count": 0,
+            "pack_completeness_pct": 0, "extracted_fields": {}, "contacts": [], "evidence": [],
+            "risk_flags": [],
+        })
+        legal_summary["warnings"] = list(dict.fromkeys((raw_legal_summary.get("warnings") or []) + [
+            "Saved legal extraction predates the v1.10.1 evidence firewall and is quarantined until the legal pack is refreshed."
+        ]))
     company_summary = db.company_intelligence_for(chosen["id"])
-    chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or chosen.get("legal_extracted_fields") or {}
-    chosen["legal_contacts"] = legal_summary.get("contacts") or chosen.get("legal_contacts") or []
-    chosen["legal_evidence"] = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
-    chosen["legal_pack_completeness_pct"] = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
-    chosen["legal_missing_components"] = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
-    chosen["legal_available_components"] = legal_summary.get("available_components") or chosen.get("legal_available_components") or []
-    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items, company_summary)
+    chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or {}
+    legal_identity_verified = bool(chosen["legal_extracted_fields"].get("company_identity_verified")) and str(legal_summary.get("status") or "").lower() == "verified"
+    # Quarantine any company lookup created from pre-firewall/generic website text.
+    # It remains in storage for audit, but cannot influence the seller story until a
+    # verified legal document establishes the seller/company identity.
+    effective_company_summary = company_summary if legal_identity_verified else {}
+    chosen["legal_contacts"] = legal_summary.get("contacts") or []
+    chosen["legal_evidence"] = legal_summary.get("evidence") or []
+    chosen["legal_pack_completeness_pct"] = int(legal_summary.get("pack_completeness_pct") or 0)
+    chosen["legal_missing_components"] = legal_summary.get("missing_components") or []
+    chosen["legal_available_components"] = legal_summary.get("available_components") or []
+    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items, effective_company_summary)
     readiness = deal_readiness(chosen)
     actions = next_actions(chosen, story)
     profile = story.get("seller_profile") or {}
@@ -752,8 +791,8 @@ def render_deal_room(chosen):
             concerns = []
             concerns.extend(chosen.get("underwriting_warnings") or [])
             concerns.extend(chosen.get("warnings") or [])
-            if legal_state(chosen) != "REVIEWED":
-                concerns.insert(0, "Legal pack has not been parsed/reviewed: legal risk remains UNKNOWN.")
+            if legal_state(chosen) != "VERIFIED":
+                concerns.insert(0, "Authoritative lot-bound legal documents have not been verified: legal risk remains UNKNOWN.")
             if planning_state(chosen) != "SCREENED":
                 concerns.insert(0, "Planning screen is incomplete: planning risk remains UNKNOWN.")
             if not concerns:
@@ -817,9 +856,11 @@ def render_deal_room(chosen):
         st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
 
         st.markdown("### Ownership / company intelligence")
-        company_number = profile.get("company_number") or company_summary.get("company_number")
-        seller_name = profile.get("seller_name") or company_summary.get("company_name")
-        if companies_house_api_key and (company_number or seller_name):
+        company_number = profile.get("company_number") or effective_company_summary.get("company_number")
+        seller_name = profile.get("seller_name") or effective_company_summary.get("company_name")
+        if company_summary and not legal_identity_verified:
+            st.warning("Stored Companies House intelligence is quarantined because the seller/company identity was not established by verified lot-bound legal evidence. Refresh the legal pack after the evidence-firewall upgrade.")
+        if companies_house_api_key and legal_identity_verified and (company_number or seller_name):
             if st.button("Refresh official Companies House intelligence", key=f"ch_refresh_{chosen['id']}", use_container_width=True):
                 try:
                     with st.spinner("Checking Companies House profile, charges, insolvency, officers and filings..."):
@@ -829,35 +870,35 @@ def render_deal_room(chosen):
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Companies House refresh failed: {exc}")
-        elif company_number or (seller_name and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I)):
+        elif legal_identity_verified and (company_number or (seller_name and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))):
             st.info("Corporate seller identified. Add a free Companies House API key in Streamlit Secrets to enrich company status, charges, insolvency, directors, PSCs and filings automatically.")
 
-        if company_summary.get("status") == "ok":
+        if effective_company_summary.get("status") == "ok":
             ci1, ci2, ci3, ci4 = st.columns(4)
-            ci1.metric("Company status", company_summary.get("company_status") or "Unknown")
-            ci2.metric("Corporate pressure", f"{float(company_summary.get('corporate_pressure_score') or 0):.1f}/10", delta=company_summary.get("corporate_pressure_label"))
-            ci3.metric("Outstanding charges", int(company_summary.get("outstanding_charge_count") or 0))
-            ci4.metric("Insolvency cases", int(company_summary.get("insolvency_case_count") or 0))
+            ci1.metric("Company status", effective_company_summary.get("company_status") or "Unknown")
+            ci2.metric("Corporate pressure", f"{float(effective_company_summary.get('corporate_pressure_score') or 0):.1f}/10", delta=effective_company_summary.get("corporate_pressure_label"))
+            ci3.metric("Outstanding charges", int(effective_company_summary.get("outstanding_charge_count") or 0))
+            ci4.metric("Insolvency cases", int(effective_company_summary.get("insolvency_case_count") or 0))
             company_rows = [
-                ["Verified company", company_summary.get("company_name") or "-"],
-                ["Company number", company_summary.get("company_number") or "-"],
-                ["Registered office", company_summary.get("registered_office") or "-"],
-                ["Incorporated", company_summary.get("incorporation_date") or "-"],
-                ["Accounts overdue", "Yes" if company_summary.get("accounts_overdue") else "No"],
-                ["Confirmation statement overdue", "Yes" if company_summary.get("confirmation_overdue") else "No"],
-                ["SIC codes", ", ".join(company_summary.get("sic_codes") or []) or "-"],
+                ["Verified company", effective_company_summary.get("company_name") or "-"],
+                ["Company number", effective_company_summary.get("company_number") or "-"],
+                ["Registered office", effective_company_summary.get("registered_office") or "-"],
+                ["Incorporated", effective_company_summary.get("incorporation_date") or "-"],
+                ["Accounts overdue", "Yes" if effective_company_summary.get("accounts_overdue") else "No"],
+                ["Confirmation statement overdue", "Yes" if effective_company_summary.get("confirmation_overdue") else "No"],
+                ["SIC codes", ", ".join(effective_company_summary.get("sic_codes") or []) or "-"],
             ]
             st.dataframe(pd.DataFrame(company_rows, columns=["Corporate fact", "Official record"]), hide_index=True, use_container_width=True)
-            reasons = company_summary.get("corporate_pressure_reasons") or []
+            reasons = effective_company_summary.get("corporate_pressure_reasons") or []
             if reasons:
                 with st.expander("Corporate pressure evidence"):
                     for reason in reasons:
                         st.write(f"- {reason}")
                     st.caption("Outstanding charges show secured financing but are not treated as proof of distress on their own.")
-            directors = company_summary.get("active_directors") or []
-            pscs = company_summary.get("persons_with_significant_control") or []
-            charges = company_summary.get("charges") or []
-            filings = company_summary.get("recent_filings") or []
+            directors = effective_company_summary.get("active_directors") or []
+            pscs = effective_company_summary.get("persons_with_significant_control") or []
+            charges = effective_company_summary.get("charges") or []
+            filings = effective_company_summary.get("recent_filings") or []
             if directors:
                 with st.expander("Active directors"):
                     st.dataframe(pd.DataFrame(directors), hide_index=True, use_container_width=True)
@@ -879,13 +920,13 @@ def render_deal_room(chosen):
             if filings:
                 with st.expander("Recent Companies House filings"):
                     st.dataframe(pd.DataFrame(filings[:15]), hide_index=True, use_container_width=True)
-        elif company_summary.get("status") == "unresolved":
+        elif effective_company_summary.get("status") == "unresolved":
             st.warning("A corporate seller name was found but the Companies House match was not definitive, so the app has not guessed the company identity.")
-            candidates = (company_summary.get("resolution") or {}).get("candidates") or []
+            candidates = (effective_company_summary.get("resolution") or {}).get("candidates") or []
             if candidates:
                 st.dataframe(pd.DataFrame(candidates), hide_index=True, use_container_width=True)
-        elif company_summary.get("status") == "error":
-            st.warning(f"Companies House intelligence needs refreshing: {company_summary.get('error') or 'last lookup failed'}")
+        elif effective_company_summary.get("status") == "error":
+            st.warning(f"Companies House intelligence needs refreshing: {effective_company_summary.get('error') or 'last lookup failed'}")
 
         fact_col, inference_col = st.columns(2)
         with fact_col:
@@ -1058,14 +1099,18 @@ def render_deal_room(chosen):
         with lcol:
             st.markdown("### Legal-pack intelligence")
             lstate = legal_state(chosen)
-            if lstate == "REVIEWED":
-                st.success(f"REVIEWED | Known legal risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
-            elif lstate == "LINKS ONLY":
-                st.warning("Legal links found but documents not parsed. Risk is UNKNOWN.")
+            if lstate == "VERIFIED":
+                st.success(f"VERIFIED LEGAL EVIDENCE | Known legal risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
+            elif lstate == "VERIFIED NO TEXT":
+                st.warning("Lot-bound legal documents were verified, but text could not be extracted. Risk remains UNKNOWN until the originals are reviewed.")
+            elif lstate == "CANDIDATES ONLY":
+                st.warning("LEGAL PACK NOT VERIFIED | Candidate legal links were found, but no authoritative lot-bound legal documents passed the evidence firewall. Risk is UNKNOWN.")
+            elif lstate == "UNVERIFIED":
+                st.warning("LEGAL EVIDENCE NEEDS RE-VERIFYING | This saved extraction predates the v1.10.1 evidence firewall. Refresh the legal pack before relying on it.")
             elif lstate == "ERROR":
                 st.error("Legal-pack check failed. Risk is UNKNOWN.")
             else:
-                st.warning("Legal pack not reviewed. Risk is UNKNOWN and bid approval is blocked.")
+                st.warning("Legal pack not verified. Risk is UNKNOWN and bid approval is blocked.")
             if st.button("Fetch / refresh legal pack", key=f"legal_{chosen['id']}", use_container_width=True):
                 try:
                     with st.spinner("Checking legal-pack links and permitted/authenticated sources..."):
@@ -1084,10 +1129,16 @@ def render_deal_room(chosen):
             legal_evidence = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
             completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
             miss = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
-            lm1, lm2, lm3 = st.columns(3)
+            lm1, lm2, lm3, lm4 = st.columns(4)
             lm1.metric("Pack completeness", f"{completeness}%")
-            lm2.metric("Documents found", int(legal_summary.get("document_count") or chosen.get("legal_document_count") or 0))
-            lm3.metric("Documents parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
+            _candidate_metric = legal_summary.get("candidate_document_count")
+            if _candidate_metric is None:
+                _candidate_metric = chosen.get("legal_candidate_document_count")
+            if _candidate_metric is None:
+                _candidate_metric = chosen.get("legal_document_count") or 0
+            lm2.metric("Unverified candidates", int(_candidate_metric or 0))
+            lm3.metric("Verified legal docs", int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0))
+            lm4.metric("Verified docs parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
             if miss:
                 st.warning("Missing / not yet evidenced: " + ", ".join(miss))
             legal_warnings = legal_summary.get("warnings") or chosen.get("legal_warnings") or []
@@ -1110,7 +1161,7 @@ def render_deal_room(chosen):
                 if change_bits:
                     st.caption(" | ".join(change_bits))
 
-            if legal_state(chosen) == "REVIEWED" or any(v not in (None, "", False, 0) for v in extracted.values()):
+            if legal_state(chosen) == "VERIFIED" or any(v not in (None, "", False, 0) for v in extracted.values() if not isinstance(v, dict)):
                 st.markdown("#### Key information extracted")
                 legal_facts = [
                     ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Not found"],
@@ -1143,7 +1194,29 @@ def render_deal_room(chosen):
                     ["VAT wording", "Detected" if chosen.get("legal_vat_flag") else "Not detected"],
                     ["Addendum", "Detected - verify latest" if chosen.get("legal_has_addendum") else "Not detected"],
                 ]
-                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal item", "Extracted evidence"]), hide_index=True, use_container_width=True)
+                field_sources = extracted.get("field_sources") or {}
+                source_key_by_label = {
+                    "Registered proprietor / seller": "seller_name" if extracted.get("seller_name") else "proprietor_name",
+                    "Seller / disposal type": "seller_type", "Title number": "title_number",
+                    "Company number": "company_number", "Registered office": "registered_office",
+                    "Title price paid": "title_price_paid", "Title price date": "title_price_paid_date",
+                    "Lease remaining": "lease_years_remaining", "Lease start": "lease_start_date",
+                    "Ground rent": "ground_rent_amount", "Service charge": "service_charge_amount",
+                    "Seller costs charged to buyer": "seller_costs_amount", "Tenancy / occupation": "tenancy_type",
+                    "Passing rent": "tenancy_rent_amount", "Tenancy end / expiry": "tenancy_end_date",
+                    "Reserve / sinking fund wording": "reserve_fund_flag", "Section 20 / major works wording": "section20_or_major_works_flag",
+                    "Assignment restriction wording": "assignment_restriction_flag", "Rights / easements wording": "rights_easements_flag",
+                    "Restrictive covenant wording": "restrictive_covenant_flag", "Overage / clawback wording": "overage_clawback_flag",
+                    "Registered charge references": "registered_charge_count", "Arrears wording": "arrears_flag",
+                    "EWS1 / cladding wording": "ews1_or_cladding_flag", "Fire/building safety wording": "fire_safety_flag",
+                }
+                for fact in legal_facts:
+                    key = source_key_by_label.get(fact[0])
+                    source = field_sources.get(key) if key else None
+                    if not source and fact[0] in {"Completion", "Deposit", "VAT wording", "Addendum"} and legal_state(chosen) == "VERIFIED":
+                        source = "verified legal document"
+                    fact.append(source or "not verified")
+                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal item", "Extracted evidence", "Source tier"]), hide_index=True, use_container_width=True)
 
             if legal_evidence:
                 st.markdown("#### Evidence trail")
@@ -1164,7 +1237,10 @@ def render_deal_room(chosen):
             if docs:
                 st.markdown("#### Legal documents")
                 frame = pd.DataFrame([{
-                    "Name": d.get("name"), "Type": d.get("doc_type"), "Access": d.get("access_status"),
+                    "Name": d.get("name"), "Type": d.get("doc_type"),
+                    "Evidence tier": (d.get("metadata") or {}).get("evidence_tier") or "legacy/unverified",
+                    "Verified for lot": "Yes" if (d.get("metadata") or {}).get("verified_for_lot") else "No",
+                    "Access": d.get("access_status"),
                     "Cloud": "Stored" if (d.get("metadata") or {}).get("cloud_storage_path") else "-", "URL": d.get("url")
                 } for d in docs])
                 st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"URL": st.column_config.LinkColumn("Document")})

@@ -102,12 +102,28 @@ def save_uploaded_legal_documents(db, row, uploaded_docs):
 
 
 def refresh_property_company(db, row, api_key: str, session=None):
-    """Refresh Companies House intelligence for a property where corporate seller evidence exists."""
+    """Refresh Companies House intelligence only from a verified legal seller identity."""
     legal = db.legal_summary_for(row["id"])
     extracted = legal.get("extracted_fields") or {}
-    company_number = str(extracted.get("company_number") or "").strip()
+    field_sources = extracted.get("field_sources") or {}
+    identity_verified = bool(extracted.get("company_identity_verified")) and str(legal.get("status") or "").lower() == "verified"
+    if not identity_verified:
+        summary = {
+            "provider": "Companies House Public Data API",
+            "status": "unresolved",
+            "company_number": None,
+            "company_name": None,
+            "resolution": {},
+            "error": "No verified corporate seller identity is available from lot-bound legal evidence. Companies House lookup was not run.",
+        }
+        db.save_company_intelligence(row["id"], summary)
+        return summary
+    company_number = str(extracted.get("company_number") or "").strip() if field_sources.get("company_number") == "verified legal document" else ""
     seller_name = str(extracted.get("seller_name") or extracted.get("proprietor_name") or "").strip()
-    registered_office = str(extracted.get("registered_office") or "").strip()
+    seller_source = field_sources.get("seller_name") or field_sources.get("proprietor_name")
+    if seller_source != "verified legal document":
+        seller_name = ""
+    registered_office = str(extracted.get("registered_office") or "").strip() if field_sources.get("registered_office") == "verified legal document" else ""
     client = CompaniesHouseClient(api_key, session=session)
     resolution = None
     if not company_number and seller_name:
@@ -144,9 +160,16 @@ def refresh_due_company_intelligence(db, api_key: str, rows=None, max_companies=
     for row in rows:
         legal = db.legal_summary_for(row["id"])
         extracted = legal.get("extracted_fields") or {}
+        field_sources = extracted.get("field_sources") or {}
+        if str(legal.get("status") or "").lower() != "verified" or not extracted.get("company_identity_verified"):
+            continue
         seller_name = str(extracted.get("seller_name") or extracted.get("proprietor_name") or "")
         company_number = str(extracted.get("company_number") or "")
-        companyish = bool(company_number) or bool(re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))
+        companyish = (
+            bool(company_number and field_sources.get("company_number") == "verified legal document")
+            or bool(seller_name and (field_sources.get("seller_name") == "verified legal document" or field_sources.get("proprietor_name") == "verified legal document")
+                    and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))
+        )
         if not companyish:
             continue
         existing = db.company_intelligence_for(row["id"])

@@ -608,7 +608,7 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     if short_lease_signal: confidence -= 15
     if assumptions.get("underwriting_notes"): confidence += 4
     if deal_analysis.get("planning_status") == "ok": confidence += 4
-    if deal_analysis.get("legal_status") == "parsed": confidence += 10
+    if str(deal_analysis.get("legal_status") or "").lower() == "verified": confidence += 10
     confidence = int(_clamp(confidence, 0, 100))
 
     overall = 0.30 * asset_score + 0.30 * motivation["motivation_score"] + 0.40 * financial_score
@@ -657,13 +657,13 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         recommendation = "WATCH"
         action = "Automatic comparable evidence is not yet strong enough for a PURSUE decision; verify valuation evidence or enter a manual GDV/market value."
         reasons.append("Comparable valuation confidence is below the 65% pursue threshold")
-    elif short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}:
+    elif short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() == "verified":
         recommendation = "WATCH"
         action = "Short-lease impact must be priced before bid approval. Confirm extension premium, service charge, ground rent and lender position."
         reasons.append("Short lease remains a material acquisition blocker")
-    elif str(deal_analysis.get("legal_status") or "").lower() not in {"parsed", "reviewed"}:
+    elif str(deal_analysis.get("legal_status") or "").lower() != "verified":
         recommendation = "WATCH"
-        action = "Attractive on current desktop assumptions, but do not progress to bid approval until the latest legal pack and addendum are parsed/reviewed."
+        action = "Attractive on current desktop assumptions, but do not progress to bid approval until the latest legal pack contains authoritative lot-bound documents that are verified and reviewed."
         reasons.append("Legal pack has not yet passed the acquisition gate")
         warnings.append("Auction legal packs can be revised up to the sale. Confirm the latest complete pack with your solicitor immediately before bidding.")
     else:
@@ -712,8 +712,8 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         "underwriting_confidence": confidence,
         "overall_opportunity_score": overall,
         "max_bid": max_bid,
-        "max_bid_provisional": bool(max_bid and (works_missing or short_lease_signal or str(deal_analysis.get("legal_status") or "").lower() not in {"parsed", "reviewed"})),
-        "bid_ceiling_approved": bool(max_bid and not works_missing and not short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}),
+        "max_bid_provisional": bool(max_bid and (works_missing or short_lease_signal or str(deal_analysis.get("legal_status") or "").lower() != "verified")),
+        "bid_ceiling_approved": bool(max_bid and not works_missing and not short_lease_signal and str(deal_analysis.get("legal_status") or "").lower() == "verified"),
         "works_required_signal": works_required_signal,
         "works_missing": works_missing,
         "listed_building_signal": listed_signal,

@@ -38,8 +38,9 @@ PROVIDER_RULES = {
     "eddisons": {
         "label": "BTG Eddisons",
         "permission_required": False,
-        "login_expected": False,
-        "reason": "Publicly exposed legal-pack/download links can be retrieved when directly accessible.",
+        "login_expected": True,
+        "public_first": True,
+        "reason": "Public lot-bound legal files are attempted first; some lots may be account-gated and can use the buyer's own configured credentials.",
     },
     "generic": {
         "label": "Other source",
@@ -142,7 +143,10 @@ def provider_access_status(config: LegalAccessConfig | None, provider: str) -> d
     if rule.get("login_expected") and not cfg.has_credentials:
         return {
             "allowed": True,
-            "status": "login credentials not configured",
+            "status": (
+                "public acquisition enabled; account fallback not configured"
+                if rule.get("public_first") else "login credentials not configured"
+            ),
             "provider": provider,
             "label": rule["label"],
             "reason": rule.get("reason"),

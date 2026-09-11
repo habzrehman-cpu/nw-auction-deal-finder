@@ -1,5 +1,33 @@
 # North West Property Auction Deal Finder
 
+## v1.10.1 - Legal Evidence Firewall
+
+Version 1.10.1 is a trust-and-accuracy patch for automatic legal-pack acquisition. Live testing of v1.10.0 proved the download/parsing pipeline worked, but also showed that generic auction-provider pages (for example lease-advisory or corporate pages) could be mistaken for lot-specific legal evidence. v1.10.1 introduces a strict evidence boundary so unrelated website content cannot influence legal risk, seller identity, Companies House enrichment or bid readiness.
+
+### What changed
+
+- **Candidate is not evidence.** Legal links/pages can be discovered, but remain unverified until they are demonstrably tied to the selected auction lot.
+- **Lot identity is required.** HTML pack-index pages must match the subject postcode/address/lot identifier, or inherit from an already verified lot-specific pack index. A button labelled “Legal pack” alone is not enough.
+- **Generic auctioneer pages are blocked.** Lease advisory, property search, business sales, education, investor-relations, consultancy/news/contact/service pages are rejected and are never crawled onward as legal evidence.
+- **Binary child documents are screened.** A PDF/ZIP linked from a verified pack page still needs legal-document semantics or its own strong lot identity; unrelated site PDFs cannot inherit trust automatically.
+- **Only verified legal documents drive legal conclusions.** Legal-risk flags, buyer costs, completion terms, seller/company identity, title facts, contacts, pack completeness and bid approval all use verified lot-bound documents only.
+- **Auctioneer property evidence is a separate tier.** Listing/detail text can provide clearly-labelled signals such as probate/receiver wording or a stated lease term, but cannot establish legal ownership or company identity.
+- **Companies House is gated.** Corporate enrichment runs only after a verified legal document establishes the seller/company identity. A company number found in auctioneer/provider website chrome cannot trigger ownership enrichment.
+- **Pre-v1.10.1 extractions are quarantined.** Existing stored legal analysis remains in the database for audit history but cannot affect current scoring until that property’s legal pack is refreshed through the new firewall.
+- **Pack changes are evidence-only.** Changes to candidate/navigation pages do not create legal-pack change alarms; only verified legal documents are fingerprinted for add/remove/modify alerts.
+- **Contact roles are safer.** Known auction-provider business details are treated as auctioneer contacts, not seller solicitors merely because solicitor wording appears nearby.
+- **Clearer UI.** Deal Rooms distinguish **Unverified candidates**, **Verified legal docs**, and **Verified docs parsed**. A pack with only candidates displays **LEGAL PACK NOT VERIFIED**, not “Reviewed”.
+
+### Evidence tiers
+
+1. **Verified legal document** — official title/lease/special conditions/addendum/search/contract material proven to belong to the lot. May influence legal risk and bid readiness.
+2. **Auctioneer property evidence** — the subject auction listing/detail page. Useful for guide/status/description and labelled signals, but not legal ownership confirmation.
+3. **External/contextual evidence** — Companies House, planning, Land Registry/comparables and similar enrichment. Kept separate from the legal pack.
+4. **Candidate/unverified** — discovered links/pages that have not passed the lot-binding test. Visible for audit/manual follow-up but excluded from conclusions.
+
+User-uploaded PDF/TXT/ZIP documents are treated as verified for the selected property because the user explicitly attaches them to that Deal Room. As before, automated legal analysis is acquisition triage only: the latest complete pack/addendum and legal acceptability must be confirmed by the buyer’s solicitor before bidding/exchange.
+
+
 ## v1.10.0 - automatic legal-pack acquisition + evidence integrity
 
 Version 1.10 turns the legal-pack layer from a link finder/manual uploader into a guarded acquisition service. Where provider access permits it, the app can follow legal-document/index pages, download PDF/ZIP material, parse the documents, retain the originals privately in Supabase and refresh the evidence later for changes.

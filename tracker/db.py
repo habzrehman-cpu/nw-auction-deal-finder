@@ -2,6 +2,7 @@ import sqlite3
 import json
 from contextlib import closing
 from pathlib import Path
+from .legal_firewall import EVIDENCE_POLICY_VERSION
 from datetime import datetime, timezone, timedelta
 
 SCHEMA = """
@@ -184,7 +185,12 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   updated_at TEXT NOT NULL,
   risk_score REAL DEFAULT 0,
   document_count INTEGER DEFAULT 0,
+  candidate_document_count INTEGER DEFAULT 0,
+  verified_document_count INTEGER DEFAULT 0,
   parsed_document_count INTEGER DEFAULT 0,
+  auctioneer_evidence_count INTEGER DEFAULT 0,
+  verification_status TEXT,
+  evidence_policy_version TEXT,
   completion_days REAL,
   deposit_pct REAL,
   lease_years REAL,
@@ -281,6 +287,11 @@ HISTORY_MIGRATIONS = {
 }
 
 LEGAL_SUMMARY_MIGRATIONS = {
+    "candidate_document_count": "INTEGER DEFAULT 0",
+    "verified_document_count": "INTEGER DEFAULT 0",
+    "auctioneer_evidence_count": "INTEGER DEFAULT 0",
+    "verification_status": "TEXT",
+    "evidence_policy_version": "TEXT",
     "extracted_json": "TEXT",
     "contacts_json": "TEXT",
     "evidence_json": "TEXT",
@@ -875,6 +886,8 @@ class Database:
         summary = self.legal_summary_for(property_id)
         if not summary or summary.get("status") == "error" or not summary.get("updated_at"):
             return True
+        if str(summary.get("evidence_policy_version") or "") != EVIDENCE_POLICY_VERSION:
+            return True
         try:
             stamp = datetime.fromisoformat(str(summary["updated_at"]).replace("Z", "+00:00"))
             if stamp.tzinfo is None:
@@ -897,14 +910,18 @@ class Database:
                 )
             con.execute(
                 """INSERT INTO legal_summaries(
-                property_id,provider,status,updated_at,risk_score,document_count,parsed_document_count,completion_days,deposit_pct,
+                property_id,provider,status,updated_at,risk_score,document_count,candidate_document_count,verified_document_count,
+                parsed_document_count,auctioneer_evidence_count,verification_status,evidence_policy_version,completion_days,deposit_pct,
                 lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,evidence_json,
                 pack_completeness_pct,missing_components_json,available_components_json,pack_fingerprint,pack_changed,pack_change_json,
                 methodology,warnings_json,attribution,error
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(property_id) DO UPDATE SET
                 provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,risk_score=excluded.risk_score,
-                document_count=excluded.document_count,parsed_document_count=excluded.parsed_document_count,
+                document_count=excluded.document_count,candidate_document_count=excluded.candidate_document_count,
+                verified_document_count=excluded.verified_document_count,parsed_document_count=excluded.parsed_document_count,
+                auctioneer_evidence_count=excluded.auctioneer_evidence_count,verification_status=excluded.verification_status,
+                evidence_policy_version=excluded.evidence_policy_version,
                 completion_days=excluded.completion_days,deposit_pct=excluded.deposit_pct,lease_years=excluded.lease_years,
                 buyer_fee_detected=excluded.buyer_fee_detected,vat_flag=excluded.vat_flag,has_addendum=excluded.has_addendum,
                 extracted_json=excluded.extracted_json,contacts_json=excluded.contacts_json,risk_flags_json=excluded.risk_flags_json,
@@ -913,7 +930,10 @@ class Database:
                 pack_fingerprint=excluded.pack_fingerprint,pack_changed=excluded.pack_changed,pack_change_json=excluded.pack_change_json,
                 methodology=excluded.methodology,warnings_json=excluded.warnings_json,attribution=excluded.attribution,error=excluded.error""",
                 (property_id, summary.get("provider"), summary.get("status") or "not-found", now, summary.get("risk_score") or 0,
-                 summary.get("document_count") or 0, summary.get("parsed_document_count") or 0, summary.get("completion_days"),
+                 summary.get("document_count") or 0, summary.get("candidate_document_count") or summary.get("document_count") or 0,
+                 summary.get("verified_document_count") or 0, summary.get("parsed_document_count") or 0,
+                 summary.get("auctioneer_evidence_count") or 0, summary.get("verification_status") or summary.get("status"),
+                 summary.get("evidence_policy_version"), summary.get("completion_days"),
                  summary.get("deposit_pct"), summary.get("lease_years"), summary.get("buyer_fee_detected"),
                  int(bool(summary.get("vat_flag"))), int(bool(summary.get("has_addendum"))),
                  json.dumps(summary.get("extracted_fields") or {}, ensure_ascii=False),

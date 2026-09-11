@@ -56,7 +56,7 @@ def test_legal_analysis_extracts_core_terms_and_risks():
     '''
     docs = [{"doc_type": "Special conditions", "text_content": text}, {"doc_type": "Addendum", "text_content": "Addendum"}]
     summary = analyse_legal_documents(docs)
-    assert summary["status"] == "parsed"
+    assert summary["status"] == "verified"
     assert summary["completion_days"] == 10
     assert summary["deposit_pct"] == 10
     assert summary["lease_years"] == 72
@@ -69,7 +69,7 @@ def test_uploaded_plain_text_counts_as_material_legal_document():
     doc = uploaded_document("pack.txt", b"Special Conditions Deposit 10%. Completion 20 working days.")
     assert doc["doc_type"] == "Uploaded legal document"
     summary = analyse_legal_documents([doc])
-    assert summary["status"] == "parsed"
+    assert summary["status"] == "verified"
     assert summary["parsed_document_count"] == 1
 
 

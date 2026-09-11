@@ -31,7 +31,7 @@ def test_structured_legal_pack_extracts_owner_lease_and_contacts():
     }]
     result = analyse_legal_documents(docs)
     fields = result["extracted_fields"]
-    assert result["status"] == "parsed"
+    assert result["status"] == "verified"
     assert fields["title_number"] == "GM123456"
     assert fields["proprietor_name"] == "NORTH STAR PROPERTY LIMITED"
     assert fields["company_number"] == "01234567"

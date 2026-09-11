@@ -102,7 +102,7 @@ def test_company_intelligence_roundtrip(tmp_path: Path):
 
 def test_vendor_story_uses_official_corporate_pressure_as_fact_not_guess():
     lot = {'status': 'Available post-auction', 'title': 'Commercial property', 'raw_text': '', 'detail_text': ''}
-    legal = {'status': 'parsed', 'extracted_fields': {'seller_name': 'ABC LIMITED', 'company_number': '01234567'}}
+    legal = {'status': 'verified', 'extracted_fields': {'seller_name': 'ABC LIMITED', 'company_number': '01234567', 'company_identity_verified': True, 'field_sources': {'seller_name': 'verified legal document', 'company_number': 'verified legal document'}}}
     company = {
         'status': 'ok', 'company_name': 'ABC LIMITED', 'company_number': '01234567', 'company_status': 'administration',
         'corporate_pressure_score': 9.0, 'corporate_pressure_label': 'Very High', 'outstanding_charge_count': 2,

@@ -91,7 +91,7 @@ def test_legal_analysis_has_page_audit_trail_and_completeness():
         {"name": "Title Plan.pdf", "doc_type": "Title plan", "url": "", "access_status": "uploaded; no extractable text", "text_content": "", "sha256": "c"},
     ]
     summary = analyse_legal_documents(docs)
-    assert summary["status"] == "parsed"
+    assert summary["status"] == "verified"
     assert summary["pack_completeness_pct"] == 100
     assert summary["extracted_fields"]["title_number"] == "GM123456"
     title_ev = next(e for e in summary["evidence"] if e["finding"] == "Title number")

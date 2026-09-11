@@ -117,14 +117,33 @@ def _auction_timeline(history: Iterable[dict]) -> list[dict]:
 
 
 def seller_profile(legal_summary: dict | None, lot: dict | None = None, company_intelligence: dict | None = None) -> dict:
+    """Return seller facts with a hard evidence boundary.
+
+    Seller/company identity is only promoted to a confirmed profile when a current
+    verified legal document is the provenance. Listing text may still contribute a
+    *signal* such as probate/receiver wording, but cannot establish identity.
+    """
     legal_summary = legal_summary or {}
     company_intelligence = company_intelligence or {}
     extracted = legal_summary.get("extracted_fields") or {}
     lot = lot or {}
-    seller_type = _clean(extracted.get("seller_type"), 60)
-    seller_name = _clean(extracted.get("seller_name") or extracted.get("proprietor_name"), 180)
     field_sources = extracted.get("field_sources") or {}
+    legal_verified = str(legal_summary.get("status") or "").lower() == "verified"
+
+    def verified_field(name: str):
+        if not legal_verified:
+            return None
+        source = str(field_sources.get(name) or "").strip().lower()
+        return extracted.get(name) if source == "verified legal document" else None
+
+    seller_type = _clean(extracted.get("seller_type"), 60)
     seller_type_evidence = _clean(extracted.get("seller_type_evidence"), 120)
+    seller_name = _clean(verified_field("seller_name") or verified_field("proprietor_name"), 180)
+
+    # If a seller type came only from auctioneer/listing text keep it as a signal,
+    # never as legal confirmation.
+    if seller_type and not legal_verified and "confirmed" in str(seller_type_evidence or "").lower():
+        seller_type_evidence = "auctioneer listing signal - legal confirmation outstanding"
     if not seller_type:
         text = " ".join(str(lot.get(k) or "") for k in ("title", "raw_text", "detail_text")).lower()
         for term, label in (
@@ -136,24 +155,32 @@ def seller_profile(legal_summary: dict | None, lot: dict | None = None, company_
                 seller_type = label
                 seller_type_evidence = "auctioneer listing signal - legal confirmation outstanding"
                 break
+
+    company_identity_verified = bool(extracted.get("company_identity_verified")) and legal_verified
+    if not company_identity_verified:
+        # Stored corporate enrichment may pre-date the evidence firewall. Do not let
+        # it back-fill ownership unless the legal identity gate has been satisfied.
+        company_intelligence = {}
+
     return {
         "seller_name": seller_name or None,
         "seller_type": seller_type or None,
         "seller_type_evidence": seller_type_evidence or None,
         "field_sources": field_sources,
         "seller_name_source": field_sources.get("seller_name") or field_sources.get("proprietor_name"),
-        "title_number": extracted.get("title_number"),
-        "company_number": extracted.get("company_number") or company_intelligence.get("company_number"),
-        "registered_office": extracted.get("registered_office") or company_intelligence.get("registered_office"),
-        "title_price_paid": extracted.get("title_price_paid"),
-        "title_price_paid_date": extracted.get("title_price_paid_date"),
-        "contacts": legal_summary.get("contacts") or [],
+        "title_number": verified_field("title_number"),
+        "company_number": verified_field("company_number") or company_intelligence.get("company_number"),
+        "registered_office": verified_field("registered_office") or company_intelligence.get("registered_office"),
+        "title_price_paid": verified_field("title_price_paid"),
+        "title_price_paid_date": verified_field("title_price_paid_date"),
+        "contacts": (legal_summary.get("contacts") or []) if legal_verified else [],
         "company_name_verified": company_intelligence.get("company_name"),
         "company_status": company_intelligence.get("company_status"),
         "company_registered_office": company_intelligence.get("registered_office"),
         "company_url": company_intelligence.get("company_url"),
         "corporate_pressure_score": company_intelligence.get("corporate_pressure_score"),
         "corporate_pressure_label": company_intelligence.get("corporate_pressure_label"),
+        "company_identity_verified": company_identity_verified,
     }
 
 
@@ -210,6 +237,8 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
         reasons.append("Vacant possession signal")
 
     profile = seller_profile(legal_summary, lot, company_intelligence)
+    if not profile.get("company_identity_verified"):
+        company_intelligence = {}
     seller_type = str(profile.get("seller_type") or "").lower()
     if any(term in seller_type for term in DISTRESS_SELLER_TYPES):
         confirmed = "confirmed" in str(profile.get("seller_type_evidence") or "").lower()
@@ -289,6 +318,8 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
     company_intelligence = company_intelligence or {}
     planning_items = list(planning_items or [])
     profile = seller_profile(legal_summary, lot, company_intelligence)
+    if not profile.get("company_identity_verified"):
+        company_intelligence = {}
     leverage = buyer_leverage(lot, deal_analysis, legal_summary, planning_items, company_intelligence)
 
     timeline = _auction_timeline(history or []) + _planning_timeline(planning_items) + _company_timeline(company_intelligence)
@@ -390,7 +421,7 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
         confidence_points += 15
     if subject_refusals or subject_approvals:
         confidence_points += 10
-    if legal_summary.get("status") in {"parsed", "reviewed"}:
+    if legal_summary.get("status") == "verified":
         confidence_points += 10
     if company_intelligence.get("status") == "ok":
         confidence_points += 10
@@ -430,9 +461,9 @@ def deal_readiness(row: dict) -> dict:
     add("Market value / GDV", 12, "complete" if market_value else "missing", "Valuation basis present" if market_value else "Market value/GDV required", blocker=not bool(market_value))
     add("Planning screen", 10, "complete" if planning_status == "ok" else "missing", "Official screen run" if planning_status == "ok" else "Planning risk unknown")
     legal_pack_changed = bool(row.get("legal_pack_changed"))
-    add("Legal pack", 20, "partial" if legal_pack_changed else "complete" if legal_status in {"parsed", "reviewed"} else "partial" if legal_status == "links-only" else "missing",
-        "Legal pack changed since the previous snapshot - re-review required" if legal_pack_changed else ("Legal evidence parsed/reviewed" if legal_status in {"parsed", "reviewed"} else "Legal pack not parsed"),
-        blocker=legal_pack_changed or legal_status not in {"parsed", "reviewed"})
+    add("Legal pack", 20, "partial" if legal_pack_changed else "complete" if legal_status == "verified" else "partial" if legal_status in {"verified-no-text", "candidates-only", "links-only"} else "missing",
+        "Legal pack changed since the previous snapshot - re-review required" if legal_pack_changed else ("Lot-bound legal evidence verified" if legal_status == "verified" else "Legal pack not verified: authoritative lot-bound legal documents are still missing or unverified"),
+        blocker=legal_pack_changed or legal_status != "verified")
     works_missing = bool(row.get("works_missing"))
     add("Works / capex", 8, "missing" if works_missing else "complete", "Works estimate required" if works_missing else "No unresolved works-budget gate", blocker=works_missing)
     tenure = str(row.get("tenure") or "Unknown")
@@ -464,8 +495,8 @@ def next_actions(row: dict, story: dict | None = None) -> list[dict]:
     legal_status = str(row.get("legal_status") or "").lower()
     if row.get("legal_pack_changed"):
         add(1, "Re-review the changed legal pack / addendum", "The auctioneer legal evidence has changed since the previous saved snapshot, so prior legal conclusions may be stale.")
-    elif legal_status not in {"parsed", "reviewed"}:
-        add(1, "Obtain and review the latest legal pack + addendum", "Bid approval is blocked until legal evidence is parsed/reviewed.")
+    elif legal_status != "verified":
+        add(1, "Obtain and verify the latest legal pack + addendum", "Bid approval is blocked until authoritative lot-bound legal evidence passes the evidence firewall and is reviewed.")
     if row.get("works_missing"):
         add(2, "Obtain a refurbishment / capex estimate", "The listing signals works but the model currently has no reliable works budget.")
     lease = _num(row.get("legal_lease_years"))
@@ -499,8 +530,8 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
     status = str(legal_summary.get("status") or row.get("legal_status") or "").lower()
     if row.get("legal_pack_changed") or legal_summary.get("pack_changed"):
         questions.append("The tracker detected a legal-pack change since the previous snapshot. Please identify exactly what was added, removed or amended and confirm whether any prior advice must change.")
-    if status not in {"parsed", "reviewed"}:
-        questions.append("Please confirm we have the latest complete legal pack and every addendum, and identify any missing documents before exchange/bidding.")
+    if status != "verified":
+        questions.append("Please confirm we have the latest complete legal pack and every addendum, and identify any missing or unverified documents before exchange/bidding.")
     lease = _num(extracted.get("lease_years_remaining") or row.get("legal_lease_years") or row.get("listing_lease_years"))
     tenure = str(row.get("tenure") or "").lower()
     if lease is not None and lease < 85:
