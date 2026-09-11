@@ -1,6 +1,6 @@
 import requests
 
-from .enrichment import fetch_detail_text, is_detail_url
+from .enrichment import fetch_detail_metadata, is_detail_url
 from .geo import MotorwayNetwork, bulk_geocode, nearest_motorway
 from .scrapers import SCRAPERS, Fetcher
 from .comparables import refresh_due_comparables
@@ -92,11 +92,17 @@ def refresh_all(db, selected=None):
                 is_changed = db.upsert(lot_dict)
                 if is_changed:
                     changed += 1
+                stored = db.property_for_key(lot.source_key)
+                if stored and getattr(lot, "historical_events", None):
+                    db.add_history_events(stored["id"], lot.historical_events)
                 if is_detail_url(lot.url) and db.detail_due(lot.source_key, force=is_changed):
                     try:
-                        detail = fetch_detail_text(lot.url, fetcher=fetcher)
-                        if detail:
-                            db.update_detail(lot.source_key, detail)
+                        detail = fetch_detail_metadata(lot.url, fetcher=fetcher)
+                        if detail.get("text") or detail.get("image_url") or detail.get("auction_date"):
+                            db.update_detail(
+                                lot.source_key, detail.get("text") or "", detail.get("image_url") or "",
+                                detail.get("auction_date") or "",
+                            )
                             enriched += 1
                     except Exception:
                         # The catalogue row remains usable if a detail page temporarily fails.

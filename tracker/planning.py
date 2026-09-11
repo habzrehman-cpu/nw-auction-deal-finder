@@ -176,14 +176,27 @@ def summarise_constraints(entities: Iterable[dict]) -> tuple[list[dict], float]:
     return out, risk
 
 
+def _address_numbers(value: str) -> set[str]:
+    out = set()
+    for match in re.finditer(r"\b(\d+[A-Z]?)(?:\s*[-/]\s*(\d+[A-Z]?))?\b", (value or "").upper()):
+        out.add(match.group(1))
+        if match.group(2):
+            out.add(match.group(2))
+    return out
+
+
+def _street_tokens(value: str) -> set[str]:
+    stop = {"THE", "ROAD", "STREET", "LANE", "AVENUE", "DRIVE", "CLOSE", "WAY", "PLACE", "HOUSE", "FLAT", "APARTMENT"}
+    return {x for x in re.findall(r"[A-Z]{3,}", (value or "").upper()) if x not in stop}
+
+
 def summarise_applications(entities: Iterable[dict], lat: float, lon: float, subject_postcode: str = "", subject_address: str = "") -> tuple[list[dict], float]:
     apps = []
     subject_opportunity = 0.0
     nearby_opportunity = 0.0
     subject_postcode = " ".join((subject_postcode or "").upper().split())
-    subject_address = (subject_address or "").upper()
-    subject_number_match = re.search(r"\b(\d+[A-Z]?)\b", subject_address)
-    subject_number = subject_number_match.group(1) if subject_number_match else ""
+    subject_numbers = _address_numbers(subject_address)
+    subject_tokens = _street_tokens(subject_address)
     for entity in entities or []:
         point = _parse_point(entity.get("point"))
         distance = _haversine(lat, lon, point[0], point[1]) if point else None
@@ -193,22 +206,42 @@ def summarise_applications(entities: Iterable[dict], lat: float, lon: float, sub
         doc_url = str(entity.get("documentation-url") or "").strip()
         ref = str(entity.get("reference") or entity.get("entity") or "")
         same_postcode = bool(subject_postcode and subject_postcode in address.upper())
-        app_number_match = re.search(r"\b(\d+[A-Z]?)\b", address.upper())
-        app_number = app_number_match.group(1) if app_number_match else ""
-        number_match = bool(subject_number and app_number and subject_number == app_number)
-        likely_subject = (same_postcode and number_match) or (distance is not None and distance <= 0.02)
+        app_numbers = _address_numbers(address)
+        number_match = bool(subject_numbers and app_numbers and subject_numbers.intersection(app_numbers))
+        token_overlap = len(subject_tokens.intersection(_street_tokens(address)))
+        # Where both records expose building numbers, require a number/range match.
+        # This prevents a same-postcode neighbour on the same street being treated as
+        # the subject property. If one side has no usable number, fall back to a very
+        # tight postcode/street/spatial match and label the result as probabilistic.
+        if subject_numbers and app_numbers:
+            likely_subject = bool(
+                number_match and (
+                    same_postcode
+                    or token_overlap >= 1
+                    or (distance is not None and distance <= 0.025)
+                )
+            )
+        else:
+            likely_subject = bool(
+                (same_postcode and token_overlap >= 1 and distance is not None and distance <= 0.05)
+                or (distance is not None and distance <= 0.008)
+            )
         approved = bool(re.search(r"approve|grant|permitted", decision, re.I))
+        refused = bool(re.search(r"refus", decision, re.I))
         opportunity_terms = bool(OPPORTUNITY_TERMS.search(description))
+        severity = 0
         if likely_subject and approved and opportunity_terms:
             subject_opportunity += 3.0
         elif distance is not None and distance <= 0.15 and approved and opportunity_terms:
             nearby_opportunity += 0.7
+        if likely_subject and refused and opportunity_terms:
+            severity = 3
         apps.append({
             "kind": "application",
             "dataset": "planning-application",
             "reference": ref,
             "name": address,
-            "severity": 0,
+            "severity": severity,
             "label": f"{ref} - {description[:180]}",
             "source_url": doc_url or (f"https://www.planning.data.gov.uk/entity/{entity.get('entity')}" if entity.get("entity") else ""),
             "distance_miles": round(distance, 3) if distance is not None else None,
@@ -237,6 +270,8 @@ def analyse_planning_property(lot: dict, session=None, radius_m: int = 350) -> t
     constraint_items, risk = summarise_constraints(constraints)
     app_items, upside = summarise_applications(applications, float(lat), float(lon), lot.get("postcode") or "", lot.get("address") or lot.get("title") or "")
     subject_apps = sum(1 for x in app_items if x.get("likely_subject"))
+    application_risk = max([int(x.get("severity") or 0) for x in app_items if x.get("likely_subject")] or [0])
+    risk = round(min(10.0, risk + application_risk * 0.7), 1)
     summary = {
         "provider": "Planning Data (MHCLG)",
         "status": "ok",

@@ -23,7 +23,11 @@ TARGET_MOTORWAYS = {
 }
 NW_BBOX = (52.80, -3.85, 55.25, -1.55)  # south, west, north, east
 POSTCODES_URL = "https://api.postcodes.io/postcodes?filter=postcode,longitude,latitude"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+]
 OSRM_BASE = "https://router.project-osrm.org"
 
 
@@ -79,6 +83,9 @@ class MotorwayNetwork:
     def __init__(self, cache_path: str | Path | None = None, session: requests.Session | None = None, timeout=35):
         self.cache_path = Path(cache_path) if cache_path else Path(__file__).with_name("motorway_junctions_cache.json")
         self.session = session or requests.Session()
+        headers = getattr(self.session, "headers", None)
+        if headers is not None:
+            headers.update({"User-Agent": "NW-Auction-Deal-Finder/1.6 contact: browser-app"})
         self.timeout = timeout
 
     def load(self, max_age_days=30) -> list[dict]:
@@ -113,19 +120,29 @@ class MotorwayNetwork:
 
     def fetch(self) -> list[dict]:
         south, west, north, east = NW_BBOX
+        motorway_regex = "^(?:" + "|".join(sorted(TARGET_MOTORWAYS, key=len, reverse=True)) + ")$"
         query = f"""
 [out:json][timeout:30];
-way[\"highway\"=\"motorway\"]({south},{west},{north},{east})->.motorways;
+way[\"highway\"=\"motorway\"][\"ref\"~\"{motorway_regex}\"]({south},{west},{north},{east})->.motorways;
 node(w.motorways)[\"highway\"=\"motorway_junction\"]->.junctions;
 (.motorways;.junctions;);
 out body;
 """
-        r = self.session.post(OVERPASS_URL, data={"data": query}, timeout=self.timeout)
-        r.raise_for_status()
-        elements = (r.json() or {}).get("elements") or []
+        last_error = None
+        elements = []
+        for endpoint in OVERPASS_URLS:
+            try:
+                r = self.session.post(endpoint, data={"data": query}, timeout=self.timeout)
+                r.raise_for_status()
+                elements = (r.json() or {}).get("elements") or []
+                if elements:
+                    break
+            except Exception as exc:
+                last_error = exc
+                continue
+
         ways = [e for e in elements if e.get("type") == "way"]
         nodes = {e.get("id"): e for e in elements if e.get("type") == "node"}
-
         memberships: dict[int, set[str]] = {}
         for way in ways:
             refs = _normalise_motorway_ref((way.get("tags") or {}).get("ref", ""))
@@ -146,14 +163,48 @@ out body;
             motorway = "/".join(refs)
             label = f"{motorway} J{jref}" if jref else (tags.get("name") or f"{motorway} junction")
             junctions.append({
-                "osm_id": node_id,
-                "motorway": motorway,
-                "junction_ref": jref,
-                "label": label,
-                "latitude": float(node["lat"]),
-                "longitude": float(node["lon"]),
+                "osm_id": node_id, "motorway": motorway, "junction_ref": jref, "label": label,
+                "latitude": float(node["lat"]), "longitude": float(node["lon"]),
             })
-        return junctions
+        if junctions:
+            return junctions
+
+        # Some public Overpass instances do not return parent-way membership reliably.
+        # Fall back to motorway_junction nodes so distance still works, even if the
+        # motorway name is not present in the node tags.
+        fallback_query = f"""
+[out:json][timeout:25];
+node[\"highway\"=\"motorway_junction\"]({south},{west},{north},{east});
+out body;
+"""
+        for endpoint in OVERPASS_URLS:
+            try:
+                r = self.session.post(endpoint, data={"data": fallback_query}, timeout=self.timeout)
+                r.raise_for_status()
+                raw = (r.json() or {}).get("elements") or []
+                fallback = []
+                for node in raw:
+                    if node.get("type") != "node" or node.get("lat") is None or node.get("lon") is None:
+                        continue
+                    tags = node.get("tags") or {}
+                    probe = " ".join(str(v) for v in tags.values())
+                    refs = sorted(_normalise_motorway_ref(probe))
+                    motorway = "/".join(refs) if refs else "Motorway"
+                    jref = str(tags.get("ref") or tags.get("junction:ref") or "").strip()
+                    jref = re.sub(r"^J(?:unction)?\s*", "", jref, flags=re.I)
+                    label = tags.get("name") or (f"{motorway} J{jref}" if jref else "Motorway junction")
+                    fallback.append({
+                        "osm_id": node.get("id"), "motorway": motorway, "junction_ref": jref, "label": label,
+                        "latitude": float(node["lat"]), "longitude": float(node["lon"]),
+                    })
+                if fallback:
+                    return fallback
+            except Exception as exc:
+                last_error = exc
+                continue
+        if last_error:
+            raise RuntimeError(f"OpenStreetMap motorway junction lookup failed: {last_error}")
+        return []
 
 
 def nearest_candidates(latitude: float, longitude: float, junctions: list[dict], limit=4) -> list[dict]:

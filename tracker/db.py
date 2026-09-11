@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS properties (
   status TEXT,
   auction_date TEXT,
   raw_text TEXT,
+  image_url TEXT,
   detail_text TEXT,
   detail_enriched_at TEXT,
   latitude REAL,
@@ -73,6 +74,8 @@ CREATE TABLE IF NOT EXISTS underwriting_overrides (
   contingency_pct REAL,
   auction_admin_fee REAL,
   buyer_premium_pct REAL,
+  buyer_premium_minimum REAL,
+  search_fee REAL,
   legal_cost REAL,
   survey_cost REAL,
   nonrecoverable_vat_pct REAL,
@@ -207,9 +210,15 @@ CREATE TABLE IF NOT EXISTS legal_documents (
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
 CREATE INDEX IF NOT EXISTS idx_legal_documents_property ON legal_documents(property_id);
+CREATE TABLE IF NOT EXISTS shortlist (
+  property_id INTEGER PRIMARY KEY,
+  added_at TEXT NOT NULL,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
 """
 
 PROPERTY_MIGRATIONS = {
+    "image_url": "TEXT",
     "detail_text": "TEXT",
     "detail_enriched_at": "TEXT",
     "latitude": "REAL",
@@ -230,6 +239,8 @@ UNDERWRITING_MIGRATIONS = {
     "sale_cost_pct": "REAL",
     "exit_legal_cost": "REAL",
     "use_auto_comps": "INTEGER",
+    "buyer_premium_minimum": "REAL",
+    "search_fee": "REAL",
 }
 
 
@@ -265,7 +276,7 @@ class Database:
                 cols = [
                     "source", "source_key", "url", "title", "address", "postcode", "area", "property_type",
                     "lot_number", "guide_text", "guide_price", "result_text", "result_price", "status",
-                    "auction_date", "raw_text", "first_seen", "last_seen"
+                    "auction_date", "raw_text", "image_url", "first_seen", "last_seen"
                 ]
                 vals = [lot.get(c) for c in cols[:-2]] + [now, now]
                 q = f"INSERT INTO properties ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})"
@@ -274,20 +285,24 @@ class Database:
                 changed = True
             else:
                 pid = old["id"]
-                if old["status"] in {"No Bids", "Last Bid", "Withdrawn", "Postponed"} and lot.get("status") == "Live":
+                if old["status"] in {"No Bids", "Last Bid", "Unsold", "Available post-auction", "Withdrawn", "Postponed"} and lot.get("status") == "Live":
                     lot["status"] = "Relisted"
-                changed = any(old[k] != lot.get(k) for k in watched)
+                def incoming_value(key):
+                    if key == "auction_date" and not lot.get(key):
+                        return old[key]
+                    return lot.get(key)
+                changed = any(old[k] != incoming_value(k) for k in watched)
                 con.execute(
                     """
                     UPDATE properties SET url=?,title=?,address=?,postcode=?,area=?,property_type=?,lot_number=?,
-                    guide_text=?,guide_price=?,result_text=?,result_price=?,status=?,auction_date=?,raw_text=?,last_seen=?
+                    guide_text=?,guide_price=?,result_text=?,result_price=?,status=?,auction_date=COALESCE(NULLIF(?,''),auction_date),raw_text=?,image_url=COALESCE(NULLIF(?,''),image_url),last_seen=?
                     WHERE id=?
                     """,
                     (
                         lot.get("url"), lot.get("title"), lot.get("address"), lot.get("postcode"), lot.get("area"),
                         lot.get("property_type"), lot.get("lot_number"), lot.get("guide_text"), lot.get("guide_price"),
                         lot.get("result_text"), lot.get("result_price"), lot.get("status"), lot.get("auction_date"),
-                        lot.get("raw_text"), now, pid,
+                        lot.get("raw_text"), lot.get("image_url") or "", now, pid,
                     ),
                 )
             if changed:
@@ -315,9 +330,9 @@ class Database:
         row = self.property_for_key(source_key)
         if not row:
             return True
-        if force and not row.get("detail_text"):
+        if force and (not row.get("detail_text") or not row.get("image_url")):
             return True
-        if not row.get("detail_text") or not row.get("detail_enriched_at"):
+        if not row.get("detail_text") or not row.get("detail_enriched_at") or not row.get("image_url"):
             return True
         try:
             stamp = datetime.fromisoformat(str(row["detail_enriched_at"]).replace("Z", "+00:00"))
@@ -327,16 +342,48 @@ class Database:
         except (ValueError, TypeError):
             return True
 
-    def update_detail(self, source_key, detail_text):
-        if not detail_text:
+    def update_detail(self, source_key, detail_text, image_url="", auction_date=""):
+        if not detail_text and not image_url and not auction_date:
             return
         now = datetime.now(timezone.utc).isoformat()
         with closing(self.connect()) as con:
             con.execute(
-                "UPDATE properties SET detail_text=?, detail_enriched_at=? WHERE source_key=?",
-                (detail_text, now, source_key),
+                """UPDATE properties SET detail_text=COALESCE(NULLIF(?,''),detail_text),
+                image_url=COALESCE(NULLIF(?,''),image_url),
+                auction_date=COALESCE(NULLIF(?,''),auction_date), detail_enriched_at=? WHERE source_key=?""",
+                (detail_text or "", image_url or "", auction_date or "", now, source_key),
             )
             con.commit()
+
+    def add_history_events(self, property_id, events):
+        """Persist historical auction observations without duplicating them on every refresh."""
+        if not events:
+            return 0
+        inserted = 0
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            for event in events:
+                captured = event.get("captured_at") or now
+                key = (
+                    property_id, event.get("guide_price"), event.get("result_price"),
+                    event.get("status"), event.get("auction_date"),
+                )
+                exists = con.execute(
+                    """SELECT 1 FROM history WHERE property_id=? AND COALESCE(guide_price,-1)=COALESCE(?,-1)
+                    AND COALESCE(result_price,-1)=COALESCE(?,-1) AND COALESCE(status,'')=COALESCE(?,'')
+                    AND COALESCE(auction_date,'')=COALESCE(?,'') LIMIT 1""", key
+                ).fetchone()
+                if exists:
+                    continue
+                con.execute(
+                    """INSERT INTO history(property_id,captured_at,guide_text,guide_price,result_text,result_price,status,auction_date)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (property_id, captured, event.get("guide_text"), event.get("guide_price"),
+                     event.get("result_text"), event.get("result_price"), event.get("status"), event.get("auction_date")),
+                )
+                inserted += 1
+            con.commit()
+        return inserted
 
     def cached_postcodes(self, postcodes):
         values = [" ".join((p or "").upper().split()) for p in postcodes if p]
@@ -416,7 +463,7 @@ class Database:
         allowed = [
             "strategy", "purchase_price", "market_psf", "manual_market_value", "gdv",
             "erv_annual", "exit_yield_pct", "refurb_cost", "capex_cost", "contingency_pct",
-            "auction_admin_fee", "buyer_premium_pct", "legal_cost", "survey_cost",
+            "auction_admin_fee", "buyer_premium_pct", "buyer_premium_minimum", "search_fee", "legal_cost", "survey_cost",
             "nonrecoverable_vat_pct", "purchase_vat_pct", "vat_recoverable", "holding_cost_monthly",
             "sale_cost_pct", "exit_legal_cost", "finance_mode", "ltv_pct", "annual_interest_pct",
             "term_months", "arrangement_fee_pct", "exit_fee_pct", "valuation_fee",
@@ -433,6 +480,21 @@ class Database:
                 f"ON CONFLICT(property_id) DO UPDATE SET {updates}",
                 vals,
             )
+            con.commit()
+
+    def shortlist_ids(self):
+        with closing(self.connect()) as con:
+            return {int(r["property_id"]) for r in con.execute("SELECT property_id FROM shortlist").fetchall()}
+
+    def set_shortlisted(self, property_id, enabled=True):
+        with closing(self.connect()) as con:
+            if enabled:
+                con.execute(
+                    "INSERT INTO shortlist(property_id,added_at) VALUES(?,?) ON CONFLICT(property_id) DO NOTHING",
+                    (property_id, datetime.now(timezone.utc).isoformat()),
+                )
+            else:
+                con.execute("DELETE FROM shortlist WHERE property_id=?", (property_id,))
             con.commit()
 
     def clear_underwriting(self, property_id):
@@ -570,6 +632,17 @@ class Database:
             except (TypeError, json.JSONDecodeError):
                 row["warnings"] = []
             out[row["property_id"]] = row
+        return out
+
+    def planning_constraint_flags_map(self):
+        with closing(self.connect()) as con:
+            rows = con.execute(
+                "SELECT property_id,dataset,MAX(severity) AS severity FROM planning_items WHERE kind='constraint' GROUP BY property_id,dataset"
+            ).fetchall()
+        out = {}
+        for row in rows:
+            flags = out.setdefault(row["property_id"], {})
+            flags[row["dataset"]] = int(row["severity"] or 0)
         return out
 
     def planning_items_for(self, property_id):

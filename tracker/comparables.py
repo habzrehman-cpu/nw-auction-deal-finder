@@ -158,6 +158,22 @@ def _weighted_quantile(values: list[tuple[float, float]], quantile: float) -> fl
     return clean[-1][0]
 
 
+def _street_signature(value: str) -> str:
+    text = " ".join((value or "").upper().replace(",", " , ").split())
+    # Drop the first building number/name prefix, then keep the first address segment.
+    text = re.sub(r"^.*?\b\d+[A-Z]?(?:\s*[-/]\s*\d+[A-Z]?)?\b\s*,?\s*", "", text, count=1)
+    segment = text.split(" , ")[0]
+    segment = re.sub(r"\b(ROAD|RD|STREET|ST|LANE|LN|AVENUE|AVE|DRIVE|DR|CLOSE|WAY|PLACE|PL)\b", lambda m: m.group(1), segment)
+    return re.sub(r"[^A-Z0-9 ]", "", segment).strip()
+
+
+def _same_street(subject: dict, comp: dict) -> bool:
+    subject_text = str(subject.get("address") or subject.get("title") or "")
+    a = _street_signature(subject_text)
+    b = _street_signature(str(comp.get("address") or ""))
+    return bool(a and b and (a == b or (len(a) >= 5 and (a in b or b in a))))
+
+
 def _same_address(subject: dict, comp: dict) -> bool:
     subject_pc = _normalise_postcode(subject.get("postcode") or "")
     if subject_pc and subject_pc != _normalise_postcode(comp.get("postcode") or ""):
@@ -198,17 +214,28 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
         distance_weight = 1.0 if distance <= 0.25 else 0.92 if distance <= 0.5 else 0.78 if distance <= 1.0 else 0.62 if distance <= 1.5 else 0.45
         recency_weight = 1.0 if months <= 6 else 0.94 if months <= 12 else 0.82 if months <= 24 else 0.68
         same = bool(c.get("same_property")) or _same_address(subject, c)
+        same_street = _same_street(subject, c)
         same_factor = 0.45 if same else 1.0
-        weight = type_match * distance_weight * recency_weight * same_factor
+        street_factor = 1.18 if same_street and not same else 1.0
+        weight = min(1.2, type_match * distance_weight * recency_weight * same_factor * street_factor)
         c.update({
             "months_ago": round(months, 1),
             "type_match": round(type_match, 2),
+            "same_street": 1 if same_street else 0,
             "match_score": round(weight * 100, 1),
             "same_property": 1 if same else 0,
         })
         ranked.append(c)
     ranked.sort(key=lambda x: (x.get("match_score") or 0, -(x.get("distance_miles") or 0)), reverse=True)
-    ranked = ranked[:12]
+    # If we have enough strong evidence, do not let weaker house subtypes or distant
+    # sales widen the desktop range unnecessarily.
+    exact_close = [c for c in ranked if (c.get("type_match") or 0) >= 0.99 and (c.get("distance_miles") or 99) <= 1.0 and not c.get("same_property")]
+    if len(exact_close) >= 4:
+        ranked = exact_close
+    very_close = [c for c in ranked if (c.get("distance_miles") or 99) <= 0.5 and not c.get("same_property")]
+    if len(very_close) >= 5:
+        ranked = very_close
+    ranked = ranked[:10]
     weighted = [(float(c["sale_price"]), max(0.01, float(c["match_score"]) / 100)) for c in ranked]
     mid = _weighted_quantile(weighted, 0.50)
     low = _weighted_quantile(weighted, 0.25)
@@ -225,7 +252,8 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
     exact_ratio = sum((c.get("type_match") or 0) >= 0.99 for c in ranked) / n if n else 0
     recent_ratio = sum((c.get("months_ago") or 999) <= 18 for c in ranked) / n if n else 0
     close_ratio = sum((c.get("distance_miles") or 99) <= 1.0 for c in ranked) / n if n else 0
-    confidence = 18 + min(32, n * 4) + exact_ratio * 12 + recent_ratio * 10 + close_ratio * 8 - min(18, dispersion * 12)
+    same_street_ratio = sum(bool(c.get("same_street")) for c in ranked) / n if n else 0
+    confidence = 18 + min(32, n * 4) + exact_ratio * 12 + recent_ratio * 10 + close_ratio * 8 + same_street_ratio * 8 - min(18, dispersion * 12)
     if n < 3:
         confidence = min(confidence, 42)
     confidence = int(max(0, min(82, round(confidence))))
@@ -240,7 +268,7 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
         warnings.append("Comparable sale prices are widely dispersed, which reduces confidence in the automated range.")
     return {
         "provider": "HM Land Registry PPD",
-        "methodology": "Nearby standard residential sales, weighted by property-type match, distance and recency.",
+        "methodology": "Nearby standard residential sales, weighted by exact subtype, same-street match, distance and recency, with weaker evidence removed when enough close exact-type sales exist.",
         "valuation_low": _money_round(low),
         "valuation_mid": _money_round(mid),
         "valuation_high": _money_round(high),

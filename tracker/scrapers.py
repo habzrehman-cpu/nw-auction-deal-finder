@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from dataclasses import replace
 from urllib.parse import urljoin
 import requests
+from dateutil import parser as date_parser
 from bs4 import BeautifulSoup, NavigableString
 
 from .common import Lot, clean_text, extract_postcode, parse_money, infer_status, infer_type, is_north_west, area_from_text, make_key, absolute
@@ -55,62 +56,168 @@ def _lot(source, base, text, href="", default_status="Live"):
 
 class AuctionHouseScraper:
     source="Auction House NW"
-    current="https://www.auctionhouse.co.uk/northwest/auction/search-results"
+    current_urls=[
+        "https://www.auctionhouse.co.uk/northwest/auction/search-results",
+        "https://www.auctionhouse.co.uk/manchester/auction/search-results",
+    ]
     unsold="https://www.auctionhouse.co.uk/unsold"
-    past="https://www.auctionhouse.co.uk/northwest/auction/past-auctions?page={}"
+    past_urls=[
+        "https://www.auctionhouse.co.uk/northwest/auction/past-auctions?page={}",
+        "https://www.auctionhouse.co.uk/manchester/auction/past-auctions?page={}",
+    ]
     def __init__(self, fetcher=None): self.f=fetcher or Fetcher()
 
     def _anchor_lots(self,url,default_status):
         soup=BeautifulSoup(self.f.get(url).text,"html.parser"); out=[]
         for a in soup.find_all("a",href=True):
             txt=clean_text(a.get_text(" ",strip=True))
-            if "£" not in txt or not extract_postcode(txt): continue
+            if "GBP" not in txt.replace("£","GBP") and "£" not in txt:
+                continue
+            if not extract_postcode(txt): continue
             lot=_lot(self.source,url,txt,a["href"],default_status)
             if lot: out.append(lot)
         return self._dedupe(out)
 
     def _past_lots(self,url):
         soup=BeautifulSoup(self.f.get(url).text,"html.parser"); out=[]
+        needles=["No Bids","Last Bid","Sold for","Sold Prior","Sold After","Withdrawn","Postponed","Unsold"]
         for tr in soup.find_all("tr"):
             txt=clean_text(tr.get_text(" ",strip=True))
-            if not extract_postcode(txt) or not any(x.lower() in txt.lower() for x in ["No Bids","Last Bid","Sold for","Sold Prior","Sold After","Withdrawn","Postponed"]): continue
+            if not extract_postcode(txt) or not any(x.lower() in txt.lower() for x in needles): continue
             href=""
             a=tr.find("a",href=True)
             if a: href=a["href"]
             lot=_lot(self.source,url,txt,href,infer_status(txt,"Result"))
-            if lot: out.append(lot)
-        return self._dedupe(out)
+            if lot:
+                # Auction House result tables publish the ended timestamp as DD/MM/YYYY HH:MM.
+                # Preserve it so historical guide changes are ordered by the real auction date,
+                # rather than the day this app happened to discover the row.
+                ended=re.search(r"\b(\d{1,2}/\d{1,2}/20\d{2}(?:\s+\d{1,2}:\d{2})?)\b",txt)
+                if ended: lot.auction_date=ended.group(1)
+                out.append(lot)
+        return out
+
+    @staticmethod
+    def _identity(lot):
+        text=clean_text(lot.raw_text or lot.address or lot.title)
+        pc=(lot.postcode or extract_postcode(text)).upper()
+        before=text
+        if pc:
+            compact_pc=re.sub(r"\s+","",pc)
+            m=re.search(re.escape(compact_pc),re.sub(r"\s+","",text),re.I)
+            # Keep the simpler original-text window; postcode remains a strong anchor.
+            pcm=re.search(re.escape(pc).replace(r"\ ",r"\s*"),text,re.I)
+            if pcm: before=text[:pcm.start()]
+        before=re.sub(r"\bLot\s*#?\s*[0-9]+[A-Za-z]?\b"," ",before,flags=re.I)
+        before=re.sub(r"£\s*[\d,.]+(?:\s*(?:\+|to|-|–)\s*£?\s*[\d,.]+)?"," ",before)
+        matches=list(re.finditer(r"\b(\d+[A-Za-z]?(?:\s*[-/]\s*\d+[A-Za-z]?)?)\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,2})",before))
+        if matches:
+            m=matches[-1]
+            street=clean_text(m.group(2)).lower()
+            return f"{pc}|{re.sub(r'\s+','',m.group(1)).lower()}|{street}"
+        words=re.findall(r"[A-Za-z0-9]+",before.lower())
+        return f"{pc}|{' '.join(words[-5:])}"
+
+    @staticmethod
+    def _event(lot):
+        captured=""
+        if lot.auction_date:
+            try:
+                dt=date_parser.parse(lot.auction_date,dayfirst=True,fuzzy=True)
+                if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                captured=dt.astimezone(timezone.utc).isoformat()
+            except Exception:
+                captured=""
+        return {
+            "captured_at": captured,
+            "guide_text": lot.guide_text,
+            "guide_price": lot.guide_price,
+            "result_text": lot.result_text,
+            "result_price": lot.result_price,
+            "status": lot.status,
+            "auction_date": lot.auction_date,
+        }
 
     def scrape(self):
-        lots=[]
-        lots += self._anchor_lots(self.current,"Live")
-        lots += self._anchor_lots(self.unsold,"Available post-auction")
-        for p in range(1,5):
-            try: lots += self._past_lots(self.past.format(p))
-            except Exception: pass
-        return self._dedupe(lots)
+        active=[]
+        for current_url in self.current_urls:
+            try:
+                active += self._anchor_lots(current_url,"Live")
+            except Exception:
+                # One regional Auction House catalogue should not take down the other.
+                continue
+        active += self._anchor_lots(self.unsold,"Available post-auction")
+        past=[]
+        # Search both North West and Manchester archives. Manchester is required for
+        # Saddleworth/Oldham/Greater Manchester lots that appear on the national unsold
+        # page but not in the Auction House North West archive.
+        for pattern in self.past_urls:
+            for p in range(1,13):
+                try:
+                    page=self._past_lots(pattern.format(p))
+                    if not page and p>5: break
+                    past += page
+                except Exception:
+                    if p>5: break
+
+        active_by_identity={}
+        for lot in active:
+            key=self._identity(lot)
+            prev=active_by_identity.get(key)
+            if prev is None or lot.status=="Available post-auction" or (prev.status not in {"Available post-auction"} and lot.status!="Live"):
+                active_by_identity[key]=lot
+
+        past_by_identity={}
+        for lot in past:
+            past_by_identity.setdefault(self._identity(lot),[]).append(lot)
+
+        out=[]
+        consumed=set()
+        failure_states={"No Bids","Last Bid","Unsold"}
+        for key,lot in active_by_identity.items():
+            prior=past_by_identity.get(key,[])
+            events=[]; seen=set()
+            for old in prior:
+                ev=self._event(old)
+                marker=(ev.get("guide_price"),ev.get("result_price"),ev.get("status"),ev.get("auction_date"))
+                if marker in seen: continue
+                seen.add(marker); events.append(ev)
+            if lot.status=="Live" and any(old.status in failure_states for old in prior):
+                lot.status="Relisted"
+            lot.historical_events=events
+            out.append(lot); consumed.add(key)
+
+        # Keep result-only properties for sold evidence and market history, while
+        # collapsing repeated appearances into one property row plus event history.
+        for key,group in past_by_identity.items():
+            if key in consumed: continue
+            rep=group[0]
+            rep.historical_events=[self._event(x) for x in group[1:]]
+            out.append(rep)
+        return self._dedupe(out)
 
     @staticmethod
     def _dedupe(lots):
         d={}
-        failures={"No Bids","Last Bid","Withdrawn","Postponed"}
+        failures={"No Bids","Last Bid","Unsold","Withdrawn","Postponed"}
         for l in lots:
             key=l.source_key
             prev=d.get(key)
             if prev is None:
                 d[key]=l; continue
-            # Current availability beats an older failed result. If a property appears
-            # live again after a failed auction, surface it explicitly as Relisted.
+            combined=list(prev.historical_events or [])+list(l.historical_events or [])
             if l.status=="Available post-auction":
-                d[key]=l
+                l.historical_events=combined; d[key]=l
             elif prev.status in failures and l.status=="Live":
-                l.status="Relisted"; d[key]=l
+                l.status="Relisted"; l.historical_events=combined; d[key]=l
             elif l.status in failures and prev.status=="Live":
-                prev.status="Relisted"; d[key]=prev
+                prev.status="Relisted"; prev.historical_events=combined; d[key]=prev
             elif prev.status=="Available post-auction":
-                pass
+                prev.historical_events=combined
             elif l.status!="Live" and prev.status=="Live":
-                d[key]=l
+                l.historical_events=combined; d[key]=l
+            else:
+                prev.historical_events=combined
         return list(d.values())
 
 

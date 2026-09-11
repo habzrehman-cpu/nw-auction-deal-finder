@@ -54,7 +54,7 @@ def test_residential_summary_weighted_range():
         {"address": "5 A St", "postcode": "BB2 4AE", "sale_price": 170000, "sale_date": "2024-12-01", "property_type": "Semi-Detached", "distance_miles": 1.1},
     ]
     s = summarise_residential_comps(subject, comps, today=date(2026, 9, 10))
-    assert s["comp_count"] == 5
+    assert s["comp_count"] == 4
     assert 130000 <= s["valuation_low"] <= s["valuation_mid"] <= s["valuation_high"] <= 175000
     assert s["confidence"] >= 50
     assert s["guide_discount_pct"] > 30

@@ -1,13 +1,81 @@
 # North West Property Auction Deal Finder
 
-A live-pull auction dashboard, acquisition triage engine and due-diligence workspace for public property-auction listings from:
+**Version 1.6.0** turns the tracker into an auction-site-style acquisition platform: browse property cards with images and high-level deal numbers, switch between Residential and Commercial, let the system rank the strongest opportunities first, then open a full Deal Room for underwriting, comparables, auction history, planning, legal-pack and location intelligence.
+
+The public auction sources currently targeted are:
 
 - Allsop
 - Savills Property Auctions
 - BTG Eddisons Property Auctions
-- Auction House North West
+- Auction House North West **and Auction House Manchester** (kept under the Auction House NW source label for database continuity)
 
 It is designed for **on-demand refresh**, not scheduled alerts. Press **Refresh live data** and the backend fetches the current public auction pages, filters to North West England, stores them in SQLite, follows public lot-detail pages when enrichment is due, geocodes the property postcode, measures motorway access, records price/status/date changes, refreshes priority comparable evidence, screens official planning data, discovers public legal-pack material, and recalculates a transparent deal score and underwriting decision.
+
+
+## Version 1.6 - professional sourcing workflow
+
+### Browse like an auction website
+
+The primary interface is no longer a database table. It is a property-led browse screen inspired by established auction/search platforms such as EIG, while exposing substantially more acquisition intelligence on each deal.
+
+Use the prominent **Residential / Commercial** switch, then choose:
+
+- **Best deals** - default system ranking, strongest opportunity first
+- **Unsold** - available post-auction, no-bid, last-bid and unsold signals
+- **New** - newly discovered stock
+- **Reductions** - observed guide reductions
+- **Relisted** - failed lots returned to market
+- **Shortlist** - persistent saved opportunities
+
+Each property card is designed as a fast sourcing snapshot: property image, address, auctioneer, lot/status, guide, key residential or commercial metrics, seller motivation, comparable confidence and a transparent deal-potential score. The old dense table remains available only inside **Analyst table / export view**.
+
+### Deal Room
+
+Click **View deal** to open the full acquisition record. The Deal Room separates information into:
+
+1. Overview
+2. Financials
+3. Comparables
+4. Auction history
+5. Planning & legal
+6. Location
+
+The screen highlights both **why the deal may be attractive** and **what still needs checking**. Missing planning/legal evidence is displayed as **UNKNOWN**, never as zero risk.
+
+### Historical auction backfill
+
+Auction House stock is now checked against both the **North West and Manchester past-auction archives**. This is important for lots that move between a regional catalogue and the national unsold page. Historical observations are matched to the subject property and stored as dated events, allowing the engine to reconstruct:
+
+- earlier guide prices
+- no-bid / last-bid / unsold results
+- repeat auction failures
+- relisting
+- observed guide reductions
+- days since the latest failed-auction signal
+
+A property first discovered today can therefore inherit recent public auction history instead of starting with a false zero-failure record.
+
+### Refurbishment and heritage safeguards
+
+If the listing says **modernisation, refurbishment or upgrading is required** but the saved works budget is GBP 0, the financial-return score is capped, the maximum bid is marked **PROVISIONAL**, and automatic bid approval is blocked until a works allowance is entered.
+
+Grade I/II/listed-building wording and official listed-building planning designations are surfaced as material DD issues. This is particularly important where a seemingly strong residential margin depends on refurbishment or change of use.
+
+### Property-specific auction fees
+
+The detail-page parser now looks for published percentage administration/buyer fees, minimum charges and search fees. Detected charges can feed the underwriting cost stack rather than relying only on the generic auction-fee allowance. The legal pack remains authoritative for all completion/disbursement costs.
+
+### Tighter residential comparables
+
+Residential comparable ranking gives stronger weight to same-street and exact-subtype evidence. Where enough close, exact-type transactions exist, weaker/distant comparables are excluded rather than widening the desktop valuation unnecessarily.
+
+### Motorway resilience
+
+Motorway-junction enrichment now tries multiple public Overpass endpoints and has a fallback junction query. It still labels straight-line fallback mileage honestly if road routing is unavailable.
+
+### Property images
+
+The detail-page enrichment captures the auctioneer's representative social/gallery image URL where publicly exposed. Existing databases will treat missing images as due for detail enrichment, so images will progressively populate after the first v1.6 live refresh.
 
 ## Windows quick start
 
@@ -18,6 +86,20 @@ It is designed for **on-demand refresh**, not scheduled alerts. Press **Refresh 
 5. Click **Refresh live data**.
 
 The first run installs the Python dependencies. The SQLite database `auction_tracker.db` is created automatically in this folder.
+
+
+## Updating the Streamlit Community Cloud test app
+
+If an earlier version is already deployed from GitHub:
+
+1. Extract the v1.6 ZIP locally.
+2. Upload/replace the project files in the **root** of the existing GitHub repository (keep `app.py`, `requirements.txt` and `tracker/` at repository root).
+3. Commit the changes to the `main` branch.
+4. Streamlit Community Cloud normally detects the GitHub commit and redeploys automatically.
+5. When the app comes back, click **Refresh live data**.
+6. Existing rows without images become eligible for detail-page enrichment, Auction House history is backfilled from North West + Manchester archives, and ranking is recalculated.
+
+The current test build still uses a local SQLite file. Streamlit Community Cloud storage is not intended as the final persistent production database; move to a hosted persistent database after the live-source behaviour is accepted.
 
 ## What the live enrichment now does
 
@@ -65,7 +147,7 @@ If road routing is unavailable, the tool falls back to straight-line distance an
 
 ## Planning + legal due diligence
 
-Version 1.5 adds a dedicated due-diligence layer. Use **Refresh planning + legal** to process a priority batch, or refresh either layer from the selected-property screen.
+The due-diligence layer is available from the Deal Room. Use **Refresh planning + legal** to process a priority batch, or refresh either layer from the selected-property screen.
 
 ### Official planning intelligence
 
@@ -305,7 +387,7 @@ From the project folder:
 PYTHONPATH=. pytest -q
 ```
 
-The automated tests cover postcode/money parsing, auction results, North West filtering, floor-area extraction, detail-page text extraction, postcode geocoding parsing, OpenStreetMap motorway membership, motorway distance logic, residential comparable parsing/ranking, commercial auction comparable GBP/sq ft, comparable persistence, planning constraint/application analysis, legal-link discovery, legal-term/risk extraction, planning/legal database persistence, legal acquisition gating, price reductions, repeat failures, deal scoring, SDLT calculations, automatic comparable valuation gates, maximum-bid solving, vendor motivation and persistent underwriting assumptions.
+The v1.6 release currently passes **55 automated tests** covering postcode/money parsing, auction results, North West filtering, floor-area and property-image extraction, detail-page auction dates, postcode geocoding, OpenStreetMap motorway membership/fallbacks, motorway distance logic, residential comparable ranking, commercial auction comparable GBP/sq ft, comparable persistence, exact-property planning matching, legal-link and legal-term/risk extraction, planning/legal database persistence, legal acquisition gating, historical auction backfill, guide reductions, distinct repeat failures, refurbishment safeguards, property-specific auction fees, listed-building flags, shortlist persistence, SDLT calculations, automatic comparable valuation gates, maximum-bid solving, vendor motivation and persistent underwriting assumptions.
 
 ## Important operational note
 

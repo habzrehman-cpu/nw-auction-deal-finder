@@ -18,7 +18,7 @@ SQM_RE = re.compile(
 OUTWARD_RE = re.compile(r"\b([A-Z]{1,2}\d{1,2}[A-Z]?)\b", re.I)
 
 COMMERCIAL_TYPES = {"industrial", "commercial", "mixed use", "development", "land"}
-FAILURE_STATUSES = {"no bids", "last bid", "available post-auction"}
+FAILURE_STATUSES = {"no bids", "last bid", "unsold", "available post-auction"}
 
 # These are postcode-district corridor signals, not measured road distances. They are
 # deliberately conservative and are shown in the UI as a signal, not an exact mileage.
@@ -111,6 +111,7 @@ def detect_features(text: str) -> dict:
         "loading": any(x in t for x in ["loading", "loading bay", "roller shutter", "yard", "service yard", "dock level"]),
         "split_potential": any(x in t for x in ["split", "subdivide", "sub-divide", "multiple units", "multi-let", "multi let", "separate units", "separate entrances", "part let"]),
         "development": any(x in t for x in ["development potential", "redevelopment", "planning permission", "subject to planning", "alternative use"]),
+        "listed_building": any(x in t for x in ["grade i listed", "grade ii listed", "grade ii* listed", "listed building", "listed property"]),
     }
 
 
@@ -186,15 +187,43 @@ def history_metrics(history: Iterable[dict] | None, current: dict | None = None,
         reduction_pct = round((earliest - latest) / earliest * 100, 1)
 
     statuses = [(r.get("status") or "").strip().lower() for r in rows]
-    failure_count = sum(s in {"no bids", "last bid"} for s in statuses)
     relist_count = sum(s == "relisted" for s in statuses)
 
-    failure_dates = []
+    # Count distinct failed-auction events, not just status labels. Current unsold pages
+    # often show "Available post-auction" while the archive shows "No Bids" for the
+    # same auction. Merge those when their guide/date evidence overlaps, but count a
+    # later post-auction appearance at a different guide/date as a new failed attempt.
+    failure_events = []
     for r in rows:
-        if (r.get("status") or "").strip().lower() in FAILURE_STATUSES:
-            dt = _parse_dt(r.get("captured_at")) or _parse_dt(r.get("auction_date"))
-            if dt:
-                failure_dates.append(dt)
+        status = (r.get("status") or "").strip().lower()
+        if status not in FAILURE_STATUSES:
+            continue
+        auction_dt = _parse_dt(r.get("auction_date"))
+        captured_dt = _parse_dt(r.get("captured_at"))
+        guide = int(_num(r.get("guide_price"))) if _num(r.get("guide_price")) else None
+        event = {"auction_dt": auction_dt, "captured_dt": captured_dt, "guide": guide}
+        duplicate = False
+        for existing in failure_events:
+            if auction_dt and existing["auction_dt"] and auction_dt.date() == existing["auction_dt"].date():
+                duplicate = True
+                break
+            # If one representation lacks an auction date, identical guide evidence is
+            # the best available signal that it is the same failed sale rather than a
+            # second failure. Two dated auctions at the same guide still count twice.
+            if guide and existing["guide"] == guide and (not auction_dt or not existing["auction_dt"]):
+                duplicate = True
+                if auction_dt and not existing["auction_dt"]:
+                    existing["auction_dt"] = auction_dt
+                break
+        if not duplicate:
+            failure_events.append(event)
+    failure_count = len(failure_events)
+
+    failure_dates = []
+    for event in failure_events:
+        dt = event.get("auction_dt") or event.get("captured_dt")
+        if dt:
+            failure_dates.append(dt)
     days_since_failure = None
     if failure_dates:
         now = now or datetime.now(timezone.utc)
@@ -219,6 +248,8 @@ def _status_points(status: str) -> tuple[int, str | None]:
         return 30, "Confirmed available after auction"
     if s == "no bids":
         return 27, "Auction recorded no bids"
+    if s == "unsold":
+        return 26, "Auction recorded the lot as unsold"
     if s == "last bid":
         return 24, "Auction finished with a last-bid / reserve-gap signal"
     if s == "relisted":

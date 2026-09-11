@@ -26,6 +26,7 @@ STATUS_PATTERNS = [
     ("withdrawn", "Withdrawn"),
     ("postponed", "Postponed"),
     ("no bids", "No Bids"),
+    ("unsold", "Unsold"),
     ("last bid", "Last Bid"),
     ("sold for", "Sold"),
     ("sold", "Sold"),
@@ -61,7 +62,9 @@ class Lot:
     status: str = "Live"
     auction_date: str = ""
     raw_text: str = ""
+    image_url: str = ""
     captured_at: str = ""
+    historical_events: list | None = None
 
     def to_dict(self):
         d = asdict(self)
@@ -155,7 +158,7 @@ def make_key(source: str, url: str, text: str) -> str:
         t = t[:m.end()]
     t = re.sub(r"\bLot\s*#?\s*[0-9]+[A-Za-z]?\b", " ", t, flags=re.I)
     t = re.sub(r"(?:Guide(?: Price)?\s*(?:\||:)?\s*)?£\s*[\d,.]+(?:\.\d+)?\s*[kKmM]?(?:\s*(?:-|–|to)\s*£?\s*[\d,.]+(?:\.\d+)?\s*[kKmM]?)?\+?", " ", t, flags=re.I)
-    t = re.sub(r"\b(?:sold prior|sold after|sold for|sold|available post[- ]auction|no bids|last bid|withdrawn|postponed)\b", " ", t, flags=re.I)
+    t = re.sub(r"\b(?:sold prior|sold after|sold for|sold|available post[- ]auction|no bids|last bid|unsold|withdrawn|postponed)\b", " ", t, flags=re.I)
     t = re.sub(r"\(plus fees\)", " ", t, flags=re.I)
     stable = clean_text(t).lower()
     seed = f"{source}|{extract_postcode(text)}|{stable[:260]}"

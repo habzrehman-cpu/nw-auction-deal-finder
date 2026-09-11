@@ -14,6 +14,8 @@ SOLD_STATUSES = {"sold", "sold prior", "sold after"}
 class UnderwritingDefaults:
     auction_admin_fee: float = 1500.0
     buyer_premium_pct: float = 0.0
+    buyer_premium_minimum: float = 0.0
+    search_fee: float = 0.0
     legal_cost: float = 2000.0
     survey_cost: float = 1000.0
     finance_mode: str = "Cash"
@@ -96,6 +98,35 @@ def infer_underwriting_strategy(lot: dict, requested: str = "auto") -> str:
     return "commercial" if typ in COMMERCIAL_TYPES else "residential"
 
 
+
+
+def extract_listing_fees(lot: dict) -> dict:
+    """Extract common auction buyer charges from public listing/detail text.
+
+    The result is advisory and only fills missing property-specific assumptions.
+    """
+    text = " ".join(str(lot.get(k) or "") for k in ("title", "raw_text", "detail_text"))
+    out = {"buyer_premium_pct": None, "buyer_premium_minimum": None, "search_fee": None, "fee_evidence": []}
+    pct_patterns = [
+        r"(?:administration|admin|buyers?|buyer'?s)\s*(?:fee|premium)[^%]{0,100}?(\d+(?:\.\d+)?)\s*%",
+        r"(\d+(?:\.\d+)?)\s*%[^.]{0,80}(?:administration|admin|buyers?|buyer'?s)\s*(?:fee|premium)",
+    ]
+    for pattern in pct_patterns:
+        m = re.search(pattern, text, re.I)
+        if m:
+            out["buyer_premium_pct"] = float(m.group(1))
+            out["fee_evidence"].append(f"Buyer/admin fee {m.group(1)}% detected in listing")
+            break
+    m = re.search(r"\b(?:minimum|min)\b[^GBP0-9]{0,30}(?:GBP|pounds?)?\s*([0-9][0-9,]*(?:\.\d+)?)", text.replace("£", "GBP"), re.I)
+    if m:
+        out["buyer_premium_minimum"] = float(m.group(1).replace(",", ""))
+        out["fee_evidence"].append(f"Minimum buyer/admin fee GBP {out['buyer_premium_minimum']:,.0f} detected")
+    m = re.search(r"search\s*fees?[^GBP0-9]{0,30}(?:GBP|pounds?)?\s*([0-9][0-9,]*(?:\.\d+)?)", text.replace("£", "GBP"), re.I)
+    if m:
+        out["search_fee"] = float(m.group(1).replace(",", ""))
+        out["fee_evidence"].append(f"Search fee GBP {out['search_fee']:,.0f} detected")
+    return out
+
 def known_risk_flags(lot: dict) -> list[dict]:
     text = " ".join(
         str(lot.get(k) or "") for k in ("title", "address", "raw_text", "detail_text")
@@ -113,6 +144,7 @@ def known_risk_flags(lot: dict) -> list[dict]:
         (r"tenant|tenanted|occupied|part let|lease in place", 1, "Occupancy / lease obligations require review"),
         (r"vat.{0,20}(?:payable|applicable|elected|opted)", 2, "VAT wording requires tax review"),
         (r"buyer.{0,20}(?:premium|fee)|administration fee", 1, "Auction buyer fee / premium wording"),
+        (r"grade\s*(?:i|ii|ii\*)\s*listed|listed building|listed property", 3, "Listed-building / heritage consent risk"),
     ]
     flags = []
     seen = set()
@@ -261,7 +293,9 @@ def acquisition_costs(price: float, strategy: str, assumptions: dict | None = No
     price = max(0.0, float(price or 0))
     auction_admin = max(0.0, _num(assumptions.get("auction_admin_fee"), defaults.auction_admin_fee) or 0)
     buyer_pct = max(0.0, _num(assumptions.get("buyer_premium_pct"), defaults.buyer_premium_pct) or 0) / 100
-    buyer_premium = price * buyer_pct
+    buyer_minimum = max(0.0, _num(assumptions.get("buyer_premium_minimum"), defaults.buyer_premium_minimum) or 0)
+    search_fee = max(0.0, _num(assumptions.get("search_fee"), defaults.search_fee) or 0)
+    buyer_premium = max(price * buyer_pct, buyer_minimum) if (buyer_pct or buyer_minimum) else 0.0
     legal = max(0.0, _num(assumptions.get("legal_cost"), defaults.legal_cost) or 0)
     survey = max(0.0, _num(assumptions.get("survey_cost"), defaults.survey_cost) or 0)
     purchase_vat_pct = max(0.0, _num(assumptions.get("purchase_vat_pct"), 0.0) or 0) / 100
@@ -279,13 +313,15 @@ def acquisition_costs(price: float, strategy: str, assumptions: dict | None = No
         sdlt_basis = sdlt_mode
 
     finance = _finance_costs(price, assumptions, defaults)
-    acquisition_only = price + sdlt + auction_admin + buyer_premium + legal + survey + vat_cash_cost + finance["finance_cost"]
+    acquisition_only = price + sdlt + auction_admin + buyer_premium + search_fee + legal + survey + vat_cash_cost + finance["finance_cost"]
     return {
         "purchase_price": price,
         "sdlt": sdlt,
         "sdlt_basis": sdlt_basis,
         "auction_admin_fee": auction_admin,
         "buyer_premium": buyer_premium,
+        "buyer_premium_minimum": buyer_minimum,
+        "search_fee": search_fee,
         "legal_cost": legal,
         "survey_cost": survey,
         "purchase_vat": purchase_vat,
@@ -502,8 +538,18 @@ def _asset_quality_score(lot: dict, deal_analysis: dict, strategy: str) -> float
 def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None = None,
                         defaults: UnderwritingDefaults | None = None,
                         strategy: str = "auto") -> dict:
-    assumptions = assumptions or {}
+    assumptions = dict(assumptions or {})
     defaults = defaults or UnderwritingDefaults()
+    detected_fees = extract_listing_fees(lot)
+    if detected_fees.get("buyer_premium_pct") is not None and assumptions.get("buyer_premium_pct") is None:
+        assumptions["buyer_premium_pct"] = detected_fees["buyer_premium_pct"]
+        # A published percentage administration fee replaces the generic flat auction allowance unless the user saved one.
+        if "auction_admin_fee" not in assumptions:
+            assumptions["auction_admin_fee"] = 0.0
+    if detected_fees.get("buyer_premium_minimum") is not None and assumptions.get("buyer_premium_minimum") is None:
+        assumptions["buyer_premium_minimum"] = detected_fees["buyer_premium_minimum"]
+    if detected_fees.get("search_fee") is not None and assumptions.get("search_fee") is None:
+        assumptions["search_fee"] = detected_fees["search_fee"]
     selected = infer_underwriting_strategy(lot, strategy if strategy != "auto" else str(assumptions.get("strategy") or "auto"))
     guide = _num(lot.get("guide_price")) or 0.0
     current_price = _num(assumptions.get("purchase_price")) or _num(deal_analysis.get("opening_offer")) or guide
@@ -524,6 +570,12 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     works_entered = (_num(assumptions.get("refurb_cost"), 0) or 0) > 0 or (
         selected == "commercial" and (_num(assumptions.get("capex_cost"), 0) or 0) > 0
     )
+    features = deal_analysis.get("features") or {}
+    works_required_signal = bool(features.get("refurbishment"))
+    listed_signal = bool(features.get("listed_building") or deal_analysis.get("planning_listed_flag"))
+    works_missing = works_required_signal and not works_entered
+    if works_missing:
+        financial_score = min(financial_score, 4.0)
     confidence = 35
     if valuation_ready:
         if values.get("auto_comparable_used"):
@@ -534,6 +586,8 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
     if deal_analysis.get("detail_enriched"): confidence += 8
     if int(deal_analysis.get("failure_count") or 0) > 0: confidence += 8
     if works_entered: confidence += 8
+    if works_missing: confidence -= 15
+    if listed_signal and works_required_signal: confidence -= 5
     if assumptions.get("underwriting_notes"): confidence += 4
     if deal_analysis.get("planning_status") == "ok": confidence += 4
     if deal_analysis.get("legal_status") == "parsed": confidence += 10
@@ -551,7 +605,13 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
             "The valuation is seeded from automated comparable evidence. Treat the maximum bid as desktop acquisition triage until condition, legal pack and local market evidence are verified."
         )
     if deal_analysis.get("planning_status") in {"error", "unavailable", None, ""}:
-        warnings.append("Official planning-data screening is incomplete or unavailable; check the relevant local planning authority before relying on development assumptions.")
+        warnings.append("Official planning-data screening is incomplete or unavailable; planning risk is UNKNOWN until checked against the relevant authority/source.")
+    if works_missing:
+        warnings.append("The listing indicates modernisation/refurbishment but the works budget is GBP 0. Financial return and maximum bid are provisional until a works estimate is entered.")
+    if listed_signal:
+        warnings.append("Listed-building / heritage wording or designation detected. Refurbishment and change-of-use assumptions require heritage/planning review.")
+    for fee_note in detected_fees.get("fee_evidence") or []:
+        warnings.append(fee_note)
     if status in SOLD_STATUSES:
         recommendation = "PASS"
         action = "Already sold / sold prior. Retain only as market evidence."
@@ -564,6 +624,10 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         recommendation = "WATCH"
         action = "Complete valuation inputs before setting a maximum bid."
         warnings.append("No market value/GDV has been entered yet; a professional maximum bid cannot be calculated safely.")
+    elif works_missing:
+        recommendation = "WATCH"
+        action = "Works estimate required before the bid ceiling can be approved. The displayed maximum bid is provisional only."
+        reasons.append("Refurbishment/modernisation is indicated but no works budget has been entered")
     elif values.get("auto_comparable_used") and (values.get("comparable_confidence") or 0) < 65:
         recommendation = "WATCH"
         action = "Automatic comparable evidence is not yet strong enough for a PURSUE decision; verify valuation evidence or enter a manual GDV/market value."
@@ -619,6 +683,15 @@ def underwrite_property(lot: dict, deal_analysis: dict, assumptions: dict | None
         "underwriting_confidence": confidence,
         "overall_opportunity_score": overall,
         "max_bid": max_bid,
+        "max_bid_provisional": bool(max_bid and works_missing),
+        "bid_ceiling_approved": bool(max_bid and not works_missing and str(deal_analysis.get("legal_status") or "").lower() in {"parsed", "reviewed"}),
+        "works_required_signal": works_required_signal,
+        "works_missing": works_missing,
+        "listed_building_signal": listed_signal,
+        "detected_fee_evidence": detected_fees.get("fee_evidence") or [],
+        "detected_buyer_premium_pct": detected_fees.get("buyer_premium_pct"),
+        "detected_buyer_premium_minimum": detected_fees.get("buyer_premium_minimum"),
+        "detected_search_fee": detected_fees.get("search_fee"),
         "max_bid_all_in": max_bid_costs["all_in_cost"] if max_bid_costs else None,
         "discount_to_guide_pct": discount_to_guide,
         "recommendation": recommendation,
