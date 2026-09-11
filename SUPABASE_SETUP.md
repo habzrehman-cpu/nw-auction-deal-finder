@@ -58,3 +58,8 @@ Supabase S3 access keys are server credentials with broad Storage access. Store 
 ## Current architecture note
 
 v1.8.1 uses a cloud-synchronised SQLite snapshot because the current deployment is single-user and on a free test stack. If this becomes a concurrent multi-user product, migrate the tables to Postgres so multiple users cannot overwrite the same SQLite snapshot.
+
+
+## v1.8.2 connection status
+
+`Private cloud connected - write not yet verified` means the app successfully listed the configured private bucket. After the first successful `Sync cloud snapshot`, the status changes to `Private cloud read/write verified`. If an S3 request fails, v1.8.2 surfaces the HTTP/S3 error detail rather than a generic upload message.

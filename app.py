@@ -71,11 +71,24 @@ cloud_config = config_from_mapping(_secrets_mapping)
 cloud_store = SupabaseStorage(cloud_config) if cloud_config.configured else None
 cloud_bootstrap = {"restored": False, "reason": "not-configured"}
 cloud_bootstrap_error = ""
+cloud_probe = st.session_state.get("cloud_probe", {}) if cloud_store else {}
+cloud_probe_error = st.session_state.get("cloud_probe_error", "") if cloud_store else ""
 if cloud_store:
     try:
         cloud_bootstrap = cloud_store.restore_database_if_missing(DB_PATH)
     except Exception as exc:
-        cloud_bootstrap_error = str(exc)[:500]
+        cloud_bootstrap_error = str(exc)[:800]
+    # A configured Secrets block is not the same as a verified connection. Probe
+    # the existing private bucket once per Streamlit session so the UI does not
+    # claim that cloud persistence is connected until Supabase has responded.
+    if not cloud_probe and not cloud_probe_error:
+        try:
+            cloud_probe = cloud_store.probe()
+            st.session_state["cloud_probe"] = cloud_probe
+            st.session_state["cloud_probe_error"] = ""
+        except Exception as exc:
+            cloud_probe_error = str(exc)[:800]
+            st.session_state["cloud_probe_error"] = cloud_probe_error
 
 db = Database(DB_PATH)
 
@@ -87,6 +100,7 @@ def sync_cloud(reason="update", quiet=True):
         result["reason_label"] = reason
         st.session_state["cloud_last_sync"] = datetime.now(timezone.utc).isoformat()
         st.session_state["cloud_last_error"] = ""
+        st.session_state["cloud_write_verified"] = True
         return result
     except Exception as exc:
         st.session_state["cloud_last_error"] = str(exc)[:500]
@@ -258,18 +272,25 @@ with st.sidebar:
     default_com_margin = st.number_input("Commercial target uplift %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
     st.divider()
     st.caption("Persistence")
-    if cloud_store and not cloud_bootstrap_error:
-        st.success("Private cloud configured")
+    if cloud_store and not cloud_bootstrap_error and not cloud_probe_error:
+        if st.session_state.get("cloud_write_verified"):
+            st.success("Private cloud read/write verified")
+        else:
+            st.info("Private cloud connected - write not yet verified")
         last_sync = st.session_state.get("cloud_last_sync")
         if last_sync:
             st.caption(f"Last sync: {str(last_sync)[:19].replace('T', ' ')} UTC")
         if st.button("Sync cloud snapshot", use_container_width=True):
             result = sync_cloud("manual sync", quiet=False)
             if result.get("synced"):
-                st.success("Cloud snapshot updated.")
-    elif cloud_bootstrap_error:
+                st.success("Cloud snapshot updated. Read/write persistence verified.")
+    elif cloud_bootstrap_error or cloud_probe_error:
         st.error("Cloud configured but unavailable")
-        st.caption(cloud_bootstrap_error)
+        st.caption(cloud_bootstrap_error or cloud_probe_error)
+        if st.button("Retry cloud connection test", use_container_width=True):
+            st.session_state.pop("cloud_probe", None)
+            st.session_state.pop("cloud_probe_error", None)
+            st.rerun()
     else:
         st.warning("Local-only storage")
         st.caption("Streamlit can reset local data on reboot. Configure the private Supabase bucket in Streamlit Secrets to make history, notes and legal evidence persistent.")
@@ -319,9 +340,10 @@ with head4:
         st.caption(f"Latest source check: {latest.get('completed_at') or latest.get('started_at')} | {latest.get('source')} | {latest.get('status')}")
     else:
         st.caption("No data pulled yet. Use Refresh live data.")
-    if cloud_store and not cloud_bootstrap_error:
-        st.caption("Persistence: private cloud configured")
-    elif cloud_bootstrap_error:
+    if cloud_store and not cloud_bootstrap_error and not cloud_probe_error:
+        status = "read/write verified" if st.session_state.get("cloud_write_verified") else "connected; write not yet verified"
+        st.caption(f"Persistence: private cloud {status}")
+    elif cloud_bootstrap_error or cloud_probe_error:
         st.caption("Persistence: cloud configured but connection needs attention")
     else:
         st.caption("Persistence: local only (data can reset on Streamlit reboot)")

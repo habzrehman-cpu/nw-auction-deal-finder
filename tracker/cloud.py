@@ -74,15 +74,80 @@ class SupabaseStorage:
                 import boto3
             except ImportError as exc:
                 raise RuntimeError("boto3 is required for Supabase S3 persistence") from exc
+            Config = __import__("botocore.config", fromlist=["Config"]).Config
+            # Supabase implements the S3 protocol, but it is not AWS S3. Recent
+            # botocore releases automatically add optional flexible-checksum
+            # headers to PutObject requests. Some S3-compatible services reject
+            # those optional headers with an empty/opaque PutObject error. Keep
+            # checksums to AWS-required operations only and force canonical SigV4
+            # path-style requests, which is the configuration Supabase documents
+            # for S3-compatible clients.
+            client_config = Config(
+                signature_version="s3v4",
+                s3={
+                    "addressing_style": "path",
+                    "payload_signing_enabled": True,
+                },
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+                retries={"max_attempts": 3, "mode": "standard"},
+            )
             self._s3_client = boto3.client(
                 "s3",
                 endpoint_url=self.config.s3_endpoint,
                 region_name=self.config.s3_region,
                 aws_access_key_id=self.config.s3_access_key_id,
                 aws_secret_access_key=self.config.s3_secret_access_key,
-                config=__import__("botocore.config", fromlist=["Config"]).Config(s3={"addressing_style": "path"}),
+                config=client_config,
             )
         return self._s3_client
+
+
+    @staticmethod
+    def _s3_exception_detail(exc: Exception) -> str:
+        """Return useful, non-secret S3 diagnostics for the UI/logs."""
+        response = getattr(exc, "response", {}) or {}
+        error = response.get("Error") or {}
+        meta = response.get("ResponseMetadata") or {}
+        parts = []
+        code = str(error.get("Code") or "").strip()
+        message = str(error.get("Message") or "").strip()
+        status = meta.get("HTTPStatusCode")
+        request_id = meta.get("RequestId")
+        if code:
+            parts.append(code)
+        if status:
+            parts.append(f"HTTP {status}")
+        if message:
+            parts.append(message)
+        if request_id:
+            parts.append(f"request {request_id}")
+        # botocore occasionally receives an empty S3 error body. In that case the
+        # exception type/text is the only useful diagnostic available.
+        if not parts:
+            text = str(exc).strip()
+            parts.append(type(exc).__name__ + (f": {text}" if text else ""))
+        return " | ".join(parts)[:800]
+
+    def probe(self) -> dict:
+        """Perform a real private-storage connectivity check without writing data."""
+        if not self.configured:
+            return {"connected": False, "reason": "not-configured"}
+        if self.mode == "s3":
+            try:
+                result = self._s3().list_objects_v2(Bucket=self.config.bucket, MaxKeys=1)
+                return {
+                    "connected": True,
+                    "mode": "s3",
+                    "bucket": self.config.bucket,
+                    "objects_visible": int(result.get("KeyCount") or 0),
+                }
+            except Exception as exc:
+                raise RuntimeError(
+                    "Supabase S3 connection test failed: " + self._s3_exception_detail(exc)
+                ) from exc
+        self.ensure_bucket()
+        return {"connected": True, "mode": "rest", "bucket": self.config.bucket}
 
     def _headers(self, content_type=None):
         headers = {
@@ -161,20 +226,26 @@ class SupabaseStorage:
             except Exception as exc:
                 response = getattr(exc, "response", {}) or {}
                 error = response.get("Error") or {}
-                code = str(error.get("Code") or "")
-                message = str(error.get("Message") or "").strip()
+                code = str(error.get("Code") or "").strip()
                 if code in {"NoSuchBucket", "404", "NotFound"}:
                     raise RuntimeError(
                         f"Supabase Storage bucket '{self.config.bucket}' was not found. "
                         "Create the private bucket in the same Supabase project as the S3 access key."
                     ) from exc
-                if code in {"InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "403"}:
+                if code in {"InvalidAccessKeyId", "S3InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "403"}:
                     raise RuntimeError(
                         "Supabase S3 authentication failed. Check the Access Key ID, Secret Access Key, "
-                        "endpoint and region saved in Streamlit Secrets."
+                        "endpoint and region saved in Streamlit Secrets. "
+                        f"Details: {self._s3_exception_detail(exc)}"
                     ) from exc
-                detail = f" ({code}: {message})" if (code or message) else ""
-                raise RuntimeError(f"Supabase S3 upload failed{detail}") from exc
+                if code in {"InvalidChecksum", "MissingContentLength"}:
+                    raise RuntimeError(
+                        "Supabase rejected the S3 upload request. The app is configured for S3-compatible "
+                        f"checksum handling, but Storage returned: {self._s3_exception_detail(exc)}"
+                    ) from exc
+                raise RuntimeError(
+                    "Supabase S3 upload failed: " + self._s3_exception_detail(exc)
+                ) from exc
             return path
         headers = self._headers(content_type)
         headers["x-upsert"] = "true"

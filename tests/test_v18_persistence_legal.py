@@ -194,3 +194,43 @@ def test_s3_sync_does_not_mask_head_failure_with_create_bucket(tmp_path):
     assert result["synced"] is True
     assert fake.puts[-1][0] == "nw-auction-private"
     assert fake.created == []
+
+
+def test_s3_client_uses_supabase_compatible_botocore_config():
+    cfg = CloudConfig(
+        bucket="nw-auction-private",
+        s3_endpoint="https://ref.storage.supabase.co/storage/v1/s3",
+        s3_region="eu-west-2",
+        s3_access_key_id="access",
+        s3_secret_access_key="secret",
+    )
+    store = SupabaseStorage(cfg)
+    client = store._s3()
+    assert client.meta.config.signature_version == "s3v4"
+    assert client.meta.config.s3["addressing_style"] == "path"
+    assert client.meta.config.s3["payload_signing_enabled"] is True
+    assert client.meta.config.request_checksum_calculation == "when_required"
+    assert client.meta.config.response_checksum_validation == "when_required"
+
+
+def test_s3_probe_verifies_existing_bucket_without_writing():
+    class ProbeS3(FakeS3):
+        def list_objects_v2(self, Bucket, MaxKeys):
+            assert Bucket == "nw-auction-private"
+            assert MaxKeys == 1
+            return {"KeyCount": 0}
+    fake = ProbeS3()
+    cfg = CloudConfig(
+        bucket="nw-auction-private", s3_endpoint="https://ref.storage.supabase.co/storage/v1/s3",
+        s3_region="eu-west-2", s3_access_key_id="access", s3_secret_access_key="secret"
+    )
+    result = SupabaseStorage(cfg, s3_client=fake).probe()
+    assert result["connected"] is True
+    assert result["mode"] == "s3"
+
+
+def test_s3_empty_error_includes_exception_type():
+    class EmptyError(Exception):
+        response = {"Error": {}, "ResponseMetadata": {}}
+    detail = SupabaseStorage._s3_exception_detail(EmptyError())
+    assert "EmptyError" in detail

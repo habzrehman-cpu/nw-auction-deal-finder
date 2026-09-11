@@ -1,13 +1,13 @@
 # North West Property Auction Deal Finder
 
 
-## v1.8.1 - persistent cloud workspace + legal-pack evidence trail
+## v1.8.2 - persistent cloud workspace + legal-pack evidence trail
 
 Version 1.8 adds a practical persistent-storage layer for the current single-user Streamlit Community Cloud deployment and deepens legal-pack analysis. The core app remains SQLite-first for speed and portability, but when Supabase is configured it restores the SQLite database from a **private Supabase Storage bucket** after a cold start and uploads a fresh cloud snapshot after live refreshes, comparable/planning/legal updates, shortlist changes, underwriting changes, workspace changes and notes. User-uploaded legal originals can also be retained privately in the same bucket.
 
 This means the auction history, seller story, shortlist, saved underwriting, CRM/workspace notes and extracted legal evidence can survive Streamlit reboots and redeploys. This storage mode is intended for the current single-user/free-testing stage. If the product later becomes a concurrent multi-user platform, move the data model to Postgres rather than sharing a single SQLite snapshot between writers.
 
-### Legal-pack improvements in v1.8.1
+### Legal-pack improvements in v1.8.2
 
 The legal screen now accepts **PDF, TXT and ZIP legal packs**. ZIP uploads are safely unpacked and supported PDF/TXT members are analysed individually. PDF extraction inserts page markers so important findings can carry an evidence trail back to the source document and page.
 
@@ -29,7 +29,7 @@ The app deliberately does not search the internet for private personal contact d
 
 ### Free persistent setup with Supabase
 
-The preferred v1.8.1 connection uses Supabase Storage's **S3-compatible server credentials**, because that is a standard server-to-server storage path for private files.
+The preferred v1.8.2 connection uses Supabase Storage's **S3-compatible server credentials**, because that is a standard server-to-server storage path for private files.
 
 1. Create a free Supabase project.
 2. In **Storage**, create a private bucket named `nw-auction-private`.
@@ -48,7 +48,7 @@ s3_secret_access_key = "YOUR_S3_SECRET_ACCESS_KEY"
 
 5. Save Streamlit Secrets and reboot the app. Never commit these credentials to GitHub or place them in `.streamlit/secrets.toml` inside the repository.
 6. The sidebar should change from **Local-only storage** to **Private cloud connected**.
-7. Run **Refresh live data** once. At the end of the refresh the current SQLite state is uploaded to the private bucket. On a future cold start, v1.8.1 restores that snapshot before opening the database.
+7. Run **Refresh live data** once. At the end of the refresh the current SQLite state is uploaded to the private bucket. On a future cold start, v1.8.2 restores that snapshot before opening the database.
 
 A backwards-compatible Supabase REST configuration is also supported for existing deployments using a server key, but the S3 configuration above is the recommended setup for this build.
 
@@ -222,7 +222,7 @@ If an earlier version is already deployed from GitHub:
 5. When the app comes back, click **Refresh live data**.
 6. Existing rows without images become eligible for detail-page enrichment, Auction House history is backfilled from North West + Manchester archives, and ranking is recalculated.
 
-By default the app can still run from a local SQLite file. In v1.8.1, configure the optional private Supabase persistence layer above before relying on Streamlit Community Cloud for long-term history, shortlist, underwriting, workspace notes or legal evidence.
+By default the app can still run from a local SQLite file. In v1.8.2, configure the optional private Supabase persistence layer above before relying on Streamlit Community Cloud for long-term history, shortlist, underwriting, workspace notes or legal evidence.
 
 ## What the live enrichment now does
 
@@ -606,3 +606,7 @@ The app implements the current England/Northern Ireland headline purchase rates 
 **Non-residential/mixed:** 0% to GBP150,000; 2% on the portion GBP150,001-GBP250,000; 5% above GBP250,000.
 
 Always confirm the actual buyer/entity, VAT position, linked transactions, lease NPV, reliefs and legal-pack consideration with the solicitor/tax adviser before bidding. The dashboard is a deal-screening model, not a tax return calculator.
+
+## v1.8.2 Supabase S3 compatibility
+
+The S3 client now forces SigV4 path-style requests and disables optional flexible-checksum headers unless they are required. This avoids an interoperability problem seen with newer botocore releases and S3-compatible storage providers. The Persistence panel now distinguishes credentials being loaded from a real Supabase connection and from a verified read/write sync.
