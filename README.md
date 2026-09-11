@@ -1,5 +1,47 @@
 # North West Property Auction Deal Finder
 
+## v1.10.0 - automatic legal-pack acquisition + evidence integrity
+
+Version 1.10 turns the legal-pack layer from a link finder/manual uploader into a guarded acquisition service. Where provider access permits it, the app can follow legal-document/index pages, download PDF/ZIP material, parse the documents, retain the originals privately in Supabase and refresh the evidence later for changes.
+
+### Automatic legal-pack acquisition
+
+The acquisition engine now supports:
+
+- direct public PDF and ZIP legal documents
+- one-level legal-document/index pages and embedded download links
+- conventional authenticated HTML login for a user's own account where the provider permits it
+- Streamlit-secret account credentials or an explicitly supplied valid session cookie
+- CAPTCHA/anti-bot detection with a hard stop rather than bypass
+- pack size/document-count safety limits
+- private retention of automatically downloaded originals in Supabase
+- automatic fingerprints so changed, added or removed legal documents can trigger re-review
+- manual PDF/TXT/ZIP upload as the fallback when server-side acquisition is unavailable
+
+Provider handling is deliberately source-specific. Eddisons/publicly exposed files can be pulled automatically. Savills can use a user's own configured account and stops at any interactive CAPTCHA/challenge. Auction House/Auction Passport and Allsop are **permission-gated by default** because their published terms restrict automated access/data extraction without the required consent. The app does not even request those provider pages through the automated legal-pack flow until `permission_confirmed = true` is deliberately recorded in private Streamlit Secrets.
+
+See `LEGAL_PACK_AUTOMATION_SETUP.md` for the exact private configuration.
+
+### Evidence-integrity patch
+
+Live v1.9 testing identified several places where listing heuristics could look more certain than the underlying evidence. Version 1.10 therefore tightens the evidence model:
+
+- parsed legal documents outrank auction-listing heuristics
+- extracted fields record whether their source is a **legal document** or **auctioneer listing/detail page**
+- probate/estate, receiver and similar disposal wording remains a **signal** until confirmed by parsed legal evidence
+- a concrete long-lease result removes contradictory short-lease risk flags
+- auction-house business contacts are classified as **Auctioneer**, not Seller Solicitor merely because solicitor wording appears nearby
+- `Sold`, `Sold Prior` and `Sold After` are labelled as **auction result statuses**, not evidence of Land Registry completion
+- the Vendor Story separates confirmed evidence from negotiation interpretation more strictly
+- if an automated provider check is permission-blocked or temporarily unavailable, previously discovered legal links are retained instead of being erased
+
+### Persistent evidence
+
+When private Supabase persistence is configured, automatically acquired legal originals are saved under the property's private legal-pack area and the SQLite workspace snapshot continues to sync after the update. This allows later refreshes to compare the latest pack with the exact evidence previously analysed.
+
+The automated legal layer remains acquisition triage. The latest complete legal pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.
+
+
 ## v1.9.0 - ownership intelligence + legal-pack change control
 
 Version 1.9 builds on the now-verified persistent Supabase workspace and adds the next professional deal-sourcing layer: **official company-owner intelligence**, a richer **Vendor Story**, stronger **legal-pack automation/change detection**, and more resilient motorway enrichment.

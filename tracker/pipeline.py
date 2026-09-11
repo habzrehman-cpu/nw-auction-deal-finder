@@ -82,7 +82,7 @@ def refresh_geography(db, max_road_routes=60):
     return _enrich_geography(db, max_road_routes=max_road_routes)
 
 
-def refresh_all(db, selected=None, companies_house_api_key=""):
+def refresh_all(db, selected=None, companies_house_api_key="", legal_access=None, cloud_store=None):
     source_summary = []
     fetcher = Fetcher()
 
@@ -139,7 +139,7 @@ def refresh_all(db, selected=None, companies_house_api_key=""):
     geography = _enrich_geography(db)
     current_rows = db.list_properties()
     comparables = refresh_due_comparables(db, rows=current_rows, max_properties=20)
-    diligence = refresh_due_diligence(db, rows=current_rows, max_planning=15, max_legal=8)
+    diligence = refresh_due_diligence(db, rows=current_rows, max_planning=15, max_legal=8, legal_access=legal_access, cloud_store=cloud_store)
     companies = refresh_due_company_intelligence(
         db, companies_house_api_key, rows=db.list_properties(), max_companies=8
     )

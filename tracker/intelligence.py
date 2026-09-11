@@ -89,6 +89,13 @@ def _auction_timeline(history: Iterable[dict]) -> list[dict]:
             continue
         seen.add(key)
         status = _clean(event.get("status") or "Observed", 60)
+        status_low = status.lower()
+        if status_low in {"sold", "sold prior", "sold after", "no bids", "last bid", "unsold", "withdrawn", "postponed"}:
+            narrative_label = f"Auction result: {status}"
+        elif status_low in {"available post-auction", "relisted", "live"}:
+            narrative_label = f"Auction status: {status}"
+        else:
+            narrative_label = f"Auction observation: {status}"
         bits = []
         if event.get("guide_text"):
             bits.append(f"Guide {_clean(event.get('guide_text'), 90)}")
@@ -102,8 +109,8 @@ def _auction_timeline(history: Iterable[dict]) -> list[dict]:
             "date": _date_key(date),
             "display_date": _clean(date) or "Date not captured",
             "type": "auction",
-            "label": status,
-            "detail": " | ".join(bits),
+            "label": narrative_label,
+            "detail": " | ".join(bits) + (" | Auctioneer result status; not proof of Land Registry completion" if status_low in {"sold", "sold prior", "sold after"} else ""),
             "source_url": "",
         })
     return out
@@ -116,6 +123,8 @@ def seller_profile(legal_summary: dict | None, lot: dict | None = None, company_
     lot = lot or {}
     seller_type = _clean(extracted.get("seller_type"), 60)
     seller_name = _clean(extracted.get("seller_name") or extracted.get("proprietor_name"), 180)
+    field_sources = extracted.get("field_sources") or {}
+    seller_type_evidence = _clean(extracted.get("seller_type_evidence"), 120)
     if not seller_type:
         text = " ".join(str(lot.get(k) or "") for k in ("title", "raw_text", "detail_text")).lower()
         for term, label in (
@@ -125,10 +134,14 @@ def seller_profile(legal_summary: dict | None, lot: dict | None = None, company_
         ):
             if term in text:
                 seller_type = label
+                seller_type_evidence = "auctioneer listing signal - legal confirmation outstanding"
                 break
     return {
         "seller_name": seller_name or None,
         "seller_type": seller_type or None,
+        "seller_type_evidence": seller_type_evidence or None,
+        "field_sources": field_sources,
+        "seller_name_source": field_sources.get("seller_name") or field_sources.get("proprietor_name"),
         "title_number": extracted.get("title_number"),
         "company_number": extracted.get("company_number") or company_intelligence.get("company_number"),
         "registered_office": extracted.get("registered_office") or company_intelligence.get("registered_office"),
@@ -199,8 +212,12 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
     profile = seller_profile(legal_summary, lot, company_intelligence)
     seller_type = str(profile.get("seller_type") or "").lower()
     if any(term in seller_type for term in DISTRESS_SELLER_TYPES):
-        points += 10
-        reasons.append(f"Disposal context: {profile.get('seller_type')}")
+        confirmed = "confirmed" in str(profile.get("seller_type_evidence") or "").lower()
+        points += 10 if confirmed else 4
+        reasons.append(
+            f"Confirmed disposal context: {profile.get('seller_type')}" if confirmed
+            else f"Disposal signal to verify: {profile.get('seller_type')}"
+        )
 
     refused = 0
     for item in planning_items or []:
@@ -289,9 +306,17 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
 
     facts = []
     if profile.get("seller_name"):
-        facts.append(f"Legal evidence names the proprietor/seller as {profile['seller_name']}")
+        source = str(profile.get("seller_name_source") or "").lower()
+        if source == "legal document":
+            facts.append(f"Parsed legal evidence names the proprietor/seller as {profile['seller_name']}")
+        else:
+            facts.append(f"Auctioneer/listing evidence names or references the seller as {profile['seller_name']} - legal confirmation remains outstanding")
     if profile.get("seller_type"):
-        facts.append(f"Disposal context identified as {profile['seller_type']}")
+        confirmed = "confirmed" in str(profile.get("seller_type_evidence") or "").lower()
+        facts.append(
+            f"Parsed legal evidence confirms the disposal context as {profile['seller_type']}" if confirmed
+            else f"Auctioneer/listing wording signals {profile['seller_type']} - legal confirmation remains outstanding"
+        )
     if profile.get("title_price_paid"):
         when = f" on {profile.get('title_price_paid_date')}" if profile.get("title_price_paid_date") else ""
         facts.append(f"Title evidence records a prior price paid of GBP {float(profile['title_price_paid']):,.0f}{when}")
@@ -344,7 +369,10 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
     if (deal_analysis.get("features") or {}).get("vacant"):
         inferences.append("If the asset is genuinely vacant, ongoing finance, rates, insurance, service-charge or security costs may increase pressure to transact; these costs are not confirmed unless evidenced separately.")
     if profile.get("seller_type") and any(term in str(profile["seller_type"]).lower() for term in DISTRESS_SELLER_TYPES):
-        inferences.append("The identified disposal context can favour certainty and speed of execution, but it does not by itself prove that a discounted offer will be accepted.")
+        if "confirmed" in str(profile.get("seller_type_evidence") or "").lower():
+            inferences.append("The confirmed disposal context can favour certainty and speed of execution, but it does not by itself prove that a discounted offer will be accepted.")
+        else:
+            inferences.append("The disposal wording may indicate a seller who values certainty and speed, but the legal pack should confirm the capacity in which the seller is acting before relying on it in negotiation planning.")
     corporate_pressure = _num(company_intelligence.get("corporate_pressure_score"), 0) or 0
     if corporate_pressure >= 7:
         inferences.append("Official corporate records show material pressure indicators. A buyer offering certainty, speed and clean execution may have stronger negotiating leverage, but seller instructions still need confirming with the auctioneer/solicitor.")

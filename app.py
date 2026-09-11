@@ -20,6 +20,7 @@ from tracker.diligence import (
     save_uploaded_legal_documents,
 )
 from tracker.legal import uploaded_document, uploaded_documents
+from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status
 from tracker.cloud import SupabaseStorage, config_from_mapping
 from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
@@ -79,6 +80,7 @@ companies_house_api_key = str(
     os.environ.get("COMPANIES_HOUSE_API_KEY") or
     (_ch_mapping.get("api_key", "") if hasattr(_ch_mapping, "get") else "")
 ).strip()
+legal_access = legal_access_from_mapping(_secrets_mapping)
 cloud_bootstrap = {"restored": False, "reason": "not-configured"}
 cloud_bootstrap_error = ""
 cloud_probe = st.session_state.get("cloud_probe", {}) if cloud_store else {}
@@ -319,6 +321,24 @@ with st.sidebar:
     else:
         st.info("Companies House API not configured")
         st.caption("Corporate seller links still work; add a free Companies House API key in Streamlit Secrets for automatic status, charges, insolvency and director intelligence.")
+    st.divider()
+    st.caption("Legal pack automation")
+    if legal_access.auto_enabled:
+        st.success("Automatic legal-pack acquisition enabled")
+    else:
+        st.info("Automatic legal-pack acquisition disabled")
+    with st.expander("Source access status", expanded=False):
+        for provider in ("eddisons", "savills", "auction_house", "allsop"):
+            access_status = provider_access_status(legal_access, provider)
+            label = access_status.get("label") or provider
+            status = access_status.get("status") or "unknown"
+            if access_status.get("allowed") and "configured" in status:
+                st.success(f"{label}: {status}")
+            elif access_status.get("allowed"):
+                st.caption(f"{label}: {status}")
+            else:
+                st.warning(f"{label}: {status}")
+        st.caption("The app never bypasses CAPTCHA/anti-bot controls. Sources whose published terms require consent stay blocked until permission is explicitly recorded in private Secrets.")
 
 config = DealConfig(
     commercial_target_psf=int(commercial_target_psf),
@@ -343,7 +363,7 @@ head1, head2, head3, head4 = st.columns([1.05, 1.0, 1.0, 2.7])
 with head1:
     if st.button("Refresh live data", type="primary", use_container_width=True):
         with st.spinner("Pulling live auction stock and priority intelligence..."):
-            st.session_state["refresh_summary"] = refresh_all(db, companies_house_api_key=companies_house_api_key)
+            st.session_state["refresh_summary"] = refresh_all(db, companies_house_api_key=companies_house_api_key, legal_access=legal_access, cloud_store=cloud_store)
             sync_cloud("live refresh", quiet=False)
         st.rerun()
 with head2:
@@ -355,7 +375,7 @@ with head2:
 with head3:
     if st.button("Refresh planning/legal", use_container_width=True):
         with st.spinner("Refreshing priority due diligence..."):
-            dd_result = refresh_due_diligence(db, max_planning=35, max_legal=20)
+            dd_result = refresh_due_diligence(db, max_planning=35, max_legal=20, legal_access=legal_access, cloud_store=cloud_store)
             company_result = refresh_due_company_intelligence(db, companies_house_api_key, max_companies=20)
             st.session_state["dd_summary"] = {**dd_result, "companies_house": company_result}
             sync_cloud("planning/legal/company refresh", quiet=False)
@@ -787,6 +807,7 @@ def render_deal_room(chosen):
         seller_rows = [
             ["Registered proprietor / seller", profile.get("seller_name") or "Not extracted yet"],
             ["Seller / disposal type", profile.get("seller_type") or "Not identified"],
+            ["Disposal evidence", profile.get("seller_type_evidence") or "Not established"],
             ["Title number", profile.get("title_number") or "Not extracted"],
             ["Company number", profile.get("company_number") or "Not extracted"],
             ["Registered office", profile.get("registered_office") or "Not extracted"],
@@ -1045,10 +1066,10 @@ def render_deal_room(chosen):
                 st.error("Legal-pack check failed. Risk is UNKNOWN.")
             else:
                 st.warning("Legal pack not reviewed. Risk is UNKNOWN and bid approval is blocked.")
-            if st.button("Refresh legal links/pack", key=f"legal_{chosen['id']}", use_container_width=True):
+            if st.button("Fetch / refresh legal pack", key=f"legal_{chosen['id']}", use_container_width=True):
                 try:
-                    with st.spinner("Checking public legal-pack links..."):
-                        refresh_property_legal(db, chosen)
+                    with st.spinner("Checking legal-pack links and permitted/authenticated sources..."):
+                        refresh_property_legal(db, chosen, legal_access=legal_access, cloud_store=cloud_store)
                         if companies_house_api_key:
                             try:
                                 refresh_property_company(db, chosen, companies_house_api_key)
@@ -1069,6 +1090,13 @@ def render_deal_room(chosen):
             lm3.metric("Documents parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
             if miss:
                 st.warning("Missing / not yet evidenced: " + ", ".join(miss))
+            legal_warnings = legal_summary.get("warnings") or chosen.get("legal_warnings") or []
+            for warning in legal_warnings[:4]:
+                warning_text = str(warning)
+                if any(term in warning_text.lower() for term in ("permission required", "login", "captcha", "manual")):
+                    st.info(warning_text)
+                else:
+                    st.caption(warning_text)
             pack_change = legal_summary.get("pack_change") or {}
             if legal_summary.get("pack_changed") or pack_change.get("changed"):
                 st.error("LEGAL PACK CHANGED since the previous saved snapshot - re-review before bidding.")

@@ -1,8 +1,9 @@
-"""Legal-pack discovery and lightweight auction legal risk triage.
+"""Legal-pack discovery, guarded acquisition and auction legal risk triage.
 
-This module does not bypass logins or registration walls. It discovers public links,
-extracts text from directly accessible PDFs, and can analyse user-uploaded PDFs/TXT
-files locally. Results are triage only and must be reviewed by a solicitor before bid.
+The module can automatically retrieve directly accessible legal documents and, where
+configured and permitted, use the buyer's own authenticated account session. It never
+bypasses CAPTCHAs, anti-bot controls, paywalls or provider permission requirements.
+Results are acquisition triage only and must be reviewed by a solicitor before bid.
 """
 from __future__ import annotations
 
@@ -19,10 +20,15 @@ from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from dateutil import parser as date_parser
 
+from .legal_access import (
+    LegalAccessConfig, provider_for_lot, provider_access_status, prepare_authenticated_session,
+)
+
 LEGAL_ATTRIBUTION = "Auctioneer/seller legal documents as published; buyer must verify the latest complete pack and obtain independent legal advice."
 MAX_DOC_BYTES = 12 * 1024 * 1024
 MAX_DOC_CHARS = 90_000
-MAX_AUTO_DOCS = 4
+MAX_AUTO_DOCS = 16
+MAX_AUTO_TOTAL_BYTES = 80 * 1024 * 1024
 MAX_ZIP_MEMBERS = 40
 MAX_ZIP_TOTAL_BYTES = 60 * 1024 * 1024
 
@@ -83,17 +89,41 @@ def classify_document(label: str, url: str = "") -> str:
     return "Legal document"
 
 
-def discover_legal_links(html: str, base_url: str) -> list[dict]:
+def discover_legal_links(html: str, base_url: str, pack_context: bool = False) -> list[dict]:
+    """Discover legal-pack and document links from anchors, buttons, iframes and data attributes.
+
+    Once an intermediate legal-pack page has been reached, PDF/ZIP/download links are
+    accepted even when the visible label is generic (for example "Document 1").
+    """
     soup = BeautifulSoup(html or "", "html.parser")
     out, seen = [], set()
-    for a in soup.find_all("a", href=True):
-        href = (a.get("href") or "").strip()
-        label = " ".join(a.get_text(" ", strip=True).split())
+
+    candidates = []
+    for node in soup.find_all(["a", "button", "iframe", "form"]):
+        label = " ".join(node.get_text(" ", strip=True).split())
+        attrs = []
+        for attr in ("href", "src", "action", "data-href", "data-url", "data-download", "data-src"):
+            value = node.get(attr)
+            if value:
+                attrs.append(value)
+        for href in attrs:
+            candidates.append((label, href))
+
+    # Some providers render document URLs inside JSON/script data rather than links.
+    script_url_re = re.compile(r'''["'](https?://[^"']+|/[^"']+\.(?:pdf|zip)(?:\?[^"']*)?)["']''', re.I)
+    for m in script_url_re.finditer(html or ""):
+        candidates.append(("Legal document", m.group(1)))
+
+    for label, href in candidates:
+        href = str(href or "").strip()
+        if not href or href.lower().startswith(("javascript:", "mailto:", "tel:")):
+            continue
         absolute = urljoin(base_url, href)
         if urlparse(absolute).scheme not in {"http", "https"}:
             continue
         probe = f"{label} {href}"
-        if not LEGAL_HINT_RE.search(probe):
+        fileish = bool(re.search(r"\.(?:pdf|zip)(?:$|\?)|download|document", href, re.I))
+        if not LEGAL_HINT_RE.search(probe) and not (pack_context and fileish):
             continue
         if absolute in seen:
             continue
@@ -105,8 +135,9 @@ def discover_legal_links(html: str, base_url: str) -> list[dict]:
             "access_status": "link discovered",
             "text_content": "",
             "sha256": "",
+            "metadata": {},
         })
-    return out[:25]
+    return out[:50]
 
 
 def extract_pdf_text(data: bytes, max_chars: int = MAX_DOC_CHARS) -> str:
@@ -132,102 +163,195 @@ def extract_pdf_text(data: bytes, max_chars: int = MAX_DOC_CHARS) -> str:
 
 def _looks_restricted(text: str, url: str) -> bool:
     t = f"{text} {url}".lower()
-    return any(x in t for x in ["sign in", "log in", "login", "register to view", "create account", "auction passport", "eigroup"])
+    return any(x in t for x in [
+        "sign in", "log in", "login", "register to view", "create account",
+        "auction passport", "login to view legal documents", "content is restricted to members",
+    ])
 
 
-def fetch_public_legal_documents(lot_url: str, session=None, max_docs: int = MAX_AUTO_DOCS) -> tuple[list[dict], list[str]]:
-    """Discover and parse public legal evidence, following one level of legal-pack pages.
+def _read_response_bytes(response) -> tuple[bytes, bool]:
+    try:
+        length = int(response.headers.get("Content-Length") or 0)
+    except (TypeError, ValueError):
+        length = 0
+    if length and length > MAX_DOC_BYTES:
+        return b"", True
+    chunks, total = [], 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > MAX_DOC_BYTES:
+            return b"", True
+        chunks.append(chunk)
+    return b"".join(chunks), False
 
-    Auctioneers often link to an intermediate legal-pack page rather than directly to
-    PDFs. The crawler follows only links that themselves look legal-pack related and
-    never attempts login, registration, paywall or anti-bot bypasses.
+
+def _zip_documents(name: str, data: bytes, source_url: str, provider: str, authenticated: bool) -> list[dict]:
+    """Expand a downloaded ZIP legal pack into individually evidenced documents."""
+    out = uploaded_documents(name or "legal-pack.zip", data)
+    for doc in out:
+        doc.setdefault("metadata", {}).update({
+            "origin": "auto-download-authenticated" if authenticated else "auto-download-public",
+            "provider": provider,
+            "source_url": source_url,
+            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+        })
+        doc["url"] = source_url
+        doc["access_status"] = "authenticated ZIP member parsed" if authenticated else "public ZIP member parsed"
+    return out
+
+
+def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS,
+                          access_config: LegalAccessConfig | None = None) -> tuple[list[dict], list[str]]:
+    """Discover and acquire legal evidence for one lot using compliant source rules.
+
+    Direct public documents are downloaded automatically. Account-gated documents can
+    use the buyer's own configured credentials where the provider allows this and the
+    request does not encounter CAPTCHA/anti-bot controls. Providers whose published
+    terms require prior permission are blocked unless permission_confirmed is set.
     """
+    lot_url = str(lot.get("url") or "")
+    provider = provider_for_lot(lot, lot_url)
+    access = provider_access_status(access_config, provider)
     s = _session(session)
     warnings = []
+    if not lot_url.startswith(("http://", "https://")):
+        return [], ["No public lot URL is available for legal-pack discovery."]
+
+    if not access.get("allowed"):
+        return [], [f"{access.get('label')}: {access.get('status')}. {access.get('reason') or ''}".strip()]
+
     r = s.get(lot_url, timeout=25, allow_redirects=True)
     r.raise_for_status()
-    initial = discover_legal_links(r.text, r.url)
-    queue = list(initial)
+    initial = discover_legal_links(r.text, r.url, pack_context=False)
+    queue = [(item, False) for item in initial]
     links: list[dict] = []
     seen_urls = set()
     downloaded = 0
     attempted = 0
-    max_attempts = max(8, max_docs * 5)
+    max_attempts = max(12, max_docs * 8)
+    authenticated = False
+    auth_attempted = False
+    total_auto_bytes = 0
 
     while queue and downloaded < max_docs and attempted < max_attempts:
-        item = queue.pop(0)
+        item, from_pack = queue.pop(0)
         url = str(item.get("url") or "")
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
+        item.setdefault("metadata", {}).update({"provider": provider, "origin": "auto-discovery"})
         links.append(item)
         attempted += 1
         try:
             doc = s.get(url, timeout=30, allow_redirects=True, stream=True)
             doc.raise_for_status()
             ctype = (doc.headers.get("Content-Type") or "").lower()
-            try:
-                length = int(doc.headers.get("Content-Length") or 0)
-            except (TypeError, ValueError):
-                length = 0
-            if length and length > MAX_DOC_BYTES:
-                item["access_status"] = "public link; document too large for auto-analysis"
-                continue
-            chunks = []
-            total = 0
-            too_large = False
-            for chunk in doc.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                total += len(chunk)
-                if total > MAX_DOC_BYTES:
-                    too_large = True
-                    break
-                chunks.append(chunk)
+            data, too_large = _read_response_bytes(doc)
             if too_large:
-                item["access_status"] = "public link; document too large for auto-analysis"
+                item["access_status"] = "document too large for automatic analysis"
                 continue
-            data = b"".join(chunks)
+            if total_auto_bytes + len(data) > MAX_AUTO_TOTAL_BYTES:
+                item["access_status"] = "automatic pack-size safety limit reached; remaining documents require manual review"
+                warnings.append("Automatic legal-pack download reached the 80 MB per-property safety limit.")
+                break
+            total_auto_bytes += len(data)
             final_url = doc.url
+            is_html = "text/html" in ctype or data.lstrip().lower().startswith((b"<!doctype html", b"<html"))
+
+            if is_html:
+                decoded = data.decode("utf-8", errors="ignore")
+                soup = BeautifulSoup(decoded, "html.parser")
+                for node in soup.select("script,style,noscript,svg,template"):
+                    node.decompose()
+                text = " ".join(soup.get_text(" ", strip=True).split())[:40_000]
+                login_form_present = bool(soup.find("input", attrs={"type": re.compile("password", re.I)}))
+                if login_form_present or _looks_restricted(text[:8000] + " " + decoded[:8000], final_url):
+                    if not auth_attempted:
+                        auth_attempted = True
+                        ok, message = prepare_authenticated_session(s, final_url, provider, access_config)
+                        if ok:
+                            authenticated = True
+                            seen_urls.discard(url)
+                            queue.insert(0, (item, from_pack))
+                            continue
+                        item["access_status"] = message
+                        warnings.append(f"{access.get('label')}: {message}.")
+                    else:
+                        item["access_status"] = "login required or authenticated session was not accepted"
+                    continue
+
+                nested = discover_legal_links(decoded, final_url, pack_context=True)
+                for child in nested:
+                    if child.get("url") not in seen_urls and all(child.get("url") != q[0].get("url") for q in queue):
+                        queue.append((child, True))
+                if len(text) > 500 and LEGAL_HINT_RE.search(text):
+                    item["text_content"] = text
+                    item["sha256"] = hashlib.sha256(data).hexdigest()
+                    item["access_status"] = "authenticated legal page parsed" if authenticated else "public legal page parsed"
+                    item["url"] = final_url
+                    item["metadata"].update({
+                        "origin": "auto-download-authenticated" if authenticated else "auto-download-public",
+                        "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    item["_raw_bytes"] = data
+                    downloaded += 1
+                else:
+                    item["access_status"] = "legal index/page checked; nested documents queued"
+                continue
+
+            if "zip" in ctype or final_url.lower().split("?")[0].endswith(".zip") or data[:4] == b"PK\x03\x04":
+                expanded = _zip_documents(item.get("name") or "legal-pack.zip", data, final_url, provider, authenticated)
+                item["access_status"] = f"{'authenticated' if authenticated else 'public'} ZIP downloaded; {len(expanded)} member(s) parsed"
+                item["sha256"] = hashlib.sha256(data).hexdigest()
+                item["metadata"].update({
+                    "origin": "auto-download-authenticated" if authenticated else "auto-download-public",
+                    "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                })
+                for child in expanded:
+                    links.append(child)
+                    downloaded += 1
+                    if downloaded >= max_docs:
+                        break
+                continue
+
             if "pdf" in ctype or final_url.lower().split("?")[0].endswith(".pdf") or data[:4] == b"%PDF":
                 text = extract_pdf_text(data)
                 item["text_content"] = text
                 item["sha256"] = hashlib.sha256(data).hexdigest()
-                item["access_status"] = "public PDF parsed" if text else "public PDF; no extractable text"
+                item["access_status"] = (
+                    "authenticated PDF parsed" if authenticated and text else
+                    "authenticated PDF; no extractable text" if authenticated else
+                    "public PDF parsed" if text else "public PDF; no extractable text"
+                )
                 item["url"] = final_url
+                item["metadata"].update({
+                    "origin": "auto-download-authenticated" if authenticated else "auto-download-public",
+                    "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                })
+                item["_raw_bytes"] = data
                 downloaded += 1
-            elif "text/html" in ctype or data.lstrip().lower().startswith((b"<!doctype html", b"<html")):
-                soup = BeautifulSoup(data, "html.parser")
-                for node in soup.select("script,style,noscript,svg,template"):
-                    node.decompose()
-                text = " ".join(soup.get_text(" ", strip=True).split())[:40_000]
-                if _looks_restricted(text[:5000], final_url):
-                    item["access_status"] = "registration/login likely required"
-                    continue
-                # Follow legal-looking nested links from an intermediary pack page.
-                nested = discover_legal_links(data.decode("utf-8", errors="ignore"), final_url)
-                for child in nested:
-                    if child.get("url") not in seen_urls and all(child.get("url") != q.get("url") for q in queue):
-                        queue.append(child)
-                if len(text) > 500 and LEGAL_HINT_RE.search(text):
-                    item["text_content"] = text
-                    item["sha256"] = hashlib.sha256(data).hexdigest()
-                    item["access_status"] = "public legal page parsed"
-                    downloaded += 1
-                else:
-                    item["access_status"] = "public legal index/page; nested documents checked"
             else:
-                item["access_status"] = "public link; unsupported document type"
+                item["access_status"] = "link checked; unsupported document type"
         except Exception as exc:
-            item["access_status"] = "link found; manual access required"
+            item["access_status"] = "link found; automatic access failed"
             item["error"] = str(exc)[:300]
 
     if links and not any(x.get("text_content") for x in links):
-        warnings.append("Legal-pack link(s) were found but no public text could be parsed automatically; registration or manual download may be required.")
+        if access.get("status") == "login credentials not configured":
+            warnings.append(f"{access.get('label')}: legal documents appear account-gated. Configure your own account credentials in Streamlit Secrets or use manual upload.")
+        else:
+            warnings.append("Legal-pack link(s) were found but no legal text could be parsed automatically; manual review/download may still be required.")
     if not links:
-        warnings.append("No legal-pack/addendum link was detected on the public lot page. Check the auctioneer lot page manually before bidding.")
-    return links, warnings
+        warnings.append("No legal-pack/addendum link was detected on the lot page. Check the auctioneer lot page manually before bidding.")
+    return links, list(dict.fromkeys(warnings))
 
+
+def fetch_public_legal_documents(lot_url: str, session=None, max_docs: int = MAX_AUTO_DOCS) -> tuple[list[dict], list[str]]:
+    """Backward-compatible public-only wrapper used by older tests/integrations."""
+    lot = {"url": lot_url, "source": ""}
+    return fetch_legal_documents(lot, session=session, max_docs=max_docs, access_config=LegalAccessConfig())
 
 def legal_pack_fingerprint(documents: list[dict]) -> str:
     """Stable fingerprint of the current legal-pack evidence set."""
@@ -306,10 +430,19 @@ def _remaining_lease_years(text: str, fallback=None):
     direct = _first_number(r"(?:unexpired|remaining).{0,60}?(\d{1,3}(?:\.\d+)?)\s*years", text, 1, 999)
     if direct is not None:
         return round(direct, 1), None, None
+    # Auctioneer particulars often use labels such as "Length of Lease/Term: 250 years".
+    # Prefer that explicit labelled term over looser mentions elsewhere on the page.
+    date_pat = r"(\d{1,2}\s+[A-Za-z]+\s+20\d{2}|[A-Za-z]+\s+\d{1,2},?\s+20\d{2}|\d{1,2}[/-]\d{1,2}[/-]20\d{2})"
     m = re.search(
-        r"(?:term\s+of\s+)?(\d{1,3})\s*years?\s+(?:from|commencing(?:\s+on)?|beginning(?:\s+on)?)\s+([^\n;]{4,45})",
+        r"(?:length\s+of\s+lease(?:\s*/\s*term)?|lease\s+term|term\s+of\s+lease)\s*[:\-]?\s*"
+        r"(\d{1,3})\s*years?(?:\s*\([^)]*\))?\s+(?:from|commencing(?:\s+on)?|beginning(?:\s+on)?)\s+" + date_pat,
         text, re.I,
     )
+    if not m:
+        m = re.search(
+            r"(?:term\s+of\s+)?(\d{1,3})\s*years?\s+(?:from|commencing(?:\s+on)?|beginning(?:\s+on)?)\s+" + date_pat,
+            text, re.I,
+        )
     if not m:
         return fallback, None, None
     try:
@@ -369,6 +502,14 @@ def _extract_professional_contacts(text: str) -> list[dict]:
             continue
         low = window.lower()
         role = next((label for needle, label in role_terms if needle in low), None)
+        # Known auction-house business domains outrank nearby generic words such as
+        # "solicitors" in a property listing. This prevents the auctioneer's contact
+        # details being incorrectly labelled as the seller's solicitor.
+        business_probe = " ".join(emails).lower() + " " + low
+        if any(domain in business_probe for domain in (
+            "auctionhouse.co.uk", "allsop.co.uk", "savills.com", "savills.co.uk", "eddisons.com"
+        )):
+            role = "Auctioneer"
         if not role:
             # Do not surface an isolated personal email/phone with no professional context.
             continue
@@ -562,6 +703,7 @@ def _pack_completeness(documents: list[dict], extracted_fields: dict) -> tuple[i
 
 def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict:
     texts = [str(d.get("text_content") or "") for d in documents if d.get("text_content")]
+    document_text = "\n".join(texts)
     text = "\n".join(texts + [extra_text or ""])
     low = text.lower()
     flags, seen = [], set()
@@ -573,7 +715,22 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
     completion_days = _first_number(r"completion.{0,100}?(\d{1,3})\s*(?:working\s*)?days", text, 1, 180)
     deposit_pct = _first_number(r"deposit.{0,80}?(\d{1,2}(?:\.\d+)?)\s*%", text, 0, 100)
     lease_years = _first_number(r"(?:lease|term|unexpired).{0,100}?(\d{1,3})\s*years", text, 1, 999)
-    extracted_fields, contacts = extract_legal_fields(text, fallback_lease_years=lease_years)
+    extracted_fields, _listing_contacts = extract_legal_fields(text, fallback_lease_years=lease_years)
+    document_fields, contacts = extract_legal_fields(document_text, fallback_lease_years=None) if document_text else ({}, [])
+    field_sources = {}
+    for key, value in extracted_fields.items():
+        if value in (None, "", False, 0, [], {}):
+            continue
+        if document_fields.get(key) not in (None, "", False, 0, [], {}):
+            field_sources[key] = "legal document"
+        else:
+            field_sources[key] = "auctioneer listing / detail page"
+    extracted_fields["field_sources"] = field_sources
+    if extracted_fields.get("seller_type"):
+        extracted_fields["seller_type_evidence"] = (
+            "confirmed in parsed legal document" if field_sources.get("seller_type") == "legal document"
+            else "auctioneer listing signal - legal confirmation outstanding"
+        )
     if extracted_fields.get("lease_years_remaining") is not None:
         lease_years = extracted_fields.get("lease_years_remaining")
     buyer_fee = _first_number(r"(?:buyer(?:'s)?\s*(?:fee|premium|administration fee)|administration fee).{0,60}?£\s*([\d,]+(?:\.\d+)?)", text.replace(",", ""), 0, 1_000_000)
@@ -586,7 +743,13 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         flags.append({"severity": 3, "label": "Arrears / outstanding sums require apportionment review"})
         seen.add("Arrears / outstanding sums require apportionment review")
     remaining = extracted_fields.get("lease_years_remaining")
-    if remaining is not None and remaining < 80 and "Lease appears to have fewer than 80 years remaining" not in seen:
+    # A concrete lease calculation outranks loose regex hints elsewhere in the page.
+    # This prevents, for example, a 250-year lease from also carrying a sub-80-year flag.
+    if remaining is not None and remaining >= 80:
+        contradictory = {"Possible sub-80-year lease", "Short lease", "Lease appears to have fewer than 80 years remaining"}
+        flags = [f for f in flags if f.get("label") not in contradictory]
+        seen -= contradictory
+    elif remaining is not None and remaining < 80 and "Lease appears to have fewer than 80 years remaining" not in seen:
         flags.append({"severity": 5, "label": "Lease appears to have fewer than 80 years remaining"})
         seen.add("Lease appears to have fewer than 80 years remaining")
     material_types = {"Legal pack", "Special conditions", "Title register", "Title plan", "Lease", "Addendum", "Uploaded legal document"}
@@ -675,14 +838,14 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
     }
 
 
-def analyse_online_legal_pack(lot: dict, session=None) -> tuple[dict, list[dict]]:
+def analyse_online_legal_pack(lot: dict, session=None, access_config: LegalAccessConfig | None = None) -> tuple[dict, list[dict]]:
     url = str(lot.get("url") or "")
     if not url.startswith(("http://", "https://")):
         summary = analyse_legal_documents([], str(lot.get("detail_text") or ""))
         summary["status"] = "unavailable"
         summary["warnings"].append("No public lot URL is available for legal-pack discovery.")
         return summary, []
-    docs, warnings = fetch_public_legal_documents(url, session=session)
+    docs, warnings = fetch_legal_documents(lot, session=session, access_config=access_config)
     summary = analyse_legal_documents(docs, str(lot.get("detail_text") or ""))
     summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + warnings))
     return summary, docs

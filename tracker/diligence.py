@@ -5,6 +5,7 @@ import requests
 import re
 
 from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents
+from .legal_access import LegalAccessConfig
 from .planning import analyse_planning_property
 from .companies_house import CompaniesHouseClient, company_due
 
@@ -31,12 +32,36 @@ def refresh_property_planning(db, row, session=None):
     return summary
 
 
-def refresh_property_legal(db, row, session=None):
-    summary, online_docs = analyse_online_legal_pack(row, session=session)
+def refresh_property_legal(db, row, session=None, legal_access: LegalAccessConfig | None = None, cloud_store=None):
+    summary, online_docs = analyse_online_legal_pack(row, session=session, access_config=legal_access)
+    # Retain automatically acquired originals in the private cloud when configured.
+    for doc in online_docs:
+        raw = doc.pop("_raw_bytes", b"")
+        if raw and cloud_store:
+            try:
+                path = cloud_store.upload_legal_document(
+                    row["id"], doc.get("name") or "legal-document", raw, doc.get("sha256") or "document"
+                )
+                doc.setdefault("metadata", {})["cloud_storage_path"] = path
+                doc["access_status"] = (doc.get("access_status") or "downloaded") + " and stored privately"
+            except Exception as exc:
+                doc.setdefault("metadata", {})["cloud_storage_error"] = str(exc)[:300]
     existing = db.legal_documents_for(row["id"])
     uploaded = [d for d in existing if (d.get("metadata") or {}).get("origin") == "user-upload"]
-    # Keep user evidence when the online pack is refreshed.
-    combined = uploaded + online_docs
+    prior_online = [d for d in existing if (d.get("metadata") or {}).get("origin") != "user-upload"]
+    # Keep user evidence when the online pack is refreshed. If automation is blocked
+    # by provider permission/login controls, preserve previously discovered online
+    # links rather than deleting the user's manual access route.
+    if online_docs:
+        combined = uploaded + online_docs
+    else:
+        combined = uploaded + prior_online
+        if prior_online:
+            blocked_warnings = summary.get("warnings") or []
+            summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
+            summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + blocked_warnings + [
+                "Previously discovered legal links were retained because the current automatic acquisition attempt did not return a replacement pack."
+            ]))
     if uploaded:
         summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
         summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
@@ -145,7 +170,7 @@ def refresh_due_company_intelligence(db, api_key: str, rows=None, max_companies=
     return result
 
 
-def refresh_due_diligence(db, rows=None, max_planning=20, max_legal=12):
+def refresh_due_diligence(db, rows=None, max_planning=20, max_legal=12, legal_access: LegalAccessConfig | None = None, cloud_store=None):
     rows = list(rows or db.list_properties())
     actionable = [r for r in rows if (r.get("status") or "").lower() not in SOLD]
     actionable.sort(key=_priority)
@@ -165,7 +190,7 @@ def refresh_due_diligence(db, rows=None, max_planning=20, max_legal=12):
     for row in [x for x in actionable if db.legal_due(x["id"])][:max_legal]:
         result["legal_attempted"] += 1
         try:
-            refresh_property_legal(db, row, session=session)
+            refresh_property_legal(db, row, session=session, legal_access=legal_access, cloud_store=cloud_store)
             result["legal_ok"] += 1
         except Exception as exc:
             db.record_legal_error(row["id"], exc)
