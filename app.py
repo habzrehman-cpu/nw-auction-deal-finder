@@ -259,7 +259,7 @@ with st.sidebar:
     st.divider()
     st.caption("Persistence")
     if cloud_store and not cloud_bootstrap_error:
-        st.success("Private cloud connected")
+        st.success("Private cloud configured")
         last_sync = st.session_state.get("cloud_last_sync")
         if last_sync:
             st.caption(f"Last sync: {str(last_sync)[:19].replace('T', ' ')} UTC")
@@ -320,7 +320,7 @@ with head4:
     else:
         st.caption("No data pulled yet. Use Refresh live data.")
     if cloud_store and not cloud_bootstrap_error:
-        st.caption("Persistence: private cloud connected")
+        st.caption("Persistence: private cloud configured")
     elif cloud_bootstrap_error:
         st.caption("Persistence: cloud configured but connection needs attention")
     else:

@@ -172,3 +172,25 @@ def test_preferred_s3_persistence_mode(tmp_path):
     local.write_bytes(b"changed")
     assert store.upload_database(local)["synced"] is True
     assert fake.puts[-1][2] == b"changed"
+
+
+class FakeS3HeadFailsButPutWorks(FakeS3):
+    def head_bucket(self, Bucket):
+        raise RuntimeError("HEAD not available")
+    def create_bucket(self, Bucket):
+        raise AssertionError("existing Supabase bucket must not be auto-created")
+
+
+def test_s3_sync_does_not_mask_head_failure_with_create_bucket(tmp_path):
+    fake = FakeS3HeadFailsButPutWorks()
+    cfg = CloudConfig(
+        bucket="nw-auction-private", s3_endpoint="https://ref.storage.supabase.co/storage/v1/s3",
+        s3_region="eu-west-2", s3_access_key_id="access", s3_secret_access_key="secret"
+    )
+    store = SupabaseStorage(cfg, s3_client=fake)
+    local = tmp_path / "db.sqlite"
+    local.write_bytes(b"SQLite format 3\x00local")
+    result = store.upload_database(local)
+    assert result["synced"] is True
+    assert fake.puts[-1][0] == "nw-auction-private"
+    assert fake.created == []

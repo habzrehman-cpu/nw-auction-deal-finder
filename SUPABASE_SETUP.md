@@ -1,4 +1,4 @@
-# Supabase private persistence setup (v1.8)
+# Supabase private persistence setup (v1.8.1)
 
 This is the recommended free-test setup for keeping auction history, shortlist, underwriting, CRM notes and uploaded legal originals across Streamlit reboots.
 
@@ -57,4 +57,4 @@ Supabase S3 access keys are server credentials with broad Storage access. Store 
 
 ## Current architecture note
 
-v1.8 uses a cloud-synchronised SQLite snapshot because the current deployment is single-user and on a free test stack. If this becomes a concurrent multi-user product, migrate the tables to Postgres so multiple users cannot overwrite the same SQLite snapshot.
+v1.8.1 uses a cloud-synchronised SQLite snapshot because the current deployment is single-user and on a free test stack. If this becomes a concurrent multi-user product, migrate the tables to Postgres so multiple users cannot overwrite the same SQLite snapshot.

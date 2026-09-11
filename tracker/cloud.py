@@ -98,14 +98,18 @@ class SupabaseStorage:
         return headers
 
     def ensure_bucket(self):
+        """Ensure the configured bucket is usable.
+
+        For Supabase S3 credentials the bucket is provisioned separately in the
+        Supabase project. Do not attempt to create it automatically here: an
+        authentication/HEAD failure must never be converted into a CreateBucket
+        call because that masks the real error and can fail even when the bucket
+        already exists. Object operations below are the authoritative connection
+        test and return a clearer error if credentials or the bucket are wrong.
+        """
         if not self.configured:
             return False
         if self.mode == "s3":
-            client = self._s3()
-            try:
-                client.head_bucket(Bucket=self.config.bucket)
-            except Exception:
-                client.create_bucket(Bucket=self.config.bucket)
             return True
         bucket = quote(self.config.bucket, safe="")
         r = self.session.get(f"{self.base}/storage/v1/bucket/{bucket}", headers=self._headers(), timeout=20)
@@ -152,7 +156,25 @@ class SupabaseStorage:
             raise RuntimeError("Supabase persistence is not configured")
         self.ensure_bucket()
         if self.mode == "s3":
-            self._s3().put_object(Bucket=self.config.bucket, Key=path, Body=data, ContentType=content_type)
+            try:
+                self._s3().put_object(Bucket=self.config.bucket, Key=path, Body=data, ContentType=content_type)
+            except Exception as exc:
+                response = getattr(exc, "response", {}) or {}
+                error = response.get("Error") or {}
+                code = str(error.get("Code") or "")
+                message = str(error.get("Message") or "").strip()
+                if code in {"NoSuchBucket", "404", "NotFound"}:
+                    raise RuntimeError(
+                        f"Supabase Storage bucket '{self.config.bucket}' was not found. "
+                        "Create the private bucket in the same Supabase project as the S3 access key."
+                    ) from exc
+                if code in {"InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "403"}:
+                    raise RuntimeError(
+                        "Supabase S3 authentication failed. Check the Access Key ID, Secret Access Key, "
+                        "endpoint and region saved in Streamlit Secrets."
+                    ) from exc
+                detail = f" ({code}: {message})" if (code or message) else ""
+                raise RuntimeError(f"Supabase S3 upload failed{detail}") from exc
             return path
         headers = self._headers(content_type)
         headers["x-upsert"] = "true"
