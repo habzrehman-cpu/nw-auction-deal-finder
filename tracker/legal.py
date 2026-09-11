@@ -10,6 +10,7 @@ from io import BytesIO
 import hashlib
 import json
 import re
+import zipfile
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 
@@ -22,6 +23,8 @@ LEGAL_ATTRIBUTION = "Auctioneer/seller legal documents as published; buyer must 
 MAX_DOC_BYTES = 12 * 1024 * 1024
 MAX_DOC_CHARS = 90_000
 MAX_AUTO_DOCS = 4
+MAX_ZIP_MEMBERS = 40
+MAX_ZIP_TOTAL_BYTES = 60 * 1024 * 1024
 
 LEGAL_HINT_RE = re.compile(
     r"legal\s*pack|legal\s*documents?|special\s*conditions?|addendum|title\s*register|"
@@ -107,19 +110,21 @@ def discover_legal_links(html: str, base_url: str) -> list[dict]:
 
 
 def extract_pdf_text(data: bytes, max_chars: int = MAX_DOC_CHARS) -> str:
+    """Extract PDF text with stable page markers for audit-friendly evidence references."""
     if not data:
         return ""
     reader = PdfReader(BytesIO(data))
     parts = []
     total = 0
-    for page in reader.pages[:120]:
+    for page_no, page in enumerate(reader.pages[:120], start=1):
         try:
             text = page.extract_text() or ""
         except Exception:
             text = ""
         if text:
-            parts.append(text)
-            total += len(text)
+            block = f"--- PAGE {page_no} ---\n{text}"
+            parts.append(block)
+            total += len(block)
             if total >= max_chars:
                 break
     return "\n".join(parts)[:max_chars]
@@ -341,11 +346,31 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
     if seller_name:
         seller_name = re.split(r"\s+(?:of|whose registered office is)\s+", seller_name, maxsplit=1, flags=re.I)[0].strip(" ,;.-")
 
+    registered_office = _first_text([
+        r"whose registered office is\s+([^\n;]{5,260})",
+        r"registered office\s*[:\-]\s*([^\n;]{5,260})",
+    ], text)
     company_number = _first_text([
         r"(?:company\s*(?:number|no\.?|registration\s*number)|co\.?\s*regn\.?\s*no\.?)\s*[:.)\-]?\s*([A-Z0-9]{6,10})",
         r"\bCompany\s+registered\s+number\s+([A-Z0-9]{6,10})",
     ], text, 20)
     lease_remaining, lease_start, lease_term = _remaining_lease_years(text, fallback_lease_years)
+    price_paid = None
+    price_paid_date = None
+    price_match = re.search(
+        r"price\s+(?:stated\s+to\s+have\s+been\s+)?paid(?:\s+on\s+([^\n]{4,45}?))?\s+(?:was|of|:)\s*(?:£|GBP\s*)\s*([\d,]+(?:\.\d+)?)",
+        text, re.I,
+    )
+    if price_match:
+        try:
+            price_paid = float(price_match.group(2).replace(",", ""))
+        except Exception:
+            price_paid = None
+        if price_match.group(1):
+            try:
+                price_paid_date = date_parser.parse(_clean_line(price_match.group(1), 45), dayfirst=True, fuzzy=True).date().isoformat()
+            except Exception:
+                price_paid_date = _clean_line(price_match.group(1), 45)
     ground_rent, ground_context = _money_near(r"ground\s+rent", text)
     service_charge, service_context = _money_near(r"service\s+charge", text)
     sellers_costs, sellers_costs_context = _money_near(r"(?:seller|vendor).{0,50}(?:legal|search|cost|fee)", text)
@@ -362,6 +387,9 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
         "seller_name": seller_name or proprietor_name,
         "seller_type": _seller_type(text),
         "company_number": company_number,
+        "registered_office": registered_office,
+        "title_price_paid": price_paid,
+        "title_price_paid_date": price_paid_date,
         "lease_years_remaining": lease_remaining,
         "lease_start_date": lease_start,
         "lease_term_years": lease_term,
@@ -378,6 +406,57 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
     }
     return extracted, _extract_professional_contacts(text)
 
+
+
+
+def _evidence_location(documents: list[dict], pattern: str, label: str, value=None) -> dict | None:
+    """Locate a finding in a specific legal document and page where possible."""
+    rx = re.compile(pattern, re.I | re.S)
+    for doc in documents or []:
+        text = str(doc.get("text_content") or "")
+        m = rx.search(text)
+        if not m:
+            continue
+        before = text[:m.start()]
+        pages = list(re.finditer(r"--- PAGE (\d+) ---", before))
+        page = int(pages[-1].group(1)) if pages else None
+        start = max(0, m.start() - 110)
+        end = min(len(text), m.end() + 150)
+        excerpt = _clean_line(re.sub(r"--- PAGE \d+ ---", " ", text[start:end]), 360)
+        return {
+            "finding": label, "value": value, "document": doc.get("name") or "Legal document",
+            "page": page, "excerpt": excerpt, "doc_type": doc.get("doc_type"),
+        }
+    return None
+
+
+def _pack_completeness(documents: list[dict], extracted_fields: dict) -> tuple[int, list[str], list[str]]:
+    """Return a pragmatic legal-pack completeness score and missing/available components."""
+    types = {str(d.get("doc_type") or "") for d in documents if d.get("doc_type")}
+    available, missing = [], []
+    checks = [
+        ("Title register", "Title register"),
+        ("Title plan", "Title plan"),
+        ("Special conditions", "Special conditions"),
+    ]
+    # Lease is only a mandatory component where the evidence says leasehold/lease terms exist.
+    if extracted_fields.get("lease_years_remaining") is not None or extracted_fields.get("lease_term_years") is not None:
+        checks.append(("Lease", "Lease"))
+    for dtype, label in checks:
+        if dtype in types:
+            available.append(label)
+        else:
+            missing.append(label)
+    if "Addendum" in types:
+        available.append("Addendum")
+    parsed = sum(1 for d in documents if d.get("text_content"))
+    if parsed:
+        available.append(f"{parsed} document(s) text-readable")
+    base = max(1, len(checks))
+    score = int(round(100 * (len([x for x, _ in checks if x in types]) / base)))
+    if parsed == 0:
+        score = 0
+    return min(100, score), missing, available
 
 def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict:
     texts = [str(d.get("text_content") or "") for d in documents if d.get("text_content")]
@@ -424,6 +503,39 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
     else:
         status = "not-found"
 
+    completeness_pct, missing_components, available_components = _pack_completeness(documents, extracted_fields)
+    evidence = []
+    evidence_specs = [
+        (r"(?:title\s*(?:number|no\.?))\s*[:\-]?\s*[A-Z]{1,4}\s?\d{3,10}", "Title number", extracted_fields.get("title_number")),
+        (r"(?:PROPRIETOR(?:S)?|Registered proprietor(?:s)?)\s*:\s*[^\n]{3,260}", "Registered proprietor", extracted_fields.get("proprietor_name")),
+        (r"(?:Seller|Vendor)\s*:\s*[^\n]{3,260}", "Seller", extracted_fields.get("seller_name")),
+        (r"(?:company\s*(?:number|no\.?|registration\s*number)|co\.?\s*regn\.?\s*no\.?).{0,25}[A-Z0-9]{6,10}", "Company number", extracted_fields.get("company_number")),
+        (r"registered office.{0,260}", "Registered office", extracted_fields.get("registered_office")),
+        (r"price\s+(?:stated\s+to\s+have\s+been\s+)?paid.{0,100}?(?:£|GBP)", "Title price paid", extracted_fields.get("title_price_paid")),
+        (r"(?:unexpired|remaining).{0,60}?\d{1,3}(?:\.\d+)?\s*years|\d{1,3}\s*years?\s+(?:from|commencing|beginning)", "Lease term", extracted_fields.get("lease_years_remaining")),
+        (r"ground\s+rent.{0,120}?(?:£|GBP)", "Ground rent", extracted_fields.get("ground_rent_amount")),
+        (r"service\s+charge.{0,120}?(?:£|GBP)", "Service charge", extracted_fields.get("service_charge_amount")),
+        (r"completion.{0,100}?\d{1,3}\s*(?:working\s*)?days", "Completion period", completion_days),
+        (r"deposit.{0,80}?\d{1,2}(?:\.\d+)?\s*%", "Deposit", deposit_pct),
+        (r"vat.{0,80}(?:payable|chargeable|applicable)|option to tax|opted to tax", "VAT / option to tax", "Detected" if vat_flag else None),
+    ]
+    for pattern, label, value in evidence_specs:
+        if value in (None, "", False):
+            continue
+        found = _evidence_location(documents, pattern, label, value)
+        if found:
+            evidence.append(found)
+    # Attach the first matching source/page to each risk flag as an audit trail.
+    for pattern, severity, label in RISK_PATTERNS:
+        flag = next((f for f in flags if f.get("label") == label), None)
+        if not flag:
+            continue
+        found = _evidence_location(documents, pattern, label)
+        if found:
+            flag["document"] = found.get("document")
+            flag["page"] = found.get("page")
+            flag["excerpt"] = found.get("excerpt")
+
     return {
         "provider": "Auctioneer legal pack / uploaded documents",
         "status": status,
@@ -439,6 +551,10 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         "extracted_fields": extracted_fields,
         "contacts": contacts,
         "risk_flags": flags,
+        "evidence": evidence,
+        "pack_completeness_pct": completeness_pct,
+        "missing_components": missing_components,
+        "available_components": available_components,
         "methodology": "Pattern-based auction legal triage across public or user-supplied legal documents. It highlights issues for solicitor review and does not determine legal acceptability.",
         "warnings": [
             "Legal documents can be incomplete, revised or replaced. Confirm the latest complete pack and addendum with the auctioneer/solicitor before bidding."
@@ -461,9 +577,10 @@ def analyse_online_legal_pack(lot: dict, session=None) -> tuple[dict, list[dict]
 
 
 def uploaded_document(name: str, data: bytes) -> dict:
+    """Parse one PDF/TXT legal document and keep transient raw bytes for cloud retention."""
     name = name or "uploaded document"
     if len(data) > MAX_DOC_BYTES:
-        raise ValueError("Uploaded document is too large for local analysis (12 MB maximum per file).")
+        raise ValueError("Uploaded document is too large for analysis (12 MB maximum per file).")
     lower = name.lower()
     if lower.endswith(".pdf") or data[:4] == b"%PDF":
         text = extract_pdf_text(data)
@@ -479,5 +596,38 @@ def uploaded_document(name: str, data: bytes) -> dict:
         "access_status": "uploaded and parsed" if text else "uploaded; no extractable text",
         "text_content": text,
         "sha256": hashlib.sha256(data).hexdigest(),
-        "metadata": {"origin": "user-upload"},
+        "metadata": {"origin": "user-upload", "original_filename": name},
+        "_raw_bytes": data,
     }
+
+
+def uploaded_documents(name: str, data: bytes) -> list[dict]:
+    """Parse a PDF/TXT or a ZIP legal pack containing PDF/TXT documents safely."""
+    name = name or "uploaded legal pack"
+    if not (name.lower().endswith(".zip") or data[:4] == b"PK\x03\x04"):
+        return [uploaded_document(name, data)]
+    out = []
+    total = 0
+    with zipfile.ZipFile(BytesIO(data)) as archive:
+        members = [m for m in archive.infolist() if not m.is_dir()]
+        if len(members) > MAX_ZIP_MEMBERS:
+            raise ValueError(f"ZIP contains too many files ({len(members)}); maximum is {MAX_ZIP_MEMBERS}.")
+        for member in members:
+            clean_name = member.filename.replace("\\", "/").split("/")[-1]
+            if not clean_name or clean_name.startswith("."):
+                continue
+            lower = clean_name.lower()
+            if not lower.endswith((".pdf", ".txt")):
+                continue
+            if member.file_size > MAX_DOC_BYTES:
+                continue
+            total += member.file_size
+            if total > MAX_ZIP_TOTAL_BYTES:
+                raise ValueError("ZIP legal pack exceeds the 60 MB extracted-size safety limit.")
+            raw = archive.read(member)
+            doc = uploaded_document(clean_name, raw)
+            doc["metadata"]["uploaded_container"] = name
+            out.append(doc)
+    if not out:
+        raise ValueError("No supported PDF or TXT legal documents were found in the ZIP.")
+    return out

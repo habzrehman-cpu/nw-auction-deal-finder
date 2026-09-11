@@ -53,9 +53,13 @@ def save_uploaded_legal_documents(db, row, uploaded_docs):
     no_hash = [d for d in existing if not d.get("sha256")]
     combined = no_hash + list(by_hash.values())
     summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
-    summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
-        "User-uploaded evidence is stored as extracted text in the local tracker database; the original file is not retained by the app."
-    ]))
+    cloud_retained = any((d.get("metadata") or {}).get("cloud_storage_path") for d in uploaded_docs or [])
+    retention_note = (
+        "User-uploaded legal originals are retained in the configured private cloud storage and extracted text is stored with the deal."
+        if cloud_retained else
+        "User-uploaded evidence is stored as extracted text in the tracker database; original files are only retained across reboot when private cloud persistence is configured."
+    )
+    summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [retention_note]))
     db.save_legal_bundle(row["id"], summary, combined)
     return summary
 

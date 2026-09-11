@@ -130,6 +130,9 @@ def seller_profile(legal_summary: dict | None, lot: dict | None = None) -> dict:
         "seller_type": seller_type or None,
         "title_number": extracted.get("title_number"),
         "company_number": extracted.get("company_number"),
+        "registered_office": extracted.get("registered_office"),
+        "title_price_paid": extracted.get("title_price_paid"),
+        "title_price_paid_date": extracted.get("title_price_paid_date"),
         "contacts": legal_summary.get("contacts") or [],
     }
 
@@ -217,6 +220,16 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
     leverage = buyer_leverage(lot, deal_analysis, legal_summary, planning_items)
 
     timeline = _auction_timeline(history or []) + _planning_timeline(planning_items)
+    if profile.get("title_price_paid"):
+        paid_date = profile.get("title_price_paid_date") or ""
+        timeline.append({
+            "date": _date_key(paid_date),
+            "display_date": _clean(paid_date) or "Date not captured",
+            "type": "ownership",
+            "label": "Recorded acquisition / price paid",
+            "detail": f"Title evidence records GBP {float(profile['title_price_paid']):,.0f} paid",
+            "source_url": "",
+        })
     timeline.sort(key=lambda x: (x.get("date") or "9999", 0 if x.get("type") == "planning" else 1))
 
     facts = []
@@ -224,6 +237,9 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
         facts.append(f"Legal evidence names the proprietor/seller as {profile['seller_name']}")
     if profile.get("seller_type"):
         facts.append(f"Disposal context identified as {profile['seller_type']}")
+    if profile.get("title_price_paid"):
+        when = f" on {profile.get('title_price_paid_date')}" if profile.get("title_price_paid_date") else ""
+        facts.append(f"Title evidence records a prior price paid of GBP {float(profile['title_price_paid']):,.0f}{when}")
     failures = int(deal_analysis.get("failure_count") or 0)
     if failures:
         facts.append(f"{failures} distinct failed-auction attempt(s) are recorded")

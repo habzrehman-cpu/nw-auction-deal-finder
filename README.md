@@ -1,6 +1,59 @@
 # North West Property Auction Deal Finder
 
 
+## v1.8 - persistent cloud workspace + legal-pack evidence trail
+
+Version 1.8 adds a practical persistent-storage layer for the current single-user Streamlit Community Cloud deployment and deepens legal-pack analysis. The core app remains SQLite-first for speed and portability, but when Supabase is configured it restores the SQLite database from a **private Supabase Storage bucket** after a cold start and uploads a fresh cloud snapshot after live refreshes, comparable/planning/legal updates, shortlist changes, underwriting changes, workspace changes and notes. User-uploaded legal originals can also be retained privately in the same bucket.
+
+This means the auction history, seller story, shortlist, saved underwriting, CRM/workspace notes and extracted legal evidence can survive Streamlit reboots and redeploys. This storage mode is intended for the current single-user/free-testing stage. If the product later becomes a concurrent multi-user platform, move the data model to Postgres rather than sharing a single SQLite snapshot between writers.
+
+### Legal-pack improvements in v1.8
+
+The legal screen now accepts **PDF, TXT and ZIP legal packs**. ZIP uploads are safely unpacked and supported PDF/TXT members are analysed individually. PDF extraction inserts page markers so important findings can carry an evidence trail back to the source document and page.
+
+The Deal Room now shows:
+
+- pack completeness percentage plus missing core components
+- registered proprietor/seller, seller/disposal type, title number and company number where stated
+- registered office where a company address is expressly present in the pack
+- title price-paid amount/date where the official-copy wording is extractable
+- lease term/start/remaining years, ground rent and service charge
+- seller costs charged to buyer, completion period, deposit, VAT/addendum signals and registered-charge references
+- EWS1/cladding, fire/building-safety, arrears, restrictive covenant, title-quality and other risk flags
+- professional/business contacts actually present in the pack
+- an **Evidence trail** with document name, page and short context for extracted findings
+- a source/page-aware legal risk register
+- private-cloud retention/retrieval of uploaded originals when Supabase is connected
+
+The app deliberately does not search the internet for private personal contact details. It can surface an owner/proprietor name contained in legal evidence and business/professional contacts present in that evidence, while corporate owners can be followed through the Companies House action link.
+
+### Free persistent setup with Supabase
+
+The preferred v1.8 connection uses Supabase Storage's **S3-compatible server credentials**, because that is a standard server-to-server storage path for private files.
+
+1. Create a free Supabase project.
+2. In **Storage**, create a private bucket named `nw-auction-private`.
+3. Open **Storage > Configuration > S3**, enable the S3 protocol and generate an **Access Key ID** and **Secret Access Key**. Copy the endpoint and region shown on the same screen. These S3 credentials are server-only and must stay in Streamlit Secrets.
+4. In Streamlit Community Cloud open **Manage app > Settings > Secrets** and add:
+
+```toml
+[supabase]
+bucket = "nw-auction-private"
+database_object = "state/auction_tracker.db"
+s3_endpoint = "https://YOUR_PROJECT_REF.storage.supabase.co/storage/v1/s3"
+s3_region = "YOUR_PROJECT_REGION"
+s3_access_key_id = "YOUR_S3_ACCESS_KEY_ID"
+s3_secret_access_key = "YOUR_S3_SECRET_ACCESS_KEY"
+```
+
+5. Save Streamlit Secrets and reboot the app. Never commit these credentials to GitHub or place them in `.streamlit/secrets.toml` inside the repository.
+6. The sidebar should change from **Local-only storage** to **Private cloud connected**.
+7. Run **Refresh live data** once. At the end of the refresh the current SQLite state is uploaded to the private bucket. On a future cold start, v1.8 restores that snapshot before opening the database.
+
+A backwards-compatible Supabase REST configuration is also supported for existing deployments using a server key, but the S3 configuration above is the recommended setup for this build.
+
+A `.gitignore` is included to exclude the local SQLite file, Streamlit secrets, Python caches and `.env` files from GitHub.
+
 ## v1.7.1 accuracy patch
 
 This patch tightens the acquisition evidence hierarchy after live validation against an Auction House leasehold flat:
@@ -169,7 +222,7 @@ If an earlier version is already deployed from GitHub:
 5. When the app comes back, click **Refresh live data**.
 6. Existing rows without images become eligible for detail-page enrichment, Auction House history is backfilled from North West + Manchester archives, and ranking is recalculated.
 
-The current test build still uses a local SQLite file. Streamlit Community Cloud storage is not intended as the final persistent production database; move to a hosted persistent database after the live-source behaviour is accepted.
+By default the app can still run from a local SQLite file. In v1.8, configure the optional private Supabase persistence layer above before relying on Streamlit Community Cloud for long-term history, shortlist, underwriting, workspace notes or legal evidence.
 
 ## What the live enrichment now does
 

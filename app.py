@@ -17,7 +17,8 @@ from tracker.diligence import (
     refresh_property_legal,
     save_uploaded_legal_documents,
 )
-from tracker.legal import uploaded_document
+from tracker.legal import uploaded_document, uploaded_documents
+from tracker.cloud import SupabaseStorage, config_from_mapping
 from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
@@ -58,7 +59,40 @@ hr {margin: 1rem 0;}
 )
 
 DB_PATH = Path(os.environ.get("AUCTION_DB_PATH", str(Path(__file__).with_name("auction_tracker.db"))))
+
+# Optional private cloud persistence. Streamlit Community Cloud has ephemeral local
+# storage, so a Supabase Storage snapshot is restored on a cold start and synced
+# after meaningful changes. The app remains fully usable in local-only mode.
+try:
+    _secrets_mapping = st.secrets
+except Exception:
+    _secrets_mapping = {}
+cloud_config = config_from_mapping(_secrets_mapping)
+cloud_store = SupabaseStorage(cloud_config) if cloud_config.configured else None
+cloud_bootstrap = {"restored": False, "reason": "not-configured"}
+cloud_bootstrap_error = ""
+if cloud_store:
+    try:
+        cloud_bootstrap = cloud_store.restore_database_if_missing(DB_PATH)
+    except Exception as exc:
+        cloud_bootstrap_error = str(exc)[:500]
+
 db = Database(DB_PATH)
+
+def sync_cloud(reason="update", quiet=True):
+    if not cloud_store:
+        return {"synced": False, "reason": "not-configured"}
+    try:
+        result = cloud_store.upload_database(DB_PATH)
+        result["reason_label"] = reason
+        st.session_state["cloud_last_sync"] = datetime.now(timezone.utc).isoformat()
+        st.session_state["cloud_last_error"] = ""
+        return result
+    except Exception as exc:
+        st.session_state["cloud_last_error"] = str(exc)[:500]
+        if not quiet:
+            st.warning(f"Cloud persistence could not sync this update: {exc}")
+        return {"synced": False, "reason": str(exc)}
 
 
 def money(value, digits=0):
@@ -222,6 +256,23 @@ with st.sidebar:
     default_survey = st.number_input("Survey/DD allowance", min_value=0, value=1000, step=250)
     default_res_margin = st.number_input("Residential target margin %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
     default_com_margin = st.number_input("Commercial target uplift %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
+    st.divider()
+    st.caption("Persistence")
+    if cloud_store and not cloud_bootstrap_error:
+        st.success("Private cloud connected")
+        last_sync = st.session_state.get("cloud_last_sync")
+        if last_sync:
+            st.caption(f"Last sync: {str(last_sync)[:19].replace('T', ' ')} UTC")
+        if st.button("Sync cloud snapshot", use_container_width=True):
+            result = sync_cloud("manual sync", quiet=False)
+            if result.get("synced"):
+                st.success("Cloud snapshot updated.")
+    elif cloud_bootstrap_error:
+        st.error("Cloud configured but unavailable")
+        st.caption(cloud_bootstrap_error)
+    else:
+        st.warning("Local-only storage")
+        st.caption("Streamlit can reset local data on reboot. Configure the private Supabase bucket in Streamlit Secrets to make history, notes and legal evidence persistent.")
 
 config = DealConfig(
     commercial_target_psf=int(commercial_target_psf),
@@ -247,16 +298,19 @@ with head1:
     if st.button("Refresh live data", type="primary", use_container_width=True):
         with st.spinner("Pulling live auction stock and priority intelligence..."):
             st.session_state["refresh_summary"] = refresh_all(db)
+            sync_cloud("live refresh", quiet=False)
         st.rerun()
 with head2:
     if st.button("Refresh comparables", use_container_width=True):
         with st.spinner("Refreshing priority comparable evidence..."):
             st.session_state["comp_summary"] = refresh_due_comparables(db, max_properties=35)
+            sync_cloud("comparable refresh", quiet=False)
         st.rerun()
 with head3:
     if st.button("Refresh planning/legal", use_container_width=True):
         with st.spinner("Refreshing priority due diligence..."):
             st.session_state["dd_summary"] = refresh_due_diligence(db, max_planning=35, max_legal=20)
+            sync_cloud("planning/legal refresh", quiet=False)
         st.rerun()
 with head4:
     runs = db.latest_runs()
@@ -265,6 +319,12 @@ with head4:
         st.caption(f"Latest source check: {latest.get('completed_at') or latest.get('started_at')} | {latest.get('source')} | {latest.get('status')}")
     else:
         st.caption("No data pulled yet. Use Refresh live data.")
+    if cloud_store and not cloud_bootstrap_error:
+        st.caption("Persistence: private cloud connected")
+    elif cloud_bootstrap_error:
+        st.caption("Persistence: cloud configured but connection needs attention")
+    else:
+        st.caption("Persistence: local only (data can reset on Streamlit reboot)")
 render_refresh_summary()
 
 # Build analysis rows once per Streamlit rerun.
@@ -332,6 +392,10 @@ for row in rows:
         "legal_error": legal.get("error"),
         "legal_extracted_fields": legal.get("extracted_fields") or {},
         "legal_contacts": legal.get("contacts") or [],
+        "legal_evidence": legal.get("evidence") or [],
+        "legal_pack_completeness_pct": int(legal.get("pack_completeness_pct") or 0) if legal else 0,
+        "legal_missing_components": legal.get("missing_components") or [],
+        "legal_available_components": legal.get("available_components") or [],
     })
     # Parsed legal evidence outranks listing inference. A stated lease term is
     # definitive evidence that the interest being sold is leasehold.
@@ -353,6 +417,7 @@ for row in rows:
 def toggle_shortlist(row):
     enabled = row["id"] not in db.shortlist_ids()
     db.set_shortlisted(row["id"], enabled)
+    sync_cloud("shortlist")
     st.rerun()
 
 
@@ -502,6 +567,7 @@ def underwriting_form(chosen):
                 "underwriting_notes": notes,
                 "use_auto_comps": 1 if use_auto else 0,
             })
+            sync_cloud("underwriting", quiet=False)
             st.rerun()
 
 
@@ -516,6 +582,10 @@ def render_deal_room(chosen):
     legal_summary = db.legal_summary_for(chosen["id"])
     chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or chosen.get("legal_extracted_fields") or {}
     chosen["legal_contacts"] = legal_summary.get("contacts") or chosen.get("legal_contacts") or []
+    chosen["legal_evidence"] = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
+    chosen["legal_pack_completeness_pct"] = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
+    chosen["legal_missing_components"] = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
+    chosen["legal_available_components"] = legal_summary.get("available_components") or chosen.get("legal_available_components") or []
     story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items)
     readiness = deal_readiness(chosen)
     actions = next_actions(chosen, story)
@@ -653,6 +723,9 @@ def render_deal_room(chosen):
             ["Seller / disposal type", profile.get("seller_type") or "Not identified"],
             ["Title number", profile.get("title_number") or "Not extracted"],
             ["Company number", profile.get("company_number") or "Not extracted"],
+            ["Registered office", profile.get("registered_office") or "Not extracted"],
+            ["Title price paid", money(profile.get("title_price_paid")) if profile.get("title_price_paid") is not None else "Not extracted"],
+            ["Title price date", profile.get("title_price_paid_date") or "Not extracted"],
         ]
         st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
 
@@ -754,6 +827,7 @@ def render_deal_room(chosen):
             if st.button("Refresh this property's comparables", key=f"comp_{chosen['id']}", use_container_width=True):
                 with st.spinner("Refreshing comparable evidence..."):
                     refresh_property_comparables(db, chosen)
+                    sync_cloud("property comparable refresh")
                 st.rerun()
         with c2:
             st.caption(f"Provider: {chosen.get('comparable_provider') or 'Not run'} | Confidence: {int(chosen.get('comparable_confidence') or 0)}% | Usable comps: {int(chosen.get('comparable_count') or 0)}")
@@ -809,6 +883,7 @@ def render_deal_room(chosen):
                 try:
                     with st.spinner("Checking official planning data..."):
                         refresh_property_planning(db, chosen)
+                        sync_cloud("property planning refresh")
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
@@ -837,11 +912,22 @@ def render_deal_room(chosen):
                 try:
                     with st.spinner("Checking public legal-pack links..."):
                         refresh_property_legal(db, chosen)
+                        sync_cloud("property legal refresh")
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
 
             extracted = chosen.get("legal_extracted_fields") or {}
+            legal_evidence = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
+            completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
+            miss = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
+            lm1, lm2, lm3 = st.columns(3)
+            lm1.metric("Pack completeness", f"{completeness}%")
+            lm2.metric("Documents found", int(legal_summary.get("document_count") or chosen.get("legal_document_count") or 0))
+            lm3.metric("Documents parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
+            if miss:
+                st.warning("Missing / not yet evidenced: " + ", ".join(miss))
+
             if legal_state(chosen) == "REVIEWED" or any(v not in (None, "", False, 0) for v in extracted.values()):
                 st.markdown("#### Key information extracted")
                 legal_facts = [
@@ -849,6 +935,9 @@ def render_deal_room(chosen):
                     ["Seller / disposal type", extracted.get("seller_type") or "Not identified"],
                     ["Title number", extracted.get("title_number") or "Not found"],
                     ["Company number", extracted.get("company_number") or "Not found"],
+                    ["Registered office", extracted.get("registered_office") or "Not found"],
+                    ["Title price paid", money(extracted.get("title_price_paid")) if extracted.get("title_price_paid") is not None else "Not found"],
+                    ["Title price date", extracted.get("title_price_paid_date") or "Not found"],
                     ["Lease remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else "Not found"],
                     ["Lease start", extracted.get("lease_start_date") or "Not found"],
                     ["Ground rent", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else "Not found"],
@@ -865,23 +954,80 @@ def render_deal_room(chosen):
                 ]
                 st.dataframe(pd.DataFrame(legal_facts, columns=["Legal item", "Extracted evidence"]), hide_index=True, use_container_width=True)
 
+            if legal_evidence:
+                st.markdown("#### Evidence trail")
+                evidence_frame = pd.DataFrame([{
+                    "Finding": e.get("finding"), "Value": e.get("value"), "Document": e.get("document"),
+                    "Page": e.get("page"), "Evidence": e.get("excerpt"),
+                } for e in legal_evidence])
+                st.dataframe(evidence_frame, hide_index=True, use_container_width=True)
+                st.caption("Page references are generated from the uploaded/public PDF text where page boundaries are extractable. Always verify against the original document.")
+
             contacts = chosen.get("legal_contacts") or []
             if contacts:
                 st.markdown("#### Professional contacts in the pack")
                 st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
+                st.caption("Only professional/business contacts found in the legal evidence are surfaced; the app does not search for private personal contact details.")
 
             docs = db.legal_documents_for(chosen["id"])
             if docs:
                 st.markdown("#### Legal documents")
-                frame = pd.DataFrame([{"Name": d.get("name"), "Type": d.get("doc_type"), "Access": d.get("access_status"), "URL": d.get("url")} for d in docs])
+                frame = pd.DataFrame([{
+                    "Name": d.get("name"), "Type": d.get("doc_type"), "Access": d.get("access_status"),
+                    "Cloud": "Stored" if (d.get("metadata") or {}).get("cloud_storage_path") else "-", "URL": d.get("url")
+                } for d in docs])
                 st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"URL": st.column_config.LinkColumn("Document")})
-            uploads = st.file_uploader("Upload legal pack documents for local parsing", type=["pdf", "txt"], accept_multiple_files=True, key=f"upload_{chosen['id']}")
-            if uploads and st.button("Analyse uploaded legal documents", key=f"analyse_upload_{chosen['id']}", type="primary", use_container_width=True):
-                parsed = [uploaded_document(f.name, f.getvalue()) for f in uploads]
-                save_uploaded_legal_documents(db, chosen, parsed)
-                st.rerun()
-            for flag in chosen.get("legal_risk_flags") or []:
-                st.write(f"- {flag.get('label')} (severity {flag.get('severity')}/5)")
+
+                cloud_docs = [d for d in docs if (d.get("metadata") or {}).get("cloud_storage_path")]
+                if cloud_store and cloud_docs:
+                    selected_doc_name = st.selectbox("Stored original", [d.get("name") for d in cloud_docs], key=f"cloud_doc_{chosen['id']}")
+                    selected_doc = next(d for d in cloud_docs if d.get("name") == selected_doc_name)
+                    if st.button("Retrieve original from private cloud", key=f"retrieve_doc_{chosen['id']}", use_container_width=True):
+                        try:
+                            path = (selected_doc.get("metadata") or {}).get("cloud_storage_path")
+                            st.session_state[f"cloud_doc_bytes_{chosen['id']}"] = cloud_store.download_bytes(path)
+                            st.session_state[f"cloud_doc_name_{chosen['id']}"] = selected_doc_name
+                        except Exception as exc:
+                            st.error(f"Could not retrieve original: {exc}")
+                    stored_bytes = st.session_state.get(f"cloud_doc_bytes_{chosen['id']}")
+                    stored_name = st.session_state.get(f"cloud_doc_name_{chosen['id']}")
+                    if stored_bytes and stored_name == selected_doc_name:
+                        st.download_button("Download retrieved original", stored_bytes, file_name=stored_name, key=f"download_cloud_{chosen['id']}", use_container_width=True)
+
+            uploads = st.file_uploader(
+                "Upload legal pack (PDF/TXT or ZIP containing PDFs)", type=["pdf", "txt", "zip"],
+                accept_multiple_files=True, key=f"upload_{chosen['id']}"
+            )
+            if uploads and st.button("Analyse & save legal pack", key=f"analyse_upload_{chosen['id']}", type="primary", use_container_width=True):
+                try:
+                    parsed = []
+                    with st.spinner("Parsing legal documents and building evidence trail..."):
+                        for f in uploads:
+                            for doc in uploaded_documents(f.name, f.getvalue()):
+                                raw = doc.pop("_raw_bytes", b"")
+                                if cloud_store and raw:
+                                    try:
+                                        path = cloud_store.upload_legal_document(chosen["id"], doc.get("name") or f.name, raw, doc.get("sha256") or "document")
+                                        doc.setdefault("metadata", {})["cloud_storage_path"] = path
+                                        doc["access_status"] = "uploaded, parsed and stored privately" if doc.get("text_content") else "uploaded and stored; no extractable text"
+                                    except Exception as cloud_exc:
+                                        doc.setdefault("metadata", {})["cloud_storage_error"] = str(cloud_exc)[:300]
+                                parsed.append(doc)
+                        save_uploaded_legal_documents(db, chosen, parsed)
+                        sync_cloud("legal pack upload", quiet=False)
+                    st.success(f"Analysed {len(parsed)} legal document(s).")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Legal pack could not be analysed: {exc}")
+
+            risk_flags = legal_summary.get("risk_flags") or chosen.get("legal_risk_flags") or []
+            if risk_flags:
+                st.markdown("#### Legal risk register")
+                risk_frame = pd.DataFrame([{
+                    "Severity": f.get("severity"), "Issue": f.get("label"), "Document": f.get("document") or "-",
+                    "Page": f.get("page"), "Evidence": f.get("excerpt") or ""
+                } for f in sorted(risk_flags, key=lambda x: int(x.get("severity") or 0), reverse=True)])
+                st.dataframe(risk_frame, hide_index=True, use_container_width=True)
             st.markdown("#### Questions for your solicitor")
             for question in solicitor_questions(chosen, legal_summary):
                 st.write(f"- {question}")
@@ -918,6 +1064,7 @@ def render_deal_room(chosen):
             follow_up = st.text_input("Follow-up date", value=workspace.get("follow_up_date") or "", placeholder="YYYY-MM-DD", key=f"follow_{chosen['id']}")
         if st.button("Save deal stage", key=f"save_workspace_{chosen['id']}", type="primary"):
             db.save_workspace(chosen["id"], stage, next_action, follow_up)
+            sync_cloud("deal workspace", quiet=False)
             st.success("Deal workspace saved.")
 
         st.markdown("### Action centre")
@@ -945,6 +1092,7 @@ def render_deal_room(chosen):
         note = st.text_area("Add call, viewing, negotiation or due-diligence note", key=f"new_note_{chosen['id']}", height=100)
         if st.button("Add note", key=f"add_note_{chosen['id']}"):
             db.add_note(chosen["id"], note)
+            sync_cloud("deal note")
             st.rerun()
         notes = db.notes_for(chosen["id"])
         if notes:
@@ -956,6 +1104,7 @@ def render_deal_room(chosen):
                 with c2:
                     if st.button("Delete", key=f"del_note_{item['id']}"):
                         db.delete_note(item["id"], chosen["id"])
+                        sync_cloud("delete note")
                         st.rerun()
                 st.divider()
         else:

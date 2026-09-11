@@ -194,6 +194,10 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   extracted_json TEXT,
   contacts_json TEXT,
   risk_flags_json TEXT,
+  evidence_json TEXT,
+  pack_completeness_pct INTEGER DEFAULT 0,
+  missing_components_json TEXT,
+  available_components_json TEXT,
   methodology TEXT,
   warnings_json TEXT,
   attribution TEXT,
@@ -261,6 +265,10 @@ HISTORY_MIGRATIONS = {
 LEGAL_SUMMARY_MIGRATIONS = {
     "extracted_json": "TEXT",
     "contacts_json": "TEXT",
+    "evidence_json": "TEXT",
+    "pack_completeness_pct": "INTEGER DEFAULT 0",
+    "missing_components_json": "TEXT",
+    "available_components_json": "TEXT",
 }
 
 
@@ -772,6 +780,18 @@ class Database:
             out["contacts"] = json.loads(out.get("contacts_json") or "[]")
         except (TypeError, json.JSONDecodeError):
             out["contacts"] = []
+        try:
+            out["evidence"] = json.loads(out.get("evidence_json") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            out["evidence"] = []
+        try:
+            out["missing_components"] = json.loads(out.get("missing_components_json") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            out["missing_components"] = []
+        try:
+            out["available_components"] = json.loads(out.get("available_components_json") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            out["available_components"] = []
         return out
 
     def legal_summary_map(self):
@@ -795,6 +815,18 @@ class Database:
                 row["contacts"] = json.loads(row.get("contacts_json") or "[]")
             except (TypeError, json.JSONDecodeError):
                 row["contacts"] = []
+            try:
+                row["evidence"] = json.loads(row.get("evidence_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                row["evidence"] = []
+            try:
+                row["missing_components"] = json.loads(row.get("missing_components_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                row["missing_components"] = []
+            try:
+                row["available_components"] = json.loads(row.get("available_components_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                row["available_components"] = []
             out[row["property_id"]] = row
         return out
 
@@ -837,23 +869,31 @@ class Database:
             con.execute(
                 """INSERT INTO legal_summaries(
                 property_id,provider,status,updated_at,risk_score,document_count,parsed_document_count,completion_days,deposit_pct,
-                lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,methodology,warnings_json,attribution,error
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,evidence_json,
+                pack_completeness_pct,missing_components_json,available_components_json,methodology,warnings_json,attribution,error
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(property_id) DO UPDATE SET
                 provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,risk_score=excluded.risk_score,
                 document_count=excluded.document_count,parsed_document_count=excluded.parsed_document_count,
                 completion_days=excluded.completion_days,deposit_pct=excluded.deposit_pct,lease_years=excluded.lease_years,
                 buyer_fee_detected=excluded.buyer_fee_detected,vat_flag=excluded.vat_flag,has_addendum=excluded.has_addendum,
-                extracted_json=excluded.extracted_json,contacts_json=excluded.contacts_json,risk_flags_json=excluded.risk_flags_json,methodology=excluded.methodology,warnings_json=excluded.warnings_json,
-                attribution=excluded.attribution,error=excluded.error""",
+                extracted_json=excluded.extracted_json,contacts_json=excluded.contacts_json,risk_flags_json=excluded.risk_flags_json,
+                evidence_json=excluded.evidence_json,pack_completeness_pct=excluded.pack_completeness_pct,
+                missing_components_json=excluded.missing_components_json,available_components_json=excluded.available_components_json,
+                methodology=excluded.methodology,warnings_json=excluded.warnings_json,attribution=excluded.attribution,error=excluded.error""",
                 (property_id, summary.get("provider"), summary.get("status") or "not-found", now, summary.get("risk_score") or 0,
                  summary.get("document_count") or 0, summary.get("parsed_document_count") or 0, summary.get("completion_days"),
                  summary.get("deposit_pct"), summary.get("lease_years"), summary.get("buyer_fee_detected"),
                  int(bool(summary.get("vat_flag"))), int(bool(summary.get("has_addendum"))),
                  json.dumps(summary.get("extracted_fields") or {}, ensure_ascii=False),
                  json.dumps(summary.get("contacts") or [], ensure_ascii=False),
-                 json.dumps(summary.get("risk_flags") or [], ensure_ascii=False), summary.get("methodology"),
-                 json.dumps(summary.get("warnings") or [], ensure_ascii=False), summary.get("attribution"), summary.get("error")),
+                 json.dumps(summary.get("risk_flags") or [], ensure_ascii=False),
+                 json.dumps(summary.get("evidence") or [], ensure_ascii=False),
+                 int(summary.get("pack_completeness_pct") or 0),
+                 json.dumps(summary.get("missing_components") or [], ensure_ascii=False),
+                 json.dumps(summary.get("available_components") or [], ensure_ascii=False),
+                 summary.get("methodology"), json.dumps(summary.get("warnings") or [], ensure_ascii=False),
+                 summary.get("attribution"), summary.get("error")),
             )
             con.commit()
 
