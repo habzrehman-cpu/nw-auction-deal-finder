@@ -36,26 +36,47 @@ st.set_page_config(page_title="NW Auction Deal Finder", page_icon="\U0001f3e0", 
 st.markdown(
     """
 <style>
-.block-container {padding-top: 1.2rem; padding-bottom: 4rem; max-width: 1500px;}
-[data-testid="stMetric"] {background: #ffffff; border: 1px solid #e6e8eb; border-radius: 12px; padding: 10px 12px;}
-[data-testid="stMetricLabel"] {font-size: 0.78rem; color: #667085;}
-[data-testid="stMetricValue"] {font-size: 1.45rem; font-weight: 750;}
-.auction-hero {padding: 4px 0 8px 0;}
-.auction-hero h1 {font-size: 2rem; margin-bottom: 0.15rem;}
-.muted {color: #667085; font-size: 0.9rem;}
-.badge {display:inline-block; padding:4px 9px; margin:2px 4px 2px 0; border-radius:999px; font-size:0.77rem; font-weight:650; border:1px solid #d0d5dd; background:#f8fafc;}
-.badge-hot {background:#fff4e5; border-color:#f5c26b; color:#8a4b08;}
-.badge-risk {background:#fff1f1; border-color:#f1a3a3; color:#9b1c1c;}
-.badge-good {background:#ecfdf3; border-color:#86d6a3; color:#166534;}
-.property-title {font-size:1.2rem; font-weight:760; line-height:1.25; margin:2px 0 6px 0;}
-.card-sub {color:#667085; font-size:0.86rem; margin-bottom:5px;}
-.deal-score {font-size:1.8rem; font-weight:800; line-height:1;}
-.deal-score-label {font-size:0.75rem; color:#667085; text-transform:uppercase; letter-spacing:.03em;}
-.soft-panel {background:#f8fafc; border:1px solid #e6e8eb; border-radius:12px; padding:14px;}
-.small-label {font-size:.74rem; color:#667085; text-transform:uppercase; letter-spacing:.03em;}
-.big-number {font-size:1.2rem; font-weight:750;}
-[data-testid="stImage"] img {border-radius:10px; object-fit:cover;}
-div.stButton > button {border-radius:9px;}
+:root {--ink:#172033;--muted:#667085;--line:#e6eaf0;--panel:#ffffff;--soft:#f7f9fc;--accent:#ef4f4f;--good:#16794a;--warn:#9a6700;--risk:#b42318;}
+.stApp {background:#f6f8fb;}
+.block-container {padding-top: 1.0rem; padding-bottom: 4rem; max-width: 1480px;}
+[data-testid="stSidebar"] {background:#fbfcfe; border-right:1px solid #e8ecf2;}
+[data-testid="stSidebar"] .block-container {padding-top:.8rem;}
+[data-testid="stMetric"] {background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow:0 1px 2px rgba(16,24,40,.03);}
+[data-testid="stMetricLabel"] {font-size: 0.75rem; color: var(--muted);}
+[data-testid="stMetricValue"] {font-size: 1.45rem; font-weight: 760; color:var(--ink);}
+[data-testid="stExpander"] {border-color:var(--line)!important; border-radius:12px!important; background:#fff;}
+.auction-hero {padding: 6px 0 10px 0;}
+.auction-hero h1 {font-size: 2.05rem; margin-bottom: 0.12rem; letter-spacing:-.025em; color:var(--ink);}
+.auction-hero .muted {max-width:900px;}
+.muted {color: var(--muted); font-size: 0.9rem;}
+.eyebrow {font-size:.72rem;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:#7b8495;margin-bottom:4px;}
+.badge {display:inline-flex;align-items:center;padding:4px 9px;margin:2px 4px 2px 0;border-radius:999px;font-size:.75rem;font-weight:680;border:1px solid #d5dae2;background:#f8fafc;color:#344054;}
+.badge-hot {background:#fff7e8;border-color:#f4c56a;color:#8a4b08;}
+.badge-risk {background:#fff1f0;border-color:#f5aaa5;color:#a32018;}
+.badge-good {background:#edfdf3;border-color:#91d8ad;color:#166534;}
+.badge-info {background:#eef4ff;border-color:#b6c7f7;color:#284c9b;}
+.property-title {font-size:1.18rem;font-weight:770;line-height:1.28;margin:2px 0 6px 0;color:var(--ink);letter-spacing:-.01em;}
+.card-sub {color:var(--muted);font-size:.82rem;margin-bottom:5px;}
+.deal-score {font-size:1.75rem;font-weight:820;line-height:1;color:var(--ink);}
+.deal-score-label {font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.score-caption {font-size:.76rem;font-weight:700;margin-top:5px;color:#344054;}
+.soft-panel {background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:14px;}
+.small-label {font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.big-number {font-size:1.2rem;font-weight:760;color:var(--ink);}
+.quick-stat {background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-height:84px;}
+.quick-stat .q-label {font-size:.75rem;color:var(--muted);margin-bottom:6px;}
+.quick-stat .q-value {font-size:1.4rem;font-weight:800;color:var(--ink);}
+.card-reason {font-size:.82rem;color:#475467;background:#f8fafc;border-left:3px solid #cdd5df;border-radius:7px;padding:7px 9px;margin-top:8px;}
+.decision-banner {border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin:8px 0 12px;background:#fff;}
+.decision-banner strong {color:var(--ink);}
+.section-note {font-size:.82rem;color:var(--muted);}
+.identity-verified {color:#166534;font-weight:700;}
+.identity-rejected {color:#b42318;font-weight:700;}
+.identity-candidate {color:#9a6700;font-weight:700;}
+[data-testid="stImage"] img {border-radius:12px;object-fit:cover;}
+div.stButton > button, div.stLinkButton > a {border-radius:10px;min-height:42px;font-weight:650;}
+[data-testid="stSegmentedControl"] {margin-bottom:.25rem;}
+[data-testid="stHorizontalBlock"] {gap:.7rem;}
 hr {margin: 1rem 0;}
 </style>
 """,
@@ -205,8 +226,8 @@ def browse_rank(row):
     # Unknown evidence must never improve a rank simply because its numeric risk is
     # currently blank/zero. Keep good sourcing leads visible, but slightly penalise
     # incomplete DD and zero-works assumptions until the evidence is supplied.
-    if legal_state(row) != "VERIFIED":
-        value -= 0.35
+    if legal_state(row) != "VERIFIED" or int(row.get("legal_pack_completeness_pct") or 0) < 100:
+        value -= 0.45
     if planning_state(row) != "SCREENED":
         value -= 0.15
     if row.get("works_missing"):
@@ -225,8 +246,9 @@ def legal_state(row):
     status = str(row.get("legal_status") or "").lower()
     policy = str(row.get("legal_evidence_policy_version") or "")
     verified = int(row.get("legal_verified_document_count") or 0)
-    # Any old pre-firewall extraction is deliberately downgraded until refreshed.
-    if status in {"parsed", "reviewed"} and policy != EVIDENCE_POLICY_VERSION:
+    # Any extraction saved under an older evidence policy is deliberately
+    # downgraded until v1.10.3 revalidation has rebuilt its derived findings.
+    if status and policy != EVIDENCE_POLICY_VERSION:
         return "UNVERIFIED"
     if status == "verified" and verified > 0 and policy == EVIDENCE_POLICY_VERSION:
         return "VERIFIED"
@@ -281,72 +303,68 @@ def render_refresh_summary():
                 st.write(f"**{item.get('source')}** - {item.get('error')}")
 
 
-# Sidebar keeps advanced settings out of the browsing experience.
+# Sidebar keeps strategy visible and moves technical settings into compact groups.
 with st.sidebar:
-    st.header("Deal criteria")
-    commercial_target_psf = st.number_input("Commercial target GBP/sq ft", min_value=1, value=50, step=5)
-    commercial_ceiling_psf = st.number_input("Commercial ceiling GBP/sq ft", min_value=1, value=60, step=5)
-    commercial_min_sqft = st.number_input("Preferred commercial size", min_value=500, value=9000, step=500)
-    commercial_max_price = st.number_input("Commercial max guide", min_value=0, value=1_500_000, step=50_000)
-    preferred_motorway_miles = st.number_input("Preferred motorway miles", min_value=0.5, value=5.0, step=0.5)
-    residential_target_price = st.number_input("Residential target guide", min_value=0, value=100_000, step=5_000)
-    hot_score = st.slider("Hot sourcing threshold", 1.0, 10.0, 8.0, 0.5)
-    st.divider()
-    st.caption("Default underwriting allowances")
-    default_auction_fee = st.number_input("Generic auction fee", min_value=0, value=1500, step=250)
-    default_legal = st.number_input("Legal allowance", min_value=0, value=2000, step=250)
-    default_survey = st.number_input("Survey/DD allowance", min_value=0, value=1000, step=250)
-    default_res_margin = st.number_input("Residential target margin %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
-    default_com_margin = st.number_input("Commercial target uplift %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
-    st.divider()
-    st.caption("Persistence")
+    st.markdown("### Deal workspace")
+    st.caption("Set your acquisition rules once, then work from the ranked deal feed.")
+
+    with st.expander("Acquisition strategy", expanded=True):
+        commercial_target_psf = st.number_input("Commercial target GBP/sq ft", min_value=1, value=50, step=5)
+        commercial_ceiling_psf = st.number_input("Commercial ceiling GBP/sq ft", min_value=1, value=60, step=5)
+        commercial_min_sqft = st.number_input("Preferred commercial size", min_value=500, value=9000, step=500)
+        commercial_max_price = st.number_input("Commercial max guide", min_value=0, value=1_500_000, step=50_000)
+        preferred_motorway_miles = st.number_input("Preferred motorway miles", min_value=0.5, value=5.0, step=0.5)
+        residential_target_price = st.number_input("Residential target guide", min_value=0, value=100_000, step=5_000)
+        hot_score = st.slider("Hot deal threshold", 1.0, 10.0, 8.0, 0.5)
+
+    with st.expander("Underwriting defaults", expanded=False):
+        st.caption("These are starting allowances. Each deal can override them.")
+        default_auction_fee = st.number_input("Generic auction fee", min_value=0, value=1500, step=250)
+        default_legal = st.number_input("Legal allowance", min_value=0, value=2000, step=250)
+        default_survey = st.number_input("Survey / DD allowance", min_value=0, value=1000, step=250)
+        default_res_margin = st.number_input("Residential target margin %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
+        default_com_margin = st.number_input("Commercial target uplift %", min_value=0.0, max_value=80.0, value=20.0, step=1.0)
+
+    st.markdown("#### System health")
     if cloud_store and not cloud_bootstrap_error and not cloud_probe_error:
         if st.session_state.get("cloud_write_verified"):
-            st.success("Private cloud read/write verified")
+            st.success("Cloud history protected")
         else:
-            st.info("Private cloud connected - write not yet verified")
+            st.info("Cloud connected - verify write")
         last_sync = st.session_state.get("cloud_last_sync")
         if last_sync:
-            st.caption(f"Last sync: {str(last_sync)[:19].replace('T', ' ')} UTC")
+            st.caption(f"Last sync {str(last_sync)[:16].replace('T', ' ')} UTC")
         if st.button("Sync cloud snapshot", use_container_width=True):
             result = sync_cloud("manual sync", quiet=False)
             if result.get("synced"):
-                st.success("Cloud snapshot updated. Read/write persistence verified.")
+                st.success("Snapshot saved")
     elif cloud_bootstrap_error or cloud_probe_error:
-        st.error("Cloud configured but unavailable")
+        st.error("Cloud needs attention")
         st.caption(cloud_bootstrap_error or cloud_probe_error)
-        if st.button("Retry cloud connection test", use_container_width=True):
+        if st.button("Retry cloud connection", use_container_width=True):
             st.session_state.pop("cloud_probe", None)
             st.session_state.pop("cloud_probe_error", None)
             st.rerun()
     else:
-        st.warning("Local-only storage")
-        st.caption("Streamlit can reset local data on reboot. Configure the private Supabase bucket in Streamlit Secrets to make history, notes and legal evidence persistent.")
-    st.divider()
-    st.caption("Ownership intelligence")
-    if companies_house_api_key:
-        st.success("Companies House API configured")
-    else:
-        st.info("Companies House API not configured")
-        st.caption("Corporate seller links still work; add a free Companies House API key in Streamlit Secrets for automatic status, charges, insolvency and director intelligence.")
-    st.divider()
-    st.caption("Legal pack automation")
-    if legal_access.auto_enabled:
-        st.success("Automatic legal-pack acquisition enabled")
-    else:
-        st.info("Automatic legal-pack acquisition disabled")
-    with st.expander("Source access status", expanded=False):
+        st.warning("Local-only history")
+        st.caption("Configure Supabase before relying on long-term auction history.")
+
+    with st.expander("Data connections", expanded=False):
+        if companies_house_api_key:
+            st.success("Companies House connected")
+        else:
+            st.info("Companies House not configured")
+        if legal_access.auto_enabled:
+            st.success("Legal-pack automation on")
+        else:
+            st.info("Legal-pack automation off")
         for provider in ("eddisons", "savills", "auction_house", "allsop"):
             access_status = provider_access_status(legal_access, provider)
             label = access_status.get("label") or provider
             status = access_status.get("status") or "unknown"
-            if access_status.get("allowed") and "configured" in status:
-                st.success(f"{label}: {status}")
-            elif access_status.get("allowed"):
-                st.caption(f"{label}: {status}")
-            else:
-                st.warning(f"{label}: {status}")
-        st.caption("The app never bypasses CAPTCHA/anti-bot controls. Sources whose published terms require consent stay blocked until permission is explicitly recorded in private Secrets.")
+            icon = "OK" if access_status.get("allowed") else "BLOCKED"
+            st.caption(f"{icon} - {label}: {status}")
+        st.caption("No CAPTCHA or anti-bot bypass is attempted. Permission-gated sources stay blocked until authorised.")
 
 config = DealConfig(
     commercial_target_psf=int(commercial_target_psf),
@@ -462,6 +480,8 @@ for row in rows:
         "legal_risk_score": float(legal.get("risk_score") or 0) if legal and str(legal.get("status") or "").lower() == "verified" and str(legal.get("evidence_policy_version") or "") == EVIDENCE_POLICY_VERSION else None,
         "legal_document_count": int(legal.get("document_count") or 0) if legal else 0,
         "legal_candidate_document_count": int(legal.get("candidate_document_count") if legal.get("candidate_document_count") is not None else (legal.get("document_count") or 0)) if legal else 0,
+        "legal_rejected_document_count": int(legal.get("rejected_document_count") or 0) if legal else 0,
+        "legal_pack_index_count": int(legal.get("pack_index_count") or 0) if legal else 0,
         "legal_verified_document_count": int(legal.get("verified_document_count") or 0) if legal else 0,
         "legal_parsed_document_count": int(legal.get("parsed_document_count") or 0) if legal else 0,
         "legal_auctioneer_evidence_count": int(legal.get("auctioneer_evidence_count") or 0) if legal else 0,
@@ -484,6 +504,7 @@ for row in rows:
         "legal_available_components": (legal.get("available_components") or []) if legal_current else [],
         "legal_pack_changed": bool(legal.get("pack_changed")) if legal else False,
         "legal_pack_change": legal.get("pack_change") or {},
+        "legal_revalidation_report": legal.get("revalidation_report") or {},
     })
     # Parsed legal evidence outranks listing inference. A stated lease term is
     # definitive evidence that the interest being sold is leasehold.
@@ -550,16 +571,42 @@ def render_badges(row):
     st.markdown("".join(tags), unsafe_allow_html=True)
 
 
+
+def score_label(score):
+    score = float(score or 0)
+    if score >= 8.0:
+        return "Priority"
+    if score >= 6.5:
+        return "Worth a look"
+    if score >= 5.0:
+        return "Review"
+    return "Early stage"
+
+
+def top_deal_reason(row):
+    if row.get("status") == "Available post-auction":
+        return "Post-auction availability may create a stronger negotiation window."
+    if (row.get("price_reduction_pct") or 0) >= 10:
+        return f"Guide has reduced by {float(row.get('price_reduction_pct')):.1f}%."
+    if (row.get("failure_count") or 0) > 0:
+        return f"{int(row.get('failure_count') or 0)} failed auction attempt(s) recorded."
+    if row.get("comparable_guide_discount_pct") is not None and float(row.get("comparable_guide_discount_pct") or 0) >= 15:
+        return f"Guide is {float(row.get('comparable_guide_discount_pct')):.1f}% below the current comparable midpoint."
+    reasons = (row.get("motivation_reasons") or []) + (row.get("reasons") or [])
+    if reasons:
+        return str(reasons[0]).lstrip("+-0123456789: ")[:150]
+    return "Open the deal room to complete valuation and due diligence."
+
 def render_property_card(row):
     with st.container(border=True):
-        img_col, main_col, score_col = st.columns([1.25, 3.65, 0.9], vertical_alignment="top")
+        img_col, main_col, score_col = st.columns([1.15, 3.8, 0.95], vertical_alignment="top")
         with img_col:
             if row.get("image_url"):
                 st.image(row["image_url"], use_container_width=True)
             else:
-                st.markdown('<div class="soft-panel" style="height:150px;display:flex;align-items:center;justify-content:center;color:#667085;">Property image pending refresh</div>', unsafe_allow_html=True)
+                st.markdown('<div class="soft-panel" style="height:150px;display:flex;align-items:center;justify-content:center;color:#667085;text-align:center;">Image pending<br>next refresh</div>', unsafe_allow_html=True)
         with main_col:
-            st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} | Lot {row.get("lot_number") or "-"} | {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} &nbsp;·&nbsp; Lot {row.get("lot_number") or "-"} &nbsp;·&nbsp; {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="property-title">{clean_address(row)}</div>', unsafe_allow_html=True)
             render_badges(row)
             if is_commercial(row):
@@ -571,23 +618,28 @@ def render_property_card(row):
             else:
                 a, b, c, d = st.columns(4)
                 a.metric("Guide", guide_display(row))
-                b.metric("Desktop GDV", money(row.get("market_value") or row.get("comparable_valuation_mid")))
+                b.metric("Desktop value", money(row.get("market_value") or row.get("comparable_valuation_mid")))
                 c.metric("Max buy", money(row.get("max_bid")))
                 d.metric("Est. profit", money(row.get("profit")))
             meta1, meta2, meta3 = st.columns(3)
-            meta1.caption(f"Vendor motivation: {row.get('motivation_score', 0):.1f}/10")
-            meta2.caption(f"Comparable confidence: {int(row.get('comparable_confidence') or 0)}%")
+            meta1.caption(f"Seller motivation {row.get('motivation_score', 0):.1f}/10")
+            meta2.caption(f"Evidence confidence {int(row.get('comparable_confidence') or 0)}% comps")
             if row.get("motorway_distance_miles") is not None:
-                meta3.caption(f"Motorway: {row.get('motorway_distance_miles'):.1f} mi to {row.get('nearest_junction') or row.get('nearest_motorway') or 'junction'}")
+                meta3.caption(f"Access {row.get('motorway_distance_miles'):.1f} mi to {row.get('nearest_junction') or row.get('nearest_motorway') or 'junction'}")
             else:
-                meta3.caption("Motorway distance: pending")
+                meta3.caption("Access distance pending")
+            st.markdown(f'<div class="card-reason"><strong>Why it ranks:</strong> {top_deal_reason(row)}</div>', unsafe_allow_html=True)
         with score_col:
-            st.markdown(f'<div class="deal-score-label">Deal potential</div><div class="deal-score">{row.get("browse_score", 0):.1f}</div><div class="deal-score-label">out of 10</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="deal-score-label">Deal potential</div><div class="deal-score">{row.get("browse_score", 0):.1f}</div>'
+                f'<div class="deal-score-label">out of 10</div><div class="score-caption">{score_label(row.get("browse_score"))}</div>',
+                unsafe_allow_html=True,
+            )
             st.write("")
-            if st.button("View deal", key=f"view_{row['id']}", type="primary", use_container_width=True):
+            if st.button("Open deal room", key=f"view_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
                 st.rerun()
-            star = "Remove shortlist" if row.get("shortlisted") else "Shortlist"
+            star = "Remove" if row.get("shortlisted") else "Shortlist"
             if st.button(star, key=f"short_{row['id']}", use_container_width=True):
                 toggle_shortlist(row)
 
@@ -677,7 +729,7 @@ def underwriting_form(chosen):
 
 
 def render_deal_room(chosen):
-    if st.button("Back to property results"):
+    if st.button("← Back to deal feed"):
         st.session_state.pop("selected_deal_id", None)
         st.rerun()
 
@@ -697,7 +749,7 @@ def render_deal_room(chosen):
             "risk_flags": [],
         })
         legal_summary["warnings"] = list(dict.fromkeys((raw_legal_summary.get("warnings") or []) + [
-            "Saved legal extraction predates the v1.10.1 evidence firewall and is quarantined until the legal pack is refreshed."
+            "Saved legal extraction predates the v1.10.3 Evidence Revalidation & Purge policy and is quarantined until the legal pack is refreshed."
         ]))
     company_summary = db.company_intelligence_for(chosen["id"])
     chosen["legal_extracted_fields"] = legal_summary.get("extracted_fields") or {}
@@ -723,7 +775,8 @@ def render_deal_room(chosen):
         else:
             st.markdown('<div class="soft-panel" style="height:280px;display:flex;align-items:center;justify-content:center;color:#667085;">Property image pending refresh</div>', unsafe_allow_html=True)
     with right:
-        st.caption(f"{chosen.get('source')} | Lot {chosen.get('lot_number') or '-'} | {chosen.get('property_type')} | {chosen.get('status')}")
+        st.markdown('<div class="eyebrow">Deal room</div>', unsafe_allow_html=True)
+        st.caption(f"{chosen.get('source')} · Lot {chosen.get('lot_number') or '-'} · {chosen.get('property_type')} · {chosen.get('status')}")
         st.header(clean_address(chosen))
         render_badges(chosen)
         a, b, c, d = st.columns(4)
@@ -736,6 +789,11 @@ def render_deal_room(chosen):
         f.metric("Opening offer", money(chosen.get("opening_offer")))
         g.metric("Max buy", money(chosen.get("max_bid")), delta="PROVISIONAL" if chosen.get("max_bid_provisional") else None)
         h.metric("Seller-story confidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
+        next_action_text = actions[0].get("action") if actions else (chosen.get("recommended_action") or "Continue due diligence")
+        st.markdown(
+            f'<div class="decision-banner"><span class="eyebrow">Current decision</span><br><strong>{readiness.get("readiness_status")}</strong> · {readiness.get("readiness_pct", 0)}% ready &nbsp;—&nbsp; Next: {next_action_text}</div>',
+            unsafe_allow_html=True,
+        )
         if chosen.get("recommended_action"):
             if chosen.get("recommendation") == "PURSUE":
                 st.success(f"PURSUE - {chosen.get('recommended_action')}")
@@ -754,7 +812,7 @@ def render_deal_room(chosen):
             if profile.get("company_number"):
                 st.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
 
-    tabs = st.tabs(["Overview", "Vendor story", "Financials", "Comparables", "Auction history", "Planning & legal", "Location", "Workspace"])
+    tabs = st.tabs(["Summary", "Seller", "Numbers", "Comps", "History", "Legal & planning", "Location", "Workspace"])
 
     with tabs[0]:
         m1, m2, m3, m4, m5 = st.columns(5)
@@ -793,6 +851,8 @@ def render_deal_room(chosen):
             concerns.extend(chosen.get("warnings") or [])
             if legal_state(chosen) != "VERIFIED":
                 concerns.insert(0, "Authoritative lot-bound legal documents have not been verified: legal risk remains UNKNOWN.")
+            elif int(chosen.get("legal_pack_completeness_pct") or 0) < 100:
+                concerns.insert(0, "Verified legal evidence is only partial: the core legal pack is incomplete and bid approval remains blocked.")
             if planning_state(chosen) != "SCREENED":
                 concerns.insert(0, "Planning screen is incomplete: planning risk remains UNKNOWN.")
             if not concerns:
@@ -1099,18 +1159,24 @@ def render_deal_room(chosen):
         with lcol:
             st.markdown("### Legal-pack intelligence")
             lstate = legal_state(chosen)
-            if lstate == "VERIFIED":
-                st.success(f"VERIFIED LEGAL EVIDENCE | Known legal risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
+            completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
+            verified_docs_count = int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0)
+            candidate_docs_count = int(legal_summary.get("candidate_document_count") if legal_summary.get("candidate_document_count") is not None else chosen.get("legal_candidate_document_count") or 0)
+            rejected_docs_count = int(legal_summary.get("rejected_document_count") or chosen.get("legal_rejected_document_count") or 0)
+            if lstate == "VERIFIED" and completeness >= 100:
+                st.success(f"CORE LEGAL PACK VERIFIED | Known-document risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
+            elif lstate == "VERIFIED":
+                st.warning(f"PARTIAL VERIFIED LEGAL EVIDENCE | Core pack {completeness}% complete | BID BLOCKED until missing core documents are verified")
             elif lstate == "VERIFIED NO TEXT":
-                st.warning("Lot-bound legal documents were verified, but text could not be extracted. Risk remains UNKNOWN until the originals are reviewed.")
+                st.warning("LOT-BOUND DOCUMENTS FOUND, TEXT UNREADABLE | Manual review required before bidding.")
             elif lstate == "CANDIDATES ONLY":
-                st.warning("LEGAL PACK NOT VERIFIED | Candidate legal links were found, but no authoritative lot-bound legal documents passed the evidence firewall. Risk is UNKNOWN.")
+                st.warning("LEGAL PACK NOT VERIFIED | Candidate links exist, but no authoritative lot-bound legal document passed the Property Identity Lock. Risk is UNKNOWN.")
             elif lstate == "UNVERIFIED":
-                st.warning("LEGAL EVIDENCE NEEDS RE-VERIFYING | This saved extraction predates the v1.10.1 evidence firewall. Refresh the legal pack before relying on it.")
+                st.warning("LEGAL EVIDENCE NEEDS RE-VERIFYING | Saved extraction predates the v1.10.3 purge policy. Refresh to re-check every stored document and remove stale derived evidence.")
             elif lstate == "ERROR":
                 st.error("Legal-pack check failed. Risk is UNKNOWN.")
             else:
-                st.warning("Legal pack not verified. Risk is UNKNOWN and bid approval is blocked.")
+                st.warning("LEGAL PACK NOT VERIFIED | Risk is UNKNOWN and bid approval is blocked.")
             if st.button("Fetch / refresh legal pack", key=f"legal_{chosen['id']}", use_container_width=True):
                 try:
                     with st.spinner("Checking legal-pack links and permitted/authenticated sources..."):
@@ -1127,18 +1193,15 @@ def render_deal_room(chosen):
 
             extracted = chosen.get("legal_extracted_fields") or {}
             legal_evidence = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
-            completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
             miss = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
-            lm1, lm2, lm3, lm4 = st.columns(4)
-            lm1.metric("Pack completeness", f"{completeness}%")
-            _candidate_metric = legal_summary.get("candidate_document_count")
-            if _candidate_metric is None:
-                _candidate_metric = chosen.get("legal_candidate_document_count")
-            if _candidate_metric is None:
-                _candidate_metric = chosen.get("legal_document_count") or 0
-            lm2.metric("Unverified candidates", int(_candidate_metric or 0))
-            lm3.metric("Verified legal docs", int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0))
-            lm4.metric("Verified docs parsed", int(legal_summary.get("parsed_document_count") or chosen.get("legal_parsed_document_count") or 0))
+            lm1, lm2, lm3, lm4, lm5 = st.columns(5)
+            lm1.metric("Core pack", f"{completeness}%")
+            lm2.metric("Verified docs", verified_docs_count)
+            lm3.metric("Candidates", candidate_docs_count)
+            lm4.metric("Rejected", rejected_docs_count)
+            lm5.metric("Known risk", f"{float(chosen.get('legal_risk_score') or 0):.1f}/10" if verified_docs_count else "Unknown")
+            if int(legal_summary.get("pack_index_count") or chosen.get("legal_pack_index_count") or 0):
+                st.caption(f"Lot-specific legal-pack index verified: {int(legal_summary.get('pack_index_count') or chosen.get('legal_pack_index_count') or 0)}")
             if miss:
                 st.warning("Missing / not yet evidenced: " + ", ".join(miss))
             legal_warnings = legal_summary.get("warnings") or chosen.get("legal_warnings") or []
@@ -1148,6 +1211,21 @@ def render_deal_room(chosen):
                     st.info(warning_text)
                 else:
                     st.caption(warning_text)
+
+            revalidation = legal_summary.get("revalidation_report") or chosen.get("legal_revalidation_report") or {}
+            if revalidation.get("checked"):
+                downgraded = int(revalidation.get("downgraded") or 0)
+                rejected = int(revalidation.get("rejected") or 0)
+                purged = int(revalidation.get("purged_findings") or 0)
+                retained = int(revalidation.get("retained_verified") or 0)
+                tone = st.warning if (downgraded or rejected or purged) else st.success
+                tone(
+                    f"Evidence revalidation complete: {int(revalidation.get('checked') or 0)} stored document(s) checked | "
+                    f"{retained} retained as verified | {downgraded} downgraded | {rejected} cross-property rejected."
+                )
+                if purged:
+                    st.caption("Stale rent, seller/company, contact and legal-risk findings derived from downgraded documents were purged and recalculated from verified evidence only.")
+
             pack_change = legal_summary.get("pack_change") or {}
             if legal_summary.get("pack_changed") or pack_change.get("changed"):
                 st.error("LEGAL PACK CHANGED since the previous saved snapshot - re-review before bidding.")
@@ -1161,62 +1239,59 @@ def render_deal_room(chosen):
                 if change_bits:
                     st.caption(" | ".join(change_bits))
 
-            if legal_state(chosen) == "VERIFIED" or any(v not in (None, "", False, 0) for v in extracted.values() if not isinstance(v, dict)):
-                st.markdown("#### Key information extracted")
-                legal_facts = [
-                    ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Not found"],
-                    ["Seller / disposal type", extracted.get("seller_type") or "Not identified"],
-                    ["Title number", extracted.get("title_number") or "Not found"],
-                    ["Company number", extracted.get("company_number") or "Not found"],
-                    ["Registered office", extracted.get("registered_office") or "Not found"],
-                    ["Title price paid", money(extracted.get("title_price_paid")) if extracted.get("title_price_paid") is not None else "Not found"],
-                    ["Title price date", extracted.get("title_price_paid_date") or "Not found"],
-                    ["Lease remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else "Not found"],
-                    ["Lease start", extracted.get("lease_start_date") or "Not found"],
-                    ["Ground rent", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else "Not found"],
-                    ["Service charge", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else "Not found"],
-                    ["Seller costs charged to buyer", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else "Not found"],
-                    ["Tenancy / occupation", extracted.get("tenancy_type") or "Not found"],
-                    ["Passing rent", (money(extracted.get("tenancy_rent_amount")) + (f" per {extracted.get('tenancy_rent_period')}" if extracted.get("tenancy_rent_period") else "")) if extracted.get("tenancy_rent_amount") is not None else "Not found"],
-                    ["Tenancy end / expiry", extracted.get("tenancy_end_date") or "Not found"],
-                    ["Reserve / sinking fund wording", "Detected" if extracted.get("reserve_fund_flag") else "Not detected"],
-                    ["Section 20 / major works wording", "Detected" if extracted.get("section20_or_major_works_flag") else "Not detected"],
-                    ["Assignment restriction wording", "Detected" if extracted.get("assignment_restriction_flag") else "Not detected"],
-                    ["Rights / easements wording", "Detected" if extracted.get("rights_easements_flag") else "Not detected"],
-                    ["Restrictive covenant wording", "Detected" if extracted.get("restrictive_covenant_flag") else "Not detected"],
-                    ["Overage / clawback wording", "Detected" if extracted.get("overage_clawback_flag") else "Not detected"],
-                    ["Registered charge references", extracted.get("registered_charge_count") or 0],
-                    ["Arrears wording", "Detected" if extracted.get("arrears_flag") else "Not detected"],
-                    ["EWS1 / cladding wording", "Detected" if extracted.get("ews1_or_cladding_flag") else "Not detected"],
-                    ["Fire/building safety wording", "Detected" if extracted.get("fire_safety_flag") else "Not detected"],
-                    ["Completion", f"{chosen.get('legal_completion_days')} days" if chosen.get("legal_completion_days") else "Not extracted"],
-                    ["Deposit", pct(chosen.get("legal_deposit_pct")) if chosen.get("legal_deposit_pct") is not None else "Not extracted"],
-                    ["VAT wording", "Detected" if chosen.get("legal_vat_flag") else "Not detected"],
-                    ["Addendum", "Detected - verify latest" if chosen.get("legal_has_addendum") else "Not detected"],
-                ]
-                field_sources = extracted.get("field_sources") or {}
-                source_key_by_label = {
-                    "Registered proprietor / seller": "seller_name" if extracted.get("seller_name") else "proprietor_name",
-                    "Seller / disposal type": "seller_type", "Title number": "title_number",
-                    "Company number": "company_number", "Registered office": "registered_office",
-                    "Title price paid": "title_price_paid", "Title price date": "title_price_paid_date",
-                    "Lease remaining": "lease_years_remaining", "Lease start": "lease_start_date",
-                    "Ground rent": "ground_rent_amount", "Service charge": "service_charge_amount",
-                    "Seller costs charged to buyer": "seller_costs_amount", "Tenancy / occupation": "tenancy_type",
-                    "Passing rent": "tenancy_rent_amount", "Tenancy end / expiry": "tenancy_end_date",
-                    "Reserve / sinking fund wording": "reserve_fund_flag", "Section 20 / major works wording": "section20_or_major_works_flag",
-                    "Assignment restriction wording": "assignment_restriction_flag", "Rights / easements wording": "rights_easements_flag",
-                    "Restrictive covenant wording": "restrictive_covenant_flag", "Overage / clawback wording": "overage_clawback_flag",
-                    "Registered charge references": "registered_charge_count", "Arrears wording": "arrears_flag",
-                    "EWS1 / cladding wording": "ews1_or_cladding_flag", "Fire/building safety wording": "fire_safety_flag",
-                }
-                for fact in legal_facts:
-                    key = source_key_by_label.get(fact[0])
-                    source = field_sources.get(key) if key else None
-                    if not source and fact[0] in {"Completion", "Deposit", "VAT wording", "Addendum"} and legal_state(chosen) == "VERIFIED":
-                        source = "verified legal document"
-                    fact.append(source or "not verified")
-                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal item", "Extracted evidence", "Source tier"]), hide_index=True, use_container_width=True)
+            field_sources = extracted.get("field_sources") or {}
+            legal_facts = []
+            def add_legal_fact(label, key, value):
+                source = field_sources.get(key)
+                if value not in (None, "", False) and source:
+                    legal_facts.append([label, value, source])
+
+            add_legal_fact("Registered proprietor / seller", "seller_name" if extracted.get("seller_name") else "proprietor_name", extracted.get("seller_name") or extracted.get("proprietor_name"))
+            add_legal_fact("Seller / disposal type", "seller_type", extracted.get("seller_type"))
+            add_legal_fact("Title number", "title_number", extracted.get("title_number"))
+            add_legal_fact("Company number", "company_number", extracted.get("company_number"))
+            add_legal_fact("Registered office", "registered_office", extracted.get("registered_office"))
+            add_legal_fact("Title price paid", "title_price_paid", money(extracted.get("title_price_paid")) if extracted.get("title_price_paid") is not None else None)
+            add_legal_fact("Title price date", "title_price_paid_date", extracted.get("title_price_paid_date"))
+            add_legal_fact("Lease remaining", "lease_years_remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else None)
+            add_legal_fact("Lease start", "lease_start_date", extracted.get("lease_start_date"))
+            add_legal_fact("Ground rent", "ground_rent_amount", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else None)
+            add_legal_fact("Service charge", "service_charge_amount", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else None)
+            add_legal_fact("Seller costs charged to buyer", "seller_costs_amount", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else None)
+            add_legal_fact("Tenancy / occupation", "tenancy_type", extracted.get("tenancy_type"))
+            add_legal_fact("Passing rent", "tenancy_rent_amount", (money(extracted.get("tenancy_rent_amount")) + (f" per {extracted.get('tenancy_rent_period')}" if extracted.get("tenancy_rent_period") else "")) if extracted.get("tenancy_rent_amount") is not None else None)
+            add_legal_fact("Tenancy end / expiry", "tenancy_end_date", extracted.get("tenancy_end_date"))
+            positive_flags = [
+                ("Reserve / sinking fund wording", "reserve_fund_flag"),
+                ("Section 20 / major works wording", "section20_or_major_works_flag"),
+                ("Assignment restriction wording", "assignment_restriction_flag"),
+                ("Rights / easements wording", "rights_easements_flag"),
+                ("Restrictive covenant wording", "restrictive_covenant_flag"),
+                ("Overage / clawback wording", "overage_clawback_flag"),
+                ("Arrears wording", "arrears_flag"),
+                ("EWS1 / cladding wording", "ews1_or_cladding_flag"),
+                ("Fire / building-safety wording", "fire_safety_flag"),
+            ]
+            for label, key in positive_flags:
+                if extracted.get(key) and field_sources.get(key):
+                    legal_facts.append([label, "Detected - review source evidence", field_sources.get(key)])
+            if int(extracted.get("registered_charge_count") or 0) > 0 and field_sources.get("registered_charge_count"):
+                legal_facts.append(["Registered charge references", int(extracted.get("registered_charge_count") or 0), field_sources.get("registered_charge_count")])
+            if legal_state(chosen) == "VERIFIED":
+                if chosen.get("legal_completion_days"):
+                    legal_facts.append(["Completion", f"{chosen.get('legal_completion_days')} days", "verified legal document"])
+                if chosen.get("legal_deposit_pct") is not None:
+                    legal_facts.append(["Deposit", pct(chosen.get("legal_deposit_pct")), "verified legal document"])
+                if chosen.get("legal_vat_flag"):
+                    legal_facts.append(["VAT / option-to-tax wording", "Detected", "verified legal document"])
+                if chosen.get("legal_has_addendum"):
+                    legal_facts.append(["Addendum", "Detected - verify latest version", "verified legal document"])
+
+            if legal_facts:
+                st.markdown("#### What we can actually evidence")
+                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal fact", "Evidence", "Source tier"]), hide_index=True, use_container_width=True)
+            else:
+                st.caption("No verified legal facts have been extracted yet. Candidate/rejected material is intentionally excluded from the deal decision.")
 
             if legal_evidence:
                 st.markdown("#### Evidence trail")
@@ -1235,15 +1310,40 @@ def render_deal_room(chosen):
 
             docs = db.legal_documents_for(chosen["id"])
             if docs:
-                st.markdown("#### Legal documents")
-                frame = pd.DataFrame([{
-                    "Name": d.get("name"), "Type": d.get("doc_type"),
-                    "Evidence tier": (d.get("metadata") or {}).get("evidence_tier") or "legacy/unverified",
-                    "Verified for lot": "Yes" if (d.get("metadata") or {}).get("verified_for_lot") else "No",
-                    "Access": d.get("access_status"),
-                    "Cloud": "Stored" if (d.get("metadata") or {}).get("cloud_storage_path") else "-", "URL": d.get("url")
-                } for d in docs])
-                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"URL": st.column_config.LinkColumn("Document")})
+                st.markdown("#### Document identity checks")
+                st.caption("Every automatic file is scored against this property's postcode/address/lot identity before it can influence the deal.")
+                doc_rows = []
+                for d in docs:
+                    meta = d.get("metadata") or {}
+                    tier = meta.get("evidence_tier") or "legacy/unverified"
+                    status = meta.get("identity_status") or ("verified" if meta.get("verified_for_lot") else "unverified")
+                    reasons = meta.get("identity_reasons") or []
+                    conflicts = meta.get("identity_conflicts") or []
+                    rejection = meta.get("rejection_reason") or ""
+                    why = rejection or ("; ".join(conflicts[:2]) if conflicts else "; ".join(reasons[:2]))
+                    doc_rows.append({
+                        "Name": d.get("name"),
+                        "Class": meta.get("document_class") or d.get("doc_type") or "Unclassified",
+                        "Identity": status.title(),
+                        "Match": int(meta.get("identity_score")) if meta.get("identity_score") is not None else None,
+                        "Evidence tier": tier,
+                        "Why": why,
+                        "Cloud": "Stored" if meta.get("cloud_storage_path") else "-",
+                        "URL": d.get("url"),
+                    })
+                frame = pd.DataFrame(doc_rows)
+                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
+                    "Match": st.column_config.ProgressColumn("Property match", min_value=0, max_value=100, format="%d%%"),
+                    "URL": st.column_config.LinkColumn("Source"),
+                })
+
+                rejected_docs = [d for d in docs if (d.get("metadata") or {}).get("evidence_tier") == "rejected-cross-property"]
+                if rejected_docs:
+                    with st.expander(f"Rejected by Property Identity Lock ({len(rejected_docs)})", expanded=False):
+                        for d in rejected_docs:
+                            meta = d.get("metadata") or {}
+                            st.markdown(f"**{d.get('name') or 'Document'}**")
+                            st.caption(meta.get("rejection_reason") or "; ".join(meta.get("identity_conflicts") or []) or "Property identity mismatch")
 
                 cloud_docs = [d for d in docs if (d.get("metadata") or {}).get("cloud_storage_path")]
                 if cloud_store and cloud_docs:
@@ -1402,35 +1502,43 @@ if selected:
 elif not rows:
     st.info("No auction stock has been collected yet. Click Refresh live data to build the first live North West catalogue.")
 else:
-    # Auction-site style browse experience.
-    market = st.segmented_control("Market", ["Residential", "Commercial"], default=st.session_state.get("market_mode", "Residential"), key="market_mode")
+    # Modern deal-feed experience: fast scan first, deep diligence second.
+    st.markdown('<div class="eyebrow">Live opportunity feed</div><div class="muted">Ranked around your acquisition strategy, not just auction date. Use the quick views to move from discovery to diligence.</div>', unsafe_allow_html=True)
+    nav1, nav2 = st.columns([1.0, 2.2])
+    with nav1:
+        market = st.segmented_control("Market", ["Residential", "Commercial"], default=st.session_state.get("market_mode", "Residential"), key="market_mode")
     market_rows = [r for r in rows if is_actionable(r) and (is_commercial(r) if market == "Commercial" else not is_commercial(r))]
+    with nav2:
+        view = st.segmented_control(
+            "Opportunity view",
+            ["Best deals", "Unsold", "New", "Reductions", "Relisted", "Shortlist"],
+            default=st.session_state.get("browse_view", "Best deals"), key="browse_view",
+        )
 
-    view = st.segmented_control(
-        "View",
-        ["Best deals", "Unsold", "New", "Reductions", "Relisted", "Shortlist"],
-        default="Best deals",
-        key="browse_view",
-    )
-
-    # High-level market stats.
+    # High-level scan stats inspired by modern property/investment dashboards.
+    bid_ready = len([
+        r for r in market_rows
+        if legal_state(r) == "VERIFIED" and int(r.get("legal_pack_completeness_pct") or 0) >= 100
+        and planning_state(r) == "SCREENED" and r.get("max_bid")
+    ])
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Properties", len(market_rows))
-    k2.metric("Unsold / post-auction", len([r for r in market_rows if is_unsold(r)]))
-    k3.metric("Guide reductions", len([r for r in market_rows if (r.get("price_reduction_pct") or 0) > 0]))
-    k4.metric("Shortlisted", len([r for r in market_rows if r.get("shortlisted")]))
+    k1.metric("Live opportunities", len(market_rows))
+    k2.metric("Post-auction / unsold", len([r for r in market_rows if is_unsold(r)]))
+    k3.metric("Price reductions", len([r for r in market_rows if (r.get("price_reduction_pct") or 0) > 0]))
+    k4.metric("DD ready", bid_ready, help="Core legal pack complete, planning screened and maximum bid available.")
 
     with st.container(border=True):
-        s1, s2, s3, s4 = st.columns([2.3, 1.2, 1.2, 1.3])
+        s1, s2, s3, s4 = st.columns([2.5, 1.1, 1.25, 1.2])
         with s1:
-            search = st.text_input("Search", placeholder="Postcode, town, street or keyword", label_visibility="collapsed")
+            search = st.text_input("Search", placeholder="Search postcode, town, street or keyword", label_visibility="collapsed")
         with s2:
             max_price = st.selectbox("Max guide", ["Any price", "GBP 100k", "GBP 200k", "GBP 500k", "GBP 1m", "GBP 1.5m"], label_visibility="collapsed")
         with s3:
             source = st.selectbox("Auction house", ["All auction houses"] + sorted({r.get("source") or "Unknown" for r in market_rows}), label_visibility="collapsed")
         with s4:
             sort = st.selectbox("Sort", ["Best deal", "Highest motivation", "Biggest discount", "Lowest guide", "Newest"], label_visibility="collapsed")
-        with st.expander("More filters"):
+        display_mode = st.segmented_control("Display", ["Cards", "Map", "Table"], default=st.session_state.get("display_mode", "Cards"), key="display_mode")
+        with st.expander("Advanced filters"):
             f1, f2, f3, f4 = st.columns(4)
             with f1:
                 statuses = st.multiselect("Status", sorted({r.get("status") or "Unknown" for r in market_rows}))
@@ -1440,6 +1548,13 @@ else:
                 property_types = st.multiselect("Property type", sorted({r.get("property_type") or "Other" for r in market_rows}))
             with f4:
                 minimum_score = st.slider("Minimum deal potential", 0.0, 10.0, 0.0, 0.5)
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                only_failed = st.checkbox("Failed / post-auction only")
+            with a2:
+                only_reduced = st.checkbox("Price reductions only")
+            with a3:
+                legal_only = st.checkbox("Verified core legal pack only")
 
     filtered = list(market_rows)
     if view == "Unsold":
@@ -1466,6 +1581,12 @@ else:
         filtered = [r for r in filtered if r.get("property_type") in property_types]
     if minimum_score:
         filtered = [r for r in filtered if float(r.get("browse_score") or 0) >= minimum_score]
+    if only_failed:
+        filtered = [r for r in filtered if is_unsold(r) or int(r.get("failure_count") or 0) > 0]
+    if only_reduced:
+        filtered = [r for r in filtered if float(r.get("price_reduction_pct") or 0) > 0]
+    if legal_only:
+        filtered = [r for r in filtered if legal_state(r) == "VERIFIED" and int(r.get("legal_pack_completeness_pct") or 0) >= 100]
     if search:
         q = search.lower().strip()
         filtered = [r for r in filtered if q in " ".join(str(r.get(k) or "") for k in ("title", "address", "postcode", "area", "raw_text")).lower()]
@@ -1481,21 +1602,52 @@ else:
     else:
         filtered.sort(key=lambda r: str(r.get("first_seen") or ""), reverse=True)
 
-    st.caption(f"Showing {len(filtered)} {market.lower()} opportunities. Best Deal ranking weighs value, seller motivation, return, evidence confidence and known/unknown risk - not auction date order.")
-    for row in filtered[:60]:
-        render_property_card(row)
-    if len(filtered) > 60:
-        st.info(f"Showing the top 60 of {len(filtered)} results. Tighten filters to narrow the list.")
+    h1, h2 = st.columns([3, 1])
+    with h1:
+        st.markdown(f"### {len(filtered)} {market.lower()} opportunities")
+        st.caption("Best Deal combines value, vendor motivation, financial return, evidence confidence and unresolved risk. Unknown due diligence is penalised rather than treated as safe.")
+    with h2:
+        if filtered:
+            st.caption(f"Top score {float(filtered[0].get('browse_score') or 0):.1f}/10 · {score_label(filtered[0].get('browse_score'))}")
 
-    with st.expander("Analyst table / export view"):
-        frame = pd.DataFrame([{
+    def analyst_frame(items):
+        return pd.DataFrame([{
             "Rank": r.get("browse_score"), "Decision": r.get("recommendation"), "Status": r.get("status"),
             "Auction house": r.get("source"), "Address": clean_address(r), "Type": r.get("property_type"),
             "Guide": r.get("guide_price"), "Opening offer": r.get("opening_offer"), "Max bid": r.get("max_bid"),
             "Market value": r.get("market_value"), "Motivation": r.get("motivation_score"), "Failures": r.get("failure_count"),
             "Guide reduction %": r.get("price_reduction_pct"), "Comp confidence %": r.get("comparable_confidence"),
-            "Legal": legal_state(r), "Planning": planning_state(r), "Source": r.get("url"),
-        } for r in filtered])
+            "Legal pack %": r.get("legal_pack_completeness_pct"), "Legal": legal_state(r), "Planning": planning_state(r), "Source": r.get("url"),
+        } for r in items])
+
+    if display_mode == "Map":
+        map_rows = [r for r in filtered if r.get("latitude") is not None and r.get("longitude") is not None]
+        if map_rows:
+            map_df = pd.DataFrame({"lat": [float(r["latitude"]) for r in map_rows], "lon": [float(r["longitude"]) for r in map_rows]})
+            st.map(map_df, use_container_width=True)
+            st.caption(f"Mapped {len(map_rows)} of {len(filtered)} opportunities with coordinates. Open a card below for the full Deal Room.")
+            for row in filtered[:12]:
+                render_property_card(row)
+        else:
+            st.info("No coordinates are available for the current result set yet. Refresh location enrichment or switch to Cards.")
+    elif display_mode == "Table":
+        frame = analyst_frame(filtered)
+        st.dataframe(frame, hide_index=True, use_container_width=True, height=720, column_config={
+            "Rank": st.column_config.NumberColumn(format="%.1f"), "Guide": st.column_config.NumberColumn(format="GBP %d"),
+            "Opening offer": st.column_config.NumberColumn(format="GBP %d"), "Max bid": st.column_config.NumberColumn(format="GBP %d"),
+            "Market value": st.column_config.NumberColumn(format="GBP %d"), "Motivation": st.column_config.NumberColumn(format="%.1f"),
+            "Guide reduction %": st.column_config.NumberColumn(format="%.1f%%"), "Comp confidence %": st.column_config.NumberColumn(format="%d%%"),
+            "Legal pack %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d%%"),
+            "Source": st.column_config.LinkColumn("Auction listing"),
+        })
+    else:
+        for row in filtered[:50]:
+            render_property_card(row)
+        if len(filtered) > 50:
+            st.info(f"Showing the top 50 of {len(filtered)} results. Tighten filters or switch to Table for the full list.")
+
+    with st.expander("Export / analyst view"):
+        frame = analyst_frame(filtered)
         st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
             "Rank": st.column_config.NumberColumn(format="%.1f"), "Guide": st.column_config.NumberColumn(format="GBP %d"),
             "Opening offer": st.column_config.NumberColumn(format="GBP %d"), "Max bid": st.column_config.NumberColumn(format="GBP %d"),

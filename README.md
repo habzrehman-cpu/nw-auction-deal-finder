@@ -1,5 +1,53 @@
 # North West Property Auction Deal Finder
 
+## v1.10.3 - Evidence Revalidation & Purge
+
+Version 1.10.3 is the final evidence-cleanup pass before broader day-to-day user testing. It fixes the case where an older build had already saved a wrongly trusted document: the newer Property Identity Lock could quarantine new fields, but stale derived evidence such as rent, contacts, company identity or legal-risk findings could remain in the persistent database.
+
+### What changed
+
+- **Every stored automatic legal document is revalidated on refresh.** Historic trust labels are never grandfathered.
+- **Cross-property evidence is quarantined.** A previously verified document that now fails the Property Identity Lock is moved to `rejected-cross-property` or `candidate-unverified`.
+- **Derived evidence is rebuilt from scratch.** Rent, seller/company identity, contacts, risk flags, buyer costs and evidence trails from downgraded documents are purged automatically.
+- **Stale Companies House enrichment is removed.** If refreshed legal evidence no longer proves a corporate seller identity, the old corporate bundle is deleted rather than merely hidden.
+- **Policy-driven downgrades do not masquerade as pack changes.** A firewall reclassification is recorded as a revalidation/purge event; genuine verified-document additions/removals/modifications still trigger the pack-change warning.
+- **Visible revalidation status.** The Legal tab reports how many stored documents were checked, retained, downgraded and rejected, and explicitly confirms when stale findings were purged.
+- **Cloud-safe migration.** Existing Supabase-backed SQLite databases are migrated in place with a persisted revalidation audit report.
+- **Old v1.10.2 summaries are quarantined until refreshed.** They cannot affect live legal risk or seller/company intelligence under the new evidence policy.
+
+### Expected result on the live Eddisons test lot
+
+After **Fetch / refresh legal pack**, any Great Chesterford Court material saved against the PE19 5EE lot should be rejected, the £18,000 passing-rent evidence should disappear, BTG/company enrichment derived from that document should be purged, and the deal should remain **BID BLOCKED** until genuine core legal documents are verified.
+
+The UX work from v1.10.2 remains in place. This build is intended to be the safer baseline for live sourcing tests before the next dedicated UI/UX design cycle.
+
+## v1.10.2 - Property Identity Lock + test-ready UX
+
+Version 1.10.2 is the next trust and usability milestone. It adds a **Property Identity Lock** so a downloaded file cannot influence a deal merely because it came from a verified pack page. Every automatic document now has to pass both a document-class check and a property-identity check against the selected lot. The browsing and Deal Room interface has also had its first modern UX pass so the app is easier to use as a daily sourcing workspace.
+
+### Property Identity Lock
+
+- **0-100 property match score** using exact postcode, address tokens, lot number and lot-route identifiers.
+- **Cross-property rejection.** If a document explicitly identifies another property/postcode it is retained for audit but assigned `rejected-cross-property`, its extracted text is excluded, and it cannot affect seller identity, rent, buyer costs, legal risk, Companies House or bidding decisions.
+- **Document-class gate.** Title Register, Title Plan, Special Conditions, Contract, Lease, Transfer, Searches, EPC, Tenancy Agreement, Management Pack, Addendum and other recognised legal/DD classes may qualify. Marketing brochures, lease-advisory pages and generic provider content do not.
+- **A verified pack page no longer automatically verifies every child PDF.** Child documents need their own property identity evidence.
+- **Core pack completeness is now a bid gate.** Partial verified evidence remains useful, but bid readiness stays blocked until the required core pack is complete.
+- **More transparent legal UI.** The Deal Room shows verified, candidate and rejected document counts plus the property-match score, document class and rejection/verification reason for each file.
+- **Pre-v1.10.2 legal analysis is quarantined** until the property is refreshed through the new policy.
+
+### First UX pass for daily testing
+
+- cleaner sidebar with acquisition strategy, underwriting defaults and system health grouped separately;
+- modern **Deal Feed** with Residential/Commercial switching, quick views, top-level stats and a clearer search/filter bar;
+- **Cards / Map / Table** display modes;
+- property cards now explain **Why it ranks** and label the score as Priority / Worth a look / Review / Early stage;
+- Deal Room tabs simplified to Summary, Seller, Numbers, Comps, History, Legal & planning, Location and Workspace;
+- prominent **Current decision** banner showing readiness and the next action;
+- legal facts only show when there is an actual source tier, reducing long tables of misleading “not detected” results;
+- explicit **Rejected by Property Identity Lock** section for cross-property evidence.
+
+Use this build as the main testing version. The next UI cycle should be driven by live usage feedback rather than adding more backend features.
+
 ## v1.10.1 - Legal Evidence Firewall
 
 Version 1.10.1 is a trust-and-accuracy patch for automatic legal-pack acquisition. Live testing of v1.10.0 proved the download/parsing pipeline worked, but also showed that generic auction-provider pages (for example lease-advisory or corporate pages) could be mistaken for lot-specific legal evidence. v1.10.1 introduces a strict evidence boundary so unrelated website content cannot influence legal risk, seller identity, Companies House enrichment or bid readiness.

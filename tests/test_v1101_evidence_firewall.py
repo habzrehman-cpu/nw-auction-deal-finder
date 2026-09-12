@@ -78,7 +78,7 @@ def test_generic_advisory_page_cannot_become_legal_evidence_or_be_crawled():
     assert summary["risk_flags"] == []
 
 
-def test_verified_pack_index_allows_child_pdf_without_requiring_address_in_every_pdf(monkeypatch):
+def test_verified_pack_index_does_not_override_child_property_identity(monkeypatch):
     lot_url = "https://www.eddisons.com/property-search/lot-11"
     pack_url = "https://www.eddisons.com/legal/lot-11"
     pdf_url = "https://www.eddisons.com/downloads/title-11.pdf"
@@ -94,13 +94,12 @@ def test_verified_pack_index_allows_child_pdf_without_requiring_address_in_every
         {"source": "BTG Eddisons", "url": lot_url, "postcode": "PE19 5EE", "lot_number": "11"},
         session=session, access_config=LegalAccessConfig(),
     )
-    verified = [d for d in docs if (d.get("metadata") or {}).get("evidence_tier") == TIER_VERIFIED_LEGAL]
-    assert len(verified) == 1
-    assert verified[0]["url"] == pdf_url
+    target = next(d for d in docs if d.get("url") == pdf_url)
+    assert (target.get("metadata") or {}).get("evidence_tier") == TIER_CANDIDATE
     summary = analyse_legal_documents(docs)
-    assert summary["status"] == "verified"
-    assert summary["verified_document_count"] == 1
-    assert summary["extracted_fields"]["title_number"] == "CB123456"
+    assert summary["status"] != "verified"
+    assert summary["verified_document_count"] == 0
+    assert summary["extracted_fields"].get("title_number") is None
 
 
 def test_candidate_provider_company_number_cannot_feed_seller_identity_or_contacts():

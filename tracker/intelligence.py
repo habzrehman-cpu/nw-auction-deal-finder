@@ -461,9 +461,20 @@ def deal_readiness(row: dict) -> dict:
     add("Market value / GDV", 12, "complete" if market_value else "missing", "Valuation basis present" if market_value else "Market value/GDV required", blocker=not bool(market_value))
     add("Planning screen", 10, "complete" if planning_status == "ok" else "missing", "Official screen run" if planning_status == "ok" else "Planning risk unknown")
     legal_pack_changed = bool(row.get("legal_pack_changed"))
-    add("Legal pack", 20, "partial" if legal_pack_changed else "complete" if legal_status == "verified" else "partial" if legal_status in {"verified-no-text", "candidates-only", "links-only"} else "missing",
-        "Legal pack changed since the previous snapshot - re-review required" if legal_pack_changed else ("Lot-bound legal evidence verified" if legal_status == "verified" else "Legal pack not verified: authoritative lot-bound legal documents are still missing or unverified"),
-        blocker=legal_pack_changed or legal_status != "verified")
+    legal_completeness = int(row.get("legal_pack_completeness_pct") or 0)
+    legal_complete = legal_status == "verified" and legal_completeness >= 100 and not legal_pack_changed
+    legal_partial = legal_status in {"verified", "verified-no-text", "candidates-only", "links-only"}
+    if legal_pack_changed:
+        legal_detail = "Legal pack changed since the previous snapshot - re-review required"
+    elif legal_status == "verified" and legal_completeness < 100:
+        missing = row.get("legal_missing_components") or []
+        legal_detail = f"Partial verified legal evidence: core pack {legal_completeness}% complete" + (f"; missing {', '.join(missing[:4])}" if missing else "")
+    elif legal_complete:
+        legal_detail = "Core legal pack verified and complete"
+    else:
+        legal_detail = "Legal pack not verified: authoritative lot-bound legal documents are still missing or unverified"
+    add("Legal pack", 20, "complete" if legal_complete else "partial" if legal_partial else "missing",
+        legal_detail, blocker=not legal_complete)
     works_missing = bool(row.get("works_missing"))
     add("Works / capex", 8, "missing" if works_missing else "complete", "Works estimate required" if works_missing else "No unresolved works-budget gate", blocker=works_missing)
     tenure = str(row.get("tenure") or "Unknown")
@@ -497,6 +508,9 @@ def next_actions(row: dict, story: dict | None = None) -> list[dict]:
         add(1, "Re-review the changed legal pack / addendum", "The auctioneer legal evidence has changed since the previous saved snapshot, so prior legal conclusions may be stale.")
     elif legal_status != "verified":
         add(1, "Obtain and verify the latest legal pack + addendum", "Bid approval is blocked until authoritative lot-bound legal evidence passes the evidence firewall and is reviewed.")
+    elif int(row.get("legal_pack_completeness_pct") or 0) < 100:
+        missing = row.get("legal_missing_components") or []
+        add(1, "Complete the core legal pack", "Verified evidence is only partial. Obtain " + (", ".join(missing[:4]) if missing else "the missing title/special-conditions documents") + " before bid approval.")
     if row.get("works_missing"):
         add(2, "Obtain a refurbishment / capex estimate", "The listing signals works but the model currently has no reliable works budget.")
     lease = _num(row.get("legal_lease_years"))

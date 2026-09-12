@@ -4,7 +4,7 @@ from __future__ import annotations
 import requests
 import re
 
-from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents
+from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents, revalidate_saved_legal_documents
 from .legal_access import LegalAccessConfig
 from .planning import analyse_planning_property
 from .companies_house import CompaniesHouseClient, company_due
@@ -33,7 +33,15 @@ def refresh_property_planning(db, row, session=None):
 
 
 def refresh_property_legal(db, row, session=None, legal_access: LegalAccessConfig | None = None, cloud_store=None):
-    summary, online_docs = analyse_online_legal_pack(row, session=session, access_config=legal_access)
+    # Revalidate everything already stored *before* we merge in a fresh online
+    # acquisition. This is the v1.10.3 purge step that prevents old bad evidence
+    # from surviving a firewall upgrade merely because the provider is unavailable.
+    existing_raw = db.legal_documents_for(row["id"])
+    existing, revalidation = revalidate_saved_legal_documents(row, existing_raw)
+
+    online_summary, online_docs = analyse_online_legal_pack(row, session=session, access_config=legal_access)
+    online_warnings = list(online_summary.get("warnings") or [])
+
     # Retain automatically acquired originals in the private cloud when configured.
     for doc in online_docs:
         raw = doc.pop("_raw_bytes", b"")
@@ -46,35 +54,59 @@ def refresh_property_legal(db, row, session=None, legal_access: LegalAccessConfi
                 doc["access_status"] = (doc.get("access_status") or "downloaded") + " and stored privately"
             except Exception as exc:
                 doc.setdefault("metadata", {})["cloud_storage_error"] = str(exc)[:300]
-    existing = db.legal_documents_for(row["id"])
+
     uploaded = [d for d in existing if (d.get("metadata") or {}).get("origin") == "user-upload"]
     prior_online = [d for d in existing if (d.get("metadata") or {}).get("origin") != "user-upload"]
-    # Keep user evidence when the online pack is refreshed. If automation is blocked
-    # by provider permission/login controls, preserve previously discovered online
-    # links rather than deleting the user's manual access route.
+
+    # Fresh online evidence replaces prior automatic evidence. If no fresh automatic
+    # evidence is available, keep only the now-revalidated prior evidence so access
+    # routes are not lost but stale trust cannot survive.
     if online_docs:
         combined = uploaded + online_docs
     else:
         combined = uploaded + prior_online
-        if prior_online:
-            blocked_warnings = summary.get("warnings") or []
-            summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
-            summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + blocked_warnings + [
-                "Previously discovered legal links were retained because the current automatic acquisition attempt did not return a replacement pack."
-            ]))
-    if uploaded:
-        summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
+
+    # Always rebuild the entire legal summary from the combined *current-policy*
+    # evidence set. This deliberately discards all derived fields/contacts/risks from
+    # the old summary and is what purges stale passing rent/company/contact evidence.
+    summary = analyse_legal_documents(combined, str(row.get("detail_text") or ""))
+    summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + online_warnings))
+    if prior_online and not online_docs:
         summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
-            "User-uploaded documents are included in this analysis alongside any public auctioneer documents."
+            "Previously discovered legal links were retained only after revalidation because the current automatic acquisition attempt did not return a replacement pack."
         ]))
+    if uploaded:
+        summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
+            "User-uploaded documents are included in this analysis alongside any permitted auctioneer documents."
+        ]))
+    for note in revalidation.get("notes") or []:
+        summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [note]))
+    summary["revalidation_report"] = revalidation
+
+    # Compare against the revalidated prior snapshot, not the old trust labels. A
+    # policy-driven downgrade is a purge event, not a provider pack-change alarm.
     change = compare_legal_documents(existing, combined)
     summary["pack_changed"] = bool(change.get("changed"))
     summary["pack_change"] = change
     if change.get("changed"):
         summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
-            "Legal-pack evidence changed since the previous saved snapshot. Review added, removed or modified documents before bidding."
+            "Legal-pack evidence changed since the previous revalidated snapshot. Review added, removed or modified verified documents before bidding."
         ]))
+
     db.save_legal_bundle(row["id"], summary, combined)
+
+    # Purge stale corporate enrichment whenever the refreshed legal evidence no
+    # longer establishes a verified company identity. If the verified company changes,
+    # also clear the old official bundle so it cannot appear against the new seller.
+    extracted = summary.get("extracted_fields") or {}
+    verified_company = bool(extracted.get("company_identity_verified")) and str(summary.get("status") or "").lower() == "verified"
+    current_company_no = str(extracted.get("company_number") or "").strip()
+    if hasattr(db, "company_intelligence_for") and hasattr(db, "clear_company_intelligence"):
+        prior_company = db.company_intelligence_for(row["id"])
+        prior_company_no = str(prior_company.get("company_number") or "").strip()
+        if (not verified_company) or (prior_company_no and current_company_no and prior_company_no != current_company_no):
+            db.clear_company_intelligence(row["id"])
+
     return summary
 
 

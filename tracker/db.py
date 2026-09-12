@@ -186,6 +186,8 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   risk_score REAL DEFAULT 0,
   document_count INTEGER DEFAULT 0,
   candidate_document_count INTEGER DEFAULT 0,
+  rejected_document_count INTEGER DEFAULT 0,
+  pack_index_count INTEGER DEFAULT 0,
   verified_document_count INTEGER DEFAULT 0,
   parsed_document_count INTEGER DEFAULT 0,
   auctioneer_evidence_count INTEGER DEFAULT 0,
@@ -207,6 +209,7 @@ CREATE TABLE IF NOT EXISTS legal_summaries (
   pack_fingerprint TEXT,
   pack_changed INTEGER DEFAULT 0,
   pack_change_json TEXT,
+  revalidation_json TEXT,
   methodology TEXT,
   warnings_json TEXT,
   attribution TEXT,
@@ -288,6 +291,8 @@ HISTORY_MIGRATIONS = {
 
 LEGAL_SUMMARY_MIGRATIONS = {
     "candidate_document_count": "INTEGER DEFAULT 0",
+    "rejected_document_count": "INTEGER DEFAULT 0",
+    "pack_index_count": "INTEGER DEFAULT 0",
     "verified_document_count": "INTEGER DEFAULT 0",
     "auctioneer_evidence_count": "INTEGER DEFAULT 0",
     "verification_status": "TEXT",
@@ -301,6 +306,7 @@ LEGAL_SUMMARY_MIGRATIONS = {
     "pack_fingerprint": "TEXT",
     "pack_changed": "INTEGER DEFAULT 0",
     "pack_change_json": "TEXT",
+    "revalidation_json": "TEXT",
 }
 
 
@@ -828,6 +834,10 @@ class Database:
             out["pack_change"] = json.loads(out.get("pack_change_json") or "{}")
         except (TypeError, json.JSONDecodeError):
             out["pack_change"] = {}
+        try:
+            out["revalidation_report"] = json.loads(out.get("revalidation_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            out["revalidation_report"] = {}
         return out
 
     def legal_summary_map(self):
@@ -867,6 +877,10 @@ class Database:
                 row["pack_change"] = json.loads(row.get("pack_change_json") or "{}")
             except (TypeError, json.JSONDecodeError):
                 row["pack_change"] = {}
+            try:
+                row["revalidation_report"] = json.loads(row.get("revalidation_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                row["revalidation_report"] = {}
             out[row["property_id"]] = row
         return out
 
@@ -910,15 +924,16 @@ class Database:
                 )
             con.execute(
                 """INSERT INTO legal_summaries(
-                property_id,provider,status,updated_at,risk_score,document_count,candidate_document_count,verified_document_count,
+                property_id,provider,status,updated_at,risk_score,document_count,candidate_document_count,rejected_document_count,pack_index_count,verified_document_count,
                 parsed_document_count,auctioneer_evidence_count,verification_status,evidence_policy_version,completion_days,deposit_pct,
                 lease_years,buyer_fee_detected,vat_flag,has_addendum,extracted_json,contacts_json,risk_flags_json,evidence_json,
-                pack_completeness_pct,missing_components_json,available_components_json,pack_fingerprint,pack_changed,pack_change_json,
+                pack_completeness_pct,missing_components_json,available_components_json,pack_fingerprint,pack_changed,pack_change_json,revalidation_json,
                 methodology,warnings_json,attribution,error
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(property_id) DO UPDATE SET
                 provider=excluded.provider,status=excluded.status,updated_at=excluded.updated_at,risk_score=excluded.risk_score,
                 document_count=excluded.document_count,candidate_document_count=excluded.candidate_document_count,
+                rejected_document_count=excluded.rejected_document_count,pack_index_count=excluded.pack_index_count,
                 verified_document_count=excluded.verified_document_count,parsed_document_count=excluded.parsed_document_count,
                 auctioneer_evidence_count=excluded.auctioneer_evidence_count,verification_status=excluded.verification_status,
                 evidence_policy_version=excluded.evidence_policy_version,
@@ -928,9 +943,10 @@ class Database:
                 evidence_json=excluded.evidence_json,pack_completeness_pct=excluded.pack_completeness_pct,
                 missing_components_json=excluded.missing_components_json,available_components_json=excluded.available_components_json,
                 pack_fingerprint=excluded.pack_fingerprint,pack_changed=excluded.pack_changed,pack_change_json=excluded.pack_change_json,
-                methodology=excluded.methodology,warnings_json=excluded.warnings_json,attribution=excluded.attribution,error=excluded.error""",
+                revalidation_json=excluded.revalidation_json,methodology=excluded.methodology,warnings_json=excluded.warnings_json,attribution=excluded.attribution,error=excluded.error""",
                 (property_id, summary.get("provider"), summary.get("status") or "not-found", now, summary.get("risk_score") or 0,
-                 summary.get("document_count") or 0, summary.get("candidate_document_count") or summary.get("document_count") or 0,
+                 summary.get("document_count") or 0, summary.get("candidate_document_count") or 0,
+                 summary.get("rejected_document_count") or 0, summary.get("pack_index_count") or 0,
                  summary.get("verified_document_count") or 0, summary.get("parsed_document_count") or 0,
                  summary.get("auctioneer_evidence_count") or 0, summary.get("verification_status") or summary.get("status"),
                  summary.get("evidence_policy_version"), summary.get("completion_days"),
@@ -945,6 +961,7 @@ class Database:
                  json.dumps(summary.get("available_components") or [], ensure_ascii=False),
                  summary.get("pack_fingerprint"), int(bool(summary.get("pack_changed"))),
                  json.dumps(summary.get("pack_change") or {}, ensure_ascii=False),
+                 json.dumps(summary.get("revalidation_report") or {}, ensure_ascii=False),
                  summary.get("methodology"), json.dumps(summary.get("warnings") or [], ensure_ascii=False),
                  summary.get("attribution"), summary.get("error")),
             )
@@ -992,6 +1009,12 @@ class Database:
                  summary.get("registered_office"), summary.get("corporate_pressure_score") or 0,
                  json.dumps(summary or {}, ensure_ascii=False), summary.get("error")),
             )
+            con.commit()
+
+    def clear_company_intelligence(self, property_id):
+        """Remove corporate enrichment that is no longer supported by verified seller evidence."""
+        with closing(self.connect()) as con:
+            con.execute("DELETE FROM company_intelligence WHERE property_id=?", (property_id,))
             con.commit()
 
     def record_company_error(self, property_id, error, company_number=None):

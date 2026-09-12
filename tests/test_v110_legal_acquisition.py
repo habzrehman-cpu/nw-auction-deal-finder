@@ -73,7 +73,7 @@ def test_permission_gate_prevents_auction_house_request():
     assert any("permission" in w.lower() for w in warnings)
 
 
-def test_public_legal_pdf_is_auto_acquired(monkeypatch):
+def test_public_legal_pdf_requires_property_identity_before_auto_acquisition(monkeypatch):
     lot_url = "https://www.eddisons.com/property-search/example"
     pdf_url = "https://www.eddisons.com/files/legal-pack.pdf"
     lot_html = '<html><a href="/files/legal-pack.pdf">Legal pack</a></html>'
@@ -86,10 +86,8 @@ def test_public_legal_pdf_is_auto_acquired(monkeypatch):
         {"source": "BTG Eddisons", "url": lot_url}, session=session, access_config=LegalAccessConfig()
     )
     parsed = [d for d in docs if d.get("text_content")]
-    assert len(parsed) == 1
-    assert parsed[0]["metadata"]["origin"] == "auto-download-public"
-    assert parsed[0]["_raw_bytes"].startswith(b"%PDF")
-    assert "parsed" in parsed[0]["access_status"]
+    assert parsed == []
+    assert docs and (docs[0].get("metadata") or {}).get("verified_for_lot") is False
 
 
 def test_conventional_login_form_preserves_hidden_fields():
@@ -180,16 +178,16 @@ def test_savills_authenticated_legal_pack_can_be_retrieved(monkeypatch):
       <input type="hidden" name="csrf" value="abc">
       <input type="email" name="email"><input type="password" name="password">
       <input type="submit" name="submit" value="Login"></form>'''
-    pack_html = '<html><h1>Legal documents</h1><a href="/downloads/title.pdf">Title register</a></html>'
+    pack_html = '<html><h1>Legal documents for Lot 1, SW1A 1AA</h1><a href="/downloads/title.pdf">Title register</a></html>'
     session = FakeSession({
         lot_url: FakeResponse(lot_url, lot_html),
         legal_url: [FakeResponse(legal_url, login_html), FakeResponse(legal_url, login_html), FakeResponse(legal_url, pack_html)],
         login_url: FakeResponse(login_url, "<html>Account home</html>"),
         pdf_url: FakeResponse(pdf_url, data=b"%PDF-auth", ctype="application/pdf"),
     })
-    monkeypatch.setattr(legal, "extract_pdf_text", lambda data, max_chars=90000: "--- PAGE 1 ---\nTitle number: NGL123456")
+    monkeypatch.setattr(legal, "extract_pdf_text", lambda data, max_chars=90000: "--- PAGE 1 ---\nProperty: 1 Example Street, London SW1A 1AA\nTitle number: NGL123456")
     cfg = LegalAccessConfig(providers={"savills": ProviderAccess(email="buyer@example.com", password="pw")})
-    docs, warnings = fetch_legal_documents({"source": "Savills", "url": lot_url}, session=session, access_config=cfg)
+    docs, warnings = fetch_legal_documents({"source": "Savills", "url": lot_url, "postcode": "SW1A 1AA", "lot_number": "1", "address": "1 Example Street, London, SW1A 1AA"}, session=session, access_config=cfg)
     parsed = [d for d in docs if d.get("text_content") and d.get("url") == pdf_url]
     assert parsed
     assert parsed[0]["metadata"]["origin"] == "auto-download-authenticated"

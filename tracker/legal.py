@@ -11,6 +11,7 @@ from io import BytesIO
 import hashlib
 import json
 import re
+import copy
 import zipfile
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
@@ -24,10 +25,10 @@ from .legal_access import (
     LegalAccessConfig, provider_for_lot, provider_access_status, prepare_authenticated_session,
 )
 from .legal_firewall import (
-    EVIDENCE_POLICY_VERSION, TIER_VERIFIED_LEGAL, TIER_VERIFIED_PACK_INDEX, TIER_CANDIDATE,
-    strong_pack_link, generic_site_content, lot_identity_match, evidence_tier,
-    is_verified_legal_document, mark_candidate, mark_pack_index, mark_verified_legal,
-    verified_legal_documents,
+    EVIDENCE_POLICY_VERSION, TIER_VERIFIED_LEGAL, TIER_VERIFIED_PACK_INDEX, TIER_CANDIDATE, TIER_REJECTED,
+    strong_pack_link, generic_site_content, lot_identity_match, document_identity_assessment,
+    document_type_classification, evidence_tier, is_verified_legal_document,
+    mark_candidate, mark_rejected, mark_pack_index, mark_verified_legal, verified_legal_documents,
 )
 
 LEGAL_ATTRIBUTION = "Auctioneer/seller legal documents as published; buyer must verify the latest complete pack and obtain independent legal advice."
@@ -92,16 +93,15 @@ RISK_PATTERNS = [
 
 def _session(session=None):
     s = session or requests.Session()
-    s.headers.update({"User-Agent": "Mozilla/5.0 NW-Auction-Deal-Finder/1.10.1", "Accept-Language": "en-GB,en;q=0.9"})
+    s.headers.update({"User-Agent": "Mozilla/5.0 NW-Auction-Deal-Finder/1.10.3", "Accept-Language": "en-GB,en;q=0.9"})
     return s
 
 
-def classify_document(label: str, url: str = "") -> str:
-    text = f"{label} {url}"
-    for pattern, name in DOC_TYPE_PATTERNS:
-        if pattern.search(text):
-            return name
-    return "Legal document"
+def classify_document(label: str, url: str = "", text: str = "") -> str:
+    """Classify a legal candidate using the current document-class gate."""
+    result = document_type_classification(label, url, text)
+    dtype = result.get("doc_type") or "Unclassified"
+    return "Legal document" if dtype == "Unclassified" else dtype
 
 
 def discover_legal_links(html: str, base_url: str, pack_context: bool = False) -> list[dict]:
@@ -212,11 +212,17 @@ def _read_response_bytes(response) -> tuple[bytes, bool]:
     return b"".join(chunks), False
 
 
+def _identity_threshold(doc_class: dict) -> int:
+    # A combined file merely called "Legal pack" is broad, so require stronger
+    # property identity than a recognised title/lease/special-conditions document.
+    return 80 if (doc_class.get("doc_type") == "Legal pack") else 60
+
+
 def _zip_documents(name: str, data: bytes, source_url: str, provider: str, authenticated: bool,
                    lot: dict, parent_verified: bool) -> list[dict]:
-    """Expand a ZIP and verify each member against the subject lot/evidence chain."""
+    """Expand a ZIP and identity-lock every member independently."""
     out = uploaded_documents(name or "legal-pack.zip", data)
-    verified_out = []
+    checked = []
     for doc in out:
         meta = doc.setdefault("metadata", {})
         meta.update({
@@ -225,69 +231,218 @@ def _zip_documents(name: str, data: bytes, source_url: str, provider: str, authe
             "source_url": source_url,
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
             "source_property_url": lot.get("url") or "",
+            "parent_verified_pack": bool(parent_verified),
         })
         doc["url"] = source_url
-        score, reasons = lot_identity_match(lot, doc.get("text_content") or "", source_url)
-        if parent_verified or score >= 5:
-            mark_verified_legal(doc, (["downloaded from verified lot-specific legal pack"] if parent_verified else []) + reasons)
-            doc["access_status"] = "verified legal ZIP member parsed" if doc.get("text_content") else "verified legal ZIP member; no extractable text"
-        else:
-            mark_candidate(doc, "ZIP member could not be tied to the subject lot")
+        text = doc.get("text_content") or ""
+        doc_class = document_type_classification(doc.get("name") or "", source_url, text)
+        assessment = document_identity_assessment(lot, text=text, url=source_url, label=doc.get("name") or "")
+        doc["doc_type"] = doc_class.get("doc_type") if doc_class.get("allowed") else doc.get("doc_type") or "Legal document"
+        if assessment.get("hard_reject"):
+            reason = "; ".join(assessment.get("conflicts") or ["document identifies a different property"])
+            mark_rejected(doc, reason, assessment, doc_class)
             doc["text_content"] = ""
-            doc["access_status"] = "candidate ZIP member rejected by evidence firewall"
-        verified_out.append(doc)
-    return verified_out
+            doc["access_status"] = "ZIP member rejected: cross-property identity mismatch"
+        elif not doc_class.get("allowed"):
+            mark_candidate(doc, doc_class.get("reason") or "unrecognised legal document type", assessment, doc_class)
+            doc["text_content"] = ""
+            doc["access_status"] = "candidate ZIP member rejected by document-class gate"
+        elif int(assessment.get("score") or 0) >= _identity_threshold(doc_class):
+            reasons = list(assessment.get("reasons") or [])
+            if parent_verified:
+                reasons.append("discovered inside a verified lot-specific legal-pack chain")
+            mark_verified_legal(doc, reasons, assessment, doc_class)
+            doc["access_status"] = "verified legal ZIP member parsed" if text else "verified legal ZIP member; no extractable text"
+        else:
+            reason = "document type recognised but property identity score is below the verification threshold"
+            if assessment.get("conflicts"):
+                reason += ": " + "; ".join(assessment.get("conflicts") or [])
+            mark_candidate(doc, reason, assessment, doc_class)
+            doc["text_content"] = ""
+            doc["access_status"] = "candidate ZIP member held outside legal analysis by Property Identity Lock"
+        checked.append(doc)
+    return checked
 
 
 def _html_pack_index_verified(lot: dict, item: dict, text: str, final_url: str,
-                              parent_verified: bool, direct_from_lot: bool) -> tuple[bool, list[str]]:
-    """Verify an HTML pack index using lot identity, not a generic link label.
-
-    A visible "Legal pack" link on a lot page is enough to make a page a *candidate*,
-    but is deliberately NOT enough to make an arbitrary HTML destination authoritative.
-    The destination must either contain strong subject-lot identity or inherit from an
-    already verified lot-specific pack index.  This prevents redirects/marketing pages
-    from becoming a trust bridge to unrelated PDFs.
-    """
-    reasons = []
-    if generic_site_content(item.get("name") or "", final_url):
-        return False, ["generic auction-provider/advisory page rejected"]
-    score, identity_reasons = lot_identity_match(lot, text, final_url)
-    if score >= 5:
-        reasons.extend(identity_reasons)
+                              parent_verified: bool, direct_from_lot: bool) -> tuple[bool, list[str], dict]:
+    """Verify an HTML pack index by property identity, not link wording alone."""
+    if generic_site_content(item.get("name") or "", final_url, text[:4000]):
+        assessment = document_identity_assessment(lot, text=text, url=final_url, label=item.get("name") or "")
+        return False, ["generic auction-provider/advisory page rejected"], assessment
+    assessment = document_identity_assessment(lot, text=text, url=final_url, label=item.get("name") or "")
+    if assessment.get("hard_reject"):
+        return False, list(assessment.get("conflicts") or ["pack page identifies a different property"]), assessment
+    reasons = list(assessment.get("reasons") or [])
+    if int(assessment.get("score") or 0) >= 60:
         if direct_from_lot and strong_pack_link(item.get("name") or "", item.get("url") or final_url):
-            reasons.append("lot-specific page reached from the subject auction lot's legal-pack link")
-        return True, list(dict.fromkeys(reasons))
-    if parent_verified and strong_pack_link(item.get("name") or "", item.get("url") or final_url):
-        reasons.append("legal-pack navigation inherited from a verified lot-specific pack index")
-        return True, reasons
-    return False, ["HTML legal-pack candidate did not contain sufficient subject-lot identity"]
+            reasons.append("reached from the subject auction lot's legal-pack link")
+        return True, list(dict.fromkeys(reasons)), assessment
+    # A nested pack page may inherit navigation context, but still needs at least a
+    # probable property identity score. This prevents a verified page linking into
+    # generic provider navigation and creating a new trust bridge.
+    if parent_verified and int(assessment.get("score") or 0) >= 40 and strong_pack_link(item.get("name") or "", item.get("url") or final_url):
+        reasons.append("nested legal-pack page with corroborating lot identity")
+        return True, list(dict.fromkeys(reasons)), assessment
+    return False, ["HTML legal-pack candidate did not contain sufficient subject-lot identity"] + list(assessment.get("conflicts") or []), assessment
 
 
 def _binary_document_verified(lot: dict, item: dict, text: str, final_url: str,
-                              parent_verified: bool, direct_from_lot: bool) -> tuple[bool, list[str]]:
-    """Verify a PDF/ZIP before it can influence legal conclusions.
-
-    Even a verified legal-pack index is not a licence to trust every binary link on
-    the page: auctioneer chrome can contain brochures, reports and other site-wide
-    assets.  A child therefore needs legal-document semantics OR its own strong lot
-    identity.
-    """
-    reasons = []
+                              parent_verified: bool, direct_from_lot: bool) -> tuple[bool, list[str], dict, dict, str]:
+    """Run document class + property identity locks before legal promotion."""
     label = item.get("name") or ""
     source_url = item.get("url") or final_url
-    if generic_site_content(label, final_url):
-        return False, ["generic auction-provider/advisory content rejected"]
-    legalish = bool(LEGAL_HINT_RE.search(f"{label} {source_url}"))
-    score, identity_reasons = lot_identity_match(lot, text, final_url)
-    if parent_verified and legalish:
-        reasons.append("legal-labelled document linked from a verified lot-specific legal-pack index")
-    if direct_from_lot and strong_pack_link(label, source_url):
-        reasons.append("strong legal document linked directly from the known auction lot page")
-    if score >= 5:
-        reasons.extend(identity_reasons)
-    return bool(reasons), list(dict.fromkeys(reasons))
+    doc_class = document_type_classification(label, source_url, text)
+    assessment = document_identity_assessment(lot, text=text, url=final_url, label=label)
 
+    if generic_site_content(label, final_url, text[:4000]) or not doc_class.get("allowed"):
+        reason = doc_class.get("reason") or "generic/provider content is not legal evidence"
+        return False, [], assessment, doc_class, reason
+    if assessment.get("hard_reject"):
+        reason = "; ".join(assessment.get("conflicts") or ["document identifies a different property"])
+        return False, [], assessment, doc_class, reason
+
+    threshold = _identity_threshold(doc_class)
+    score = int(assessment.get("score") or 0)
+    reasons = list(assessment.get("reasons") or [])
+    if score >= threshold:
+        if parent_verified:
+            reasons.append("discovered from a verified lot-specific legal-pack index")
+        if direct_from_lot:
+            reasons.append("discovered directly from the known auction lot page")
+        reasons.append(doc_class.get("reason") or "recognised legal/DD document class")
+        return True, list(dict.fromkeys(reasons)), assessment, doc_class, ""
+
+    reason = f"property identity score {score}/100 is below the {threshold}/100 verification threshold"
+    if assessment.get("conflicts"):
+        reason += "; " + "; ".join(assessment.get("conflicts") or [])
+    return False, reasons, assessment, doc_class, reason
+
+
+
+def revalidate_saved_legal_documents(lot: dict, documents: list[dict] | None) -> tuple[list[dict], dict]:
+    """Re-run stored evidence through the current firewall and identity lock.
+
+    This is the v1.10.3 purge boundary.  Historic automatic documents are never
+    grandfathered merely because an older build marked them verified.  Every saved
+    automatic document is reclassified from its stored filename/URL/text against the
+    *current* subject lot.  Cross-property/generic material is quarantined and can no
+    longer drive rent, seller/company identity, legal risk, contacts or bid readiness.
+
+    User uploads remain user-attested to the selected property.  They still go through
+    current legal analysis, but are not silently discarded during an online refresh.
+    """
+    out: list[dict] = []
+    report = {
+        "checked": 0, "retained_verified": 0, "downgraded": 0,
+        "rejected": 0, "candidates": 0, "user_uploads": 0,
+        "purged_findings": 0, "notes": [],
+    }
+    for original in list(documents or []):
+        doc = copy.deepcopy(original)
+        meta = doc.setdefault("metadata", {})
+        previous_tier = evidence_tier(doc)
+        origin = str(meta.get("origin") or "")
+        report["checked"] += 1
+
+        # A document deliberately uploaded while viewing this property is a user
+        # attestation. Preserve it, but stamp the current evidence policy so stale
+        # automatic metadata cannot masquerade as a current verification.
+        if origin == "user-upload":
+            meta.update({
+                "evidence_tier": TIER_VERIFIED_LEGAL,
+                "verified_for_lot": True,
+                "identity_status": "user-attested",
+                "evidence_policy_version": EVIDENCE_POLICY_VERSION,
+                "revalidated_at": datetime.now(timezone.utc).isoformat(),
+                "revalidation_outcome": "retained-user-upload",
+            })
+            meta.pop("rejection_reason", None)
+            report["user_uploads"] += 1
+            report["retained_verified"] += 1
+            out.append(doc)
+            continue
+
+        # Pack-index HTML deliberately has no stored body text.  It may remain an
+        # access/navigation artefact only when its previous identity metadata still
+        # proves the same subject postcode/lot. It never contributes legal findings.
+        if previous_tier == TIER_VERIFIED_PACK_INDEX:
+            target_pc = "".join(str(lot.get("postcode") or "").upper().split())
+            old_target = "".join(str(meta.get("identity_target_postcode") or "").upper().split())
+            score = int(meta.get("identity_score") or 0)
+            source_property_url = str(meta.get("source_property_url") or "")
+            same_lot_url = bool(source_property_url and source_property_url == str(lot.get("url") or ""))
+            if score >= 60 and (not target_pc or old_target == target_pc) and same_lot_url:
+                meta.update({
+                    "evidence_policy_version": EVIDENCE_POLICY_VERSION,
+                    "revalidated_at": datetime.now(timezone.utc).isoformat(),
+                    "revalidation_outcome": "retained-pack-index",
+                })
+                report["retained_verified"] += 1
+            else:
+                mark_candidate(doc, "historic pack index could not be re-proven against the current lot")
+                meta["revalidated_at"] = datetime.now(timezone.utc).isoformat()
+                meta["revalidation_outcome"] = "downgraded-pack-index"
+                report["downgraded"] += 1
+                report["candidates"] += 1
+            out.append(doc)
+            continue
+
+        text = str(doc.get("text_content") or "")
+        label = str(doc.get("name") or "")
+        url = str(doc.get("url") or "")
+        direct_from_lot = bool(meta.get("direct_from_lot"))
+
+        # Crucially, an old 'parent_verified_pack' flag is NOT inherited during
+        # revalidation. The stored file itself must now prove its identity.
+        verified, reasons, assessment, doc_class, rejection_reason = _binary_document_verified(
+            lot, doc, text, url, parent_verified=False, direct_from_lot=direct_from_lot
+        )
+        doc["doc_type"] = doc_class.get("doc_type") if doc_class.get("allowed") else (doc.get("doc_type") or "Legal document")
+
+        if verified:
+            mark_verified_legal(doc, reasons, assessment, doc_class)
+            meta = doc.setdefault("metadata", {})
+            meta["revalidation_outcome"] = "verified-current-policy"
+            report["retained_verified"] += 1
+        elif assessment.get("hard_reject"):
+            reason = rejection_reason or "; ".join(assessment.get("conflicts") or ["document identifies a different property"] )
+            mark_rejected(doc, reason, assessment, doc_class)
+            meta = doc.setdefault("metadata", {})
+            meta["revalidation_outcome"] = "rejected-cross-property"
+            report["rejected"] += 1
+            if previous_tier == TIER_VERIFIED_LEGAL:
+                report["downgraded"] += 1
+        else:
+            reason = rejection_reason or "; ".join(reasons) or "stored document could not be re-verified for the current lot"
+            mark_candidate(doc, reason, assessment, doc_class)
+            meta = doc.setdefault("metadata", {})
+            meta["revalidation_outcome"] = "downgraded-candidate" if previous_tier == TIER_VERIFIED_LEGAL else "candidate-current-policy"
+            report["candidates"] += 1
+            if previous_tier == TIER_VERIFIED_LEGAL:
+                report["downgraded"] += 1
+
+        meta = doc.setdefault("metadata", {})
+        meta["revalidated_at"] = datetime.now(timezone.utc).isoformat()
+        if previous_tier == TIER_VERIFIED_LEGAL and evidence_tier(doc) != TIER_VERIFIED_LEGAL:
+            # Any fields/risks/contacts previously derived from this file are rebuilt
+            # from scratch by analyse_legal_documents; record the purge for audit.
+            report["purged_findings"] += 1
+        out.append(doc)
+
+    if report["downgraded"]:
+        report["notes"].append(
+            f"{report['downgraded']} previously trusted automatic document(s) were downgraded by the current Property Identity Lock."
+        )
+    if report["rejected"]:
+        report["notes"].append(
+            f"{report['rejected']} stored document(s) were quarantined as cross-property evidence."
+        )
+    if report["purged_findings"]:
+        report["notes"].append(
+            "Derived rent, seller/company identity, contacts and legal-risk findings from downgraded documents were purged and recalculated."
+        )
+    return out, report
 
 def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS,
                           access_config: LegalAccessConfig | None = None) -> tuple[list[dict], list[str]]:
@@ -386,16 +541,19 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
                         item["access_status"] = "login required or authenticated session was not accepted"
                     continue
 
-                pack_verified, reasons = _html_pack_index_verified(
+                pack_verified, reasons, assessment = _html_pack_index_verified(
                     lot, item, text, final_url, parent_verified, direct_from_lot
                 )
                 if not pack_verified:
-                    mark_candidate(item, "; ".join(reasons) if reasons else "HTML page is not demonstrably lot-specific legal content")
+                    if assessment.get("hard_reject"):
+                        mark_rejected(item, "; ".join(reasons) if reasons else "HTML page identifies a different property", assessment)
+                    else:
+                        mark_candidate(item, "; ".join(reasons) if reasons else "HTML page is not demonstrably lot-specific legal content", assessment)
                     item["access_status"] = "candidate page rejected by legal evidence firewall"
                     # Critical boundary: never crawl onward from an unverified HTML page.
                     continue
 
-                mark_pack_index(item, reasons)
+                mark_pack_index(item, reasons, assessment)
                 item["access_status"] = "verified lot-specific legal-pack index"
                 item["url"] = final_url
                 item["sha256"] = hashlib.sha256(data).hexdigest()
@@ -420,7 +578,7 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
             if "zip" in ctype or final_url.lower().split("?")[0].endswith(".zip") or data[:4] == b"PK\x03\x04":
                 # A ZIP linked from a verified pack index/direct legal link inherits the
                 # lot binding. Members are then individually marked verified/candidate.
-                direct_verified, reasons = _binary_document_verified(
+                direct_verified, reasons, assessment, doc_class, rejection_reason = _binary_document_verified(
                     lot, item, "", final_url, parent_verified, direct_from_lot
                 )
                 expanded = _zip_documents(
@@ -430,11 +588,15 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
                 item["sha256"] = hashlib.sha256(data).hexdigest()
                 item["url"] = final_url
                 if direct_verified:
-                    mark_pack_index(item, reasons + ["ZIP container for lot-specific legal documents"])
+                    mark_pack_index(item, reasons + ["ZIP container for lot-specific legal documents"], assessment)
                     item["access_status"] = f"verified lot-specific legal ZIP; {len(expanded)} member(s) inspected"
                 else:
-                    mark_candidate(item, "ZIP container could not be tied to the subject lot")
-                    item["access_status"] = "candidate ZIP rejected by legal evidence firewall"
+                    if assessment.get("hard_reject"):
+                        mark_rejected(item, rejection_reason or "ZIP container identifies a different property", assessment, doc_class)
+                        item["access_status"] = "ZIP rejected: cross-property identity mismatch"
+                    else:
+                        mark_candidate(item, rejection_reason or "ZIP container could not be tied to the subject lot", assessment, doc_class)
+                        item["access_status"] = "candidate ZIP held outside legal analysis by Property Identity Lock"
                 item["metadata"].update({
                     "origin": "auto-download-authenticated" if authenticated else "auto-download-public",
                     "downloaded_at": datetime.now(timezone.utc).isoformat(),
@@ -449,7 +611,7 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
 
             if "pdf" in ctype or final_url.lower().split("?")[0].endswith(".pdf") or data[:4] == b"%PDF":
                 extracted_text = extract_pdf_text(data)
-                verified, reasons = _binary_document_verified(
+                verified, reasons, assessment, doc_class, rejection_reason = _binary_document_verified(
                     lot, item, extracted_text, final_url, parent_verified, direct_from_lot
                 )
                 item["sha256"] = hashlib.sha256(data).hexdigest()
@@ -459,7 +621,8 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
                     "downloaded_at": datetime.now(timezone.utc).isoformat(),
                 })
                 if verified:
-                    mark_verified_legal(item, reasons)
+                    item["doc_type"] = doc_class.get("doc_type") or item.get("doc_type") or "Legal document"
+                    mark_verified_legal(item, reasons, assessment, doc_class)
                     item["text_content"] = extracted_text
                     item["access_status"] = (
                         "verified authenticated legal PDF parsed" if authenticated and extracted_text else
@@ -470,9 +633,14 @@ def fetch_legal_documents(lot: dict, session=None, max_docs: int = MAX_AUTO_DOCS
                     item["_raw_bytes"] = data
                     verified_downloads += 1
                 else:
-                    mark_candidate(item, "; ".join(reasons) if reasons else "PDF could not be tied to the subject lot")
+                    item["doc_type"] = doc_class.get("doc_type") if doc_class.get("allowed") else item.get("doc_type") or "Legal document"
+                    if assessment.get("hard_reject"):
+                        mark_rejected(item, rejection_reason or "PDF identifies a different property", assessment, doc_class)
+                        item["access_status"] = "PDF rejected: cross-property identity mismatch"
+                    else:
+                        mark_candidate(item, rejection_reason or "; ".join(reasons) or "PDF could not be tied to the subject lot", assessment, doc_class)
+                        item["access_status"] = "candidate PDF held outside legal analysis by Property Identity Lock"
                     item["text_content"] = ""
-                    item["access_status"] = "candidate PDF rejected by legal evidence firewall"
                 continue
 
             item["access_status"] = "candidate link checked; unsupported document type"
@@ -961,7 +1129,9 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         seen.add("Lease appears to have fewer than 80 years remaining")
 
     total_document_count = len(documents)
-    candidate_count = sum(1 for d in documents if not is_verified_legal_document(d))
+    candidate_count = sum(1 for d in documents if evidence_tier(d) == TIER_CANDIDATE)
+    rejected_count = sum(1 for d in documents if evidence_tier(d) == TIER_REJECTED)
+    pack_index_count = sum(1 for d in documents if evidence_tier(d) == TIER_VERIFIED_PACK_INDEX)
     verified_count = len(verified_docs)
     parsed_count = sum(1 for d in verified_docs if d.get("text_content"))
     severity_total = sum(int(x["severity"]) for x in flags)
@@ -1032,6 +1202,10 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         warnings.insert(0,
             "Lot-bound legal documents were verified, but no extractable text was available. Legal risk remains UNKNOWN until the originals are reviewed manually."
         )
+    if rejected_count:
+        warnings.insert(0,
+            f"Property Identity Lock rejected {rejected_count} candidate document(s) because they were unclassified legal evidence or did not match the selected lot. Rejected material cannot influence the deal."
+        )
 
     return {
         "provider": "Verified auction legal evidence / auctioneer property evidence",
@@ -1041,6 +1215,8 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         "risk_score": risk_score,
         "document_count": total_document_count,
         "candidate_document_count": candidate_count,
+        "rejected_document_count": rejected_count,
+        "pack_index_count": pack_index_count,
         "verified_document_count": verified_count,
         "parsed_document_count": parsed_count,
         "auctioneer_evidence_count": 1 if listing_text else 0,
@@ -1061,8 +1237,8 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         "pack_changed": False,
         "pack_change": {},
         "methodology": (
-            "v1.10.1 evidence firewall: only lot-bound verified legal documents may drive legal risk, ownership/company identity, pack completeness or bid approval. "
-            "Auctioneer listing/detail text is retained only as clearly-labelled property evidence/signals."
+            "v1.10.3 Evidence Revalidation & Purge: every automatic document must pass the current legal-document class gate and lot-specific Property Identity Lock before it may drive legal risk, ownership/company identity, rent, contacts, buyer costs, pack completeness or bid approval. "
+            "Historic automatic evidence is revalidated on refresh; downgraded/cross-property material is quarantined and all derived findings are rebuilt from verified evidence only."
         ),
         "warnings": warnings,
         "attribution": LEGAL_ATTRIBUTION,
@@ -1105,6 +1281,8 @@ def uploaded_document(name: str, data: bytes) -> dict:
             "origin": "user-upload", "original_filename": name,
             "evidence_tier": TIER_VERIFIED_LEGAL, "verified_for_lot": True,
             "verification_reasons": ["user explicitly uploaded this document against the selected property"],
+            "identity_status": "user-attested", "identity_score": None,
+            "document_class": doc_type, "document_class_allowed": True,
             "evidence_policy_version": EVIDENCE_POLICY_VERSION,
         },
         "_raw_bytes": data,

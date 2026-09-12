@@ -1,6 +1,6 @@
-# Legal-pack automation setup (v1.10.1)
+# Legal-pack automation setup (v1.10.3)
 
-Version 1.10.1 can automatically acquire and analyse legal documents when the provider permits server-side access, with a strict **Legal Evidence Firewall**. It does not bypass CAPTCHAs, anti-bot controls, MFA, registration restrictions or provider terms.
+Version 1.10.2 can automatically acquire and analyse legal documents when the provider permits server-side access, with a strict **Legal Evidence Firewall + Property Identity Lock**. It does not bypass CAPTCHAs, anti-bot controls, MFA, registration restrictions or provider terms.
 
 ## What happens automatically
 
@@ -20,7 +20,7 @@ The Deal Room therefore separates:
 - **Verified legal docs**
 - **Verified docs parsed**
 
-Only verified legal docs can drive ownership/company identity, legal risk, pack completeness, buyer fees/terms, Companies House enrichment or bid approval. Existing pre-v1.10.1 legal extractions are quarantined until refreshed.
+Only verified legal docs can drive ownership/company identity, legal risk, pack completeness, buyer fees/terms, Companies House enrichment or bid approval. Existing legal extractions saved under an older evidence policy are quarantined until refreshed; refresh also revalidates and purges stale derived evidence.
 
 See `LEGAL_EVIDENCE_FIREWALL.md` for the trust model.
 
