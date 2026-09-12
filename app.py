@@ -1,7 +1,9 @@
 from pathlib import Path
+import base64
+import html
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -34,6 +36,14 @@ UNSOLD_STATES = {"Available post-auction", "No Bids", "Last Bid", "Unsold"}
 ASSET_DIR = Path(__file__).with_name("assets")
 LOTLY_LOGO = ASSET_DIR / "lotly_logo.png"
 LOTLY_ICON = ASSET_DIR / "lotly_icon.png"
+
+def _asset_data_uri(path):
+    try:
+        return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+    except Exception:
+        return ""
+
+LOTLY_ICON_DATA_URI = _asset_data_uri(LOTLY_ICON)
 
 st.set_page_config(page_title="Lotly | Property Auction Intelligence", page_icon=str(LOTLY_ICON) if LOTLY_ICON.exists() else "🏷️", layout="wide", initial_sidebar_state="expanded")
 
@@ -127,6 +137,34 @@ div.stButton > button[kind="primary"]:hover {transform:translateY(-1px);box-shad
 /* Tables */
 [data-testid="stDataFrame"] {border-radius:14px;overflow:hidden;}
 hr {margin:.9rem 0;border-color:var(--line);}
+
+/* v1.12.1 finished-product polish */
+.property-image-shell {position:relative;width:100%;height:242px;border-radius:15px;overflow:hidden;background:linear-gradient(145deg,#EEF8F6,#F5F8FA);border:1px solid #E2ECE9;}
+.property-image-shell.featured {height:268px;}
+.property-image {width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s ease;}
+.property-image-shell:hover .property-image {transform:scale(1.015);}
+.property-image-placeholder {height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;color:#667085;background:radial-gradient(circle at 30% 20%,#E1F6F1 0,#F5FAF9 42%,#F8FAFC 100%);}
+.property-image-placeholder img {width:48px;height:48px;object-fit:contain;opacity:.88;}
+.property-image-placeholder .ph-title {font-weight:760;color:#3E5367;font-size:.82rem;}
+.property-image-placeholder .ph-sub {font-size:.70rem;color:#8A96A5;}
+.image-ribbon {position:absolute;top:11px;left:11px;z-index:2;background:rgba(11,31,51,.92);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:5px 9px;font-size:.62rem;font-weight:820;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 4px 14px rgba(11,31,51,.16);}
+.lotly-score-mini {display:inline-flex;min-width:58px;flex-direction:column;align-items:center;justify-content:center;background:#0B1F33;color:#fff;border-radius:13px;padding:7px 9px;box-shadow:0 4px 12px rgba(11,31,51,.10);}
+.lotly-score-mini .num {font-size:1.18rem;font-weight:880;line-height:1;}
+.lotly-score-mini .lbl {font-size:.49rem;letter-spacing:.07em;text-transform:uppercase;opacity:.72;margin-top:3px;}
+.upside-line {display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:7px 0 1px;color:#334B60;font-size:.75rem;font-weight:680;}
+.upside-chip {background:#F1F8F6;border:1px solid #D5EAE5;color:#24695F;border-radius:999px;padding:4px 8px;}
+.badge-more {background:#F2F4F7;border-color:#E4E7EC;color:#667085;}
+.since-visit-banner {display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:linear-gradient(135deg,#F0FBF8,#FAFCFC);border:1px solid #D3EDE8;border-radius:13px;padding:9px 12px;margin:1px 0 10px;color:#35566A;font-size:.78rem;}
+.since-visit-banner strong {color:#0A7068;}
+.since-stat {background:#fff;border:1px solid #DDE9E6;border-radius:999px;padding:4px 8px;font-weight:720;}
+.lotly-sticky-anchor {height:0;width:0;overflow:hidden;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-sticky-anchor) {position:sticky;top:3.25rem;z-index:25;background:rgba(252,254,254,.96);backdrop-filter:blur(14px);box-shadow:0 8px 24px rgba(11,31,51,.06);}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:100%;}
+.lotly-card-marker {height:0;display:block;}
+@media (max-width: 900px) {
+  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-sticky-anchor) {position:relative;top:auto;}
+  .property-image-shell,.property-image-shell.featured {height:220px;}
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -190,6 +228,18 @@ def sync_cloud(reason="update", quiet=True):
         if not quiet:
             st.warning(f"Cloud persistence could not sync this update: {exc}")
         return {"synced": False, "reason": str(exc)}
+
+
+if "lotly_last_visit_cutoff" not in st.session_state:
+    _prior_visit = db.get_app_state("last_visit_at", "") or ""
+    _visit_started = datetime.now(timezone.utc).isoformat()
+    st.session_state["lotly_last_visit_cutoff"] = _prior_visit
+    st.session_state["lotly_visit_started_at"] = _visit_started
+    db.set_app_state("last_visit_at", _visit_started)
+    # Persist the visit marker so a cold Streamlit restart still knows what changed
+    # since the user's previous session. This is intentionally quiet.
+    if cloud_store:
+        sync_cloud("visit marker", quiet=True)
 
 
 def money(value, digits=0):
@@ -258,6 +308,75 @@ def first_seen_today(row):
         return stamp.date() == datetime.now(timezone.utc).date()
     except Exception:
         return False
+
+
+def _parse_utc(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _after_cutoff(value, cutoff):
+    event = _parse_utc(value)
+    cut = _parse_utc(cutoff)
+    return bool(event and cut and event > cut)
+
+
+def history_reduced_since(history, cutoff):
+    if not cutoff or not history:
+        return False
+    events = sorted(history, key=lambda x: str(x.get("captured_at") or ""))
+    previous = None
+    for event in events:
+        guide = event.get("guide_price")
+        if guide is not None:
+            try:
+                guide = float(guide)
+            except Exception:
+                guide = None
+        if previous is not None and guide is not None and guide < previous and _after_cutoff(event.get("captured_at"), cutoff):
+            return True
+        if guide is not None:
+            previous = guide
+    return False
+
+
+def history_postauction_since(history, cutoff):
+    if not cutoff or not history:
+        return False
+    events = sorted(history, key=lambda x: str(x.get("captured_at") or ""))
+    previous = None
+    for event in events:
+        status = event.get("status")
+        if previous is not None and status in UNSOLD_STATES and previous not in UNSOLD_STATES and _after_cutoff(event.get("captured_at"), cutoff):
+            return True
+        if status:
+            previous = status
+    return False
+
+
+def estimated_value(row):
+    return row.get("market_value") or row.get("comparable_valuation_mid")
+
+
+def guide_to_value_discount(row):
+    guide = row.get("guide_price")
+    value = estimated_value(row)
+    try:
+        guide = float(guide or 0)
+        value = float(value or 0)
+    except Exception:
+        return None
+    if guide <= 0 or value <= 0 or guide >= value:
+        return None
+    discount = (value - guide) / value * 100.0
+    return round(discount, 1) if 0 < discount < 95 else None
 
 
 def browse_rank(row):
@@ -355,6 +474,11 @@ def _nav_changed():
     st.session_state.pop("selected_deal_id", None)
 
 
+_raw_rows = db.list_properties()
+_sidebar_actionable = [r for r in _raw_rows if is_actionable(r)]
+_sidebar_new_today = sum(1 for r in _sidebar_actionable if first_seen_today(r))
+_sidebar_postauction = sum(1 for r in _sidebar_actionable if is_unsold(r))
+
 with st.sidebar:
     brand_col, name_col = st.columns([0.32, 0.68], vertical_alignment="center")
     with brand_col:
@@ -373,7 +497,8 @@ with st.sidebar:
     st.markdown('<div class="side-section">Today</div>', unsafe_allow_html=True)
     if lotly_page != "Settings":
         shortlist_count = len(db.shortlist_ids())
-        st.caption(f"{shortlist_count} shortlisted · North West live auctions")
+        st.caption(f"{_sidebar_new_today} new today · {_sidebar_postauction} post-auction")
+        st.caption(f"{shortlist_count} saved · North West live auctions")
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -410,11 +535,9 @@ deal_open = bool(st.session_state.get("selected_deal_id"))
 if not deal_open and lotly_page in {"Discover", "Shortlist"}:
     hleft, hright = st.columns([5.2, 1.2], vertical_alignment="top")
     with hleft:
-        if LOTLY_LOGO.exists():
-            st.image(str(LOTLY_LOGO), width=154)
         page_title = "Find your next opportunity." if lotly_page == "Discover" else "Your shortlist."
         page_sub = (
-            "The strongest live auction opportunities, ranked around how you buy."
+            "The strongest live auction opportunities, ranked around your buying criteria, seller motivation and evidence quality."
             if lotly_page == "Discover" else
             "The properties you have saved for a closer look, in one decision-ready view."
         )
@@ -452,7 +575,7 @@ elif not deal_open and lotly_page == "Settings":
     st.markdown('<div class="lotly-kicker">Workspace</div><div class="lotly-title">Lotly settings.</div><div class="lotly-subtitle">Tune your buying criteria, underwriting defaults and data connections.</div>', unsafe_allow_html=True)
 
 # Build analysis rows once per Streamlit rerun.
-rows = db.list_properties()
+rows = _raw_rows
 history_map = db.history_map() if rows else {}
 underwriting_map = db.underwriting_map() if rows else {}
 comparable_map = db.comparable_summary_map() if rows else {}
@@ -564,6 +687,11 @@ for row in rows:
     row.update(uw)
     row["browse_score"] = browse_rank(row)
     row["shortlisted"] = row["id"] in shortlist_ids
+    _visit_cutoff = st.session_state.get("lotly_last_visit_cutoff") or ""
+    _hist = history_map.get(row["id"], [])
+    row["new_since_last_visit"] = bool(_visit_cutoff and _after_cutoff(row.get("first_seen"), _visit_cutoff))
+    row["reduced_since_last_visit"] = history_reduced_since(_hist, _visit_cutoff)
+    row["postauction_since_last_visit"] = history_postauction_since(_hist, _visit_cutoff)
 
 
 def toggle_shortlist(row):
@@ -586,15 +714,52 @@ def toggle_compare(row):
     st.rerun()
 
 
+def render_property_image(row, featured=False):
+    css_class = "property-image-shell featured" if featured else "property-image-shell"
+    ribbon = ""
+    if row.get("new_since_last_visit"):
+        ribbon = '<span class="image-ribbon">New since last visit</span>'
+    elif row.get("postauction_since_last_visit"):
+        ribbon = '<span class="image-ribbon">Now post-auction</span>'
+    elif row.get("reduced_since_last_visit"):
+        ribbon = '<span class="image-ribbon">Reduced since last visit</span>'
+    image_url = str(row.get("image_url") or "").strip()
+    if image_url:
+        st.markdown(
+            f'<div class="{css_class}">{ribbon}<img class="property-image" src="{html.escape(image_url, quote=True)}" alt="Property image"></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        logo = f'<img src="{LOTLY_ICON_DATA_URI}" alt="Lotly">' if LOTLY_ICON_DATA_URI else '<div style="font-size:1.6rem">◇</div>'
+        st.markdown(
+            f'<div class="{css_class}">{ribbon}<div class="property-image-placeholder">{logo}<div class="ph-title">Image being enriched</div><div class="ph-sub">Lotly will add it on the next source refresh</div></div></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_upside_line(row):
+    parts = []
+    if row.get("profit") is not None:
+        parts.append(f'<span class="upside-chip">Potential profit {money(row.get("profit"))}</span>')
+    discount = guide_to_value_discount(row)
+    if discount is not None:
+        parts.append(f'<span class="upside-chip">Guide {discount:.0f}% below estimated value</span>')
+    if parts:
+        st.markdown('<div class="upside-line">' + ''.join(parts) + '</div>', unsafe_allow_html=True)
+
+
 def render_quick_look(row):
     q1, q2, q3 = st.columns(3)
     q1.metric("Guide", guide_display(row))
     q2.metric("Max buy", money(row.get("max_bid")))
     q3.metric("Lotly Score", f"{float(row.get('browse_score') or 0):.1f}/10")
     q4, q5, q6 = st.columns(3)
-    q4.metric("Desktop value", money(row.get("market_value") or row.get("comparable_valuation_mid")))
-    q5.metric("Profit / equity", money(row.get("profit")))
+    q4.metric("Estimated value", money(estimated_value(row)))
+    q5.metric("Potential profit / equity", money(row.get("profit")))
     q6.metric("Seller motivation", f"{float(row.get('motivation_score') or 0):.1f}/10")
+    discount = guide_to_value_discount(row)
+    if discount is not None:
+        st.caption(f"Guide is approximately {discount:.1f}% below Lotly's current estimated value.")
     st.caption(top_deal_reason(row))
     legal_label = "Verified" if legal_state(row) == "VERIFIED" else "Needs review"
     st.caption(f"Legal: {legal_label} · Planning: {planning_state(row).title()} · Comparable confidence: {int(row.get('comparable_confidence') or 0)}%")
@@ -604,24 +769,22 @@ def render_featured_property(row):
     with st.container(border=True):
         image_col, body_col = st.columns([1.18, 2.35], vertical_alignment="top")
         with image_col:
-            if row.get("image_url"):
-                st.image(row["image_url"], use_container_width=True)
-            else:
-                st.markdown('<div class="soft-panel" style="height:245px;display:flex;align-items:center;justify-content:center;color:#667085;text-align:center;">Property image pending</div>', unsafe_allow_html=True)
+            render_property_image(row, featured=True)
         with body_col:
             top_l, top_r = st.columns([4, 1])
             with top_l:
                 st.markdown('<div class="spotlight-kicker">Top opportunity</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} · Lot {row.get("lot_number") or "-"} · {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="spotlight-title">{clean_address(row)}</div>', unsafe_allow_html=True)
-                render_badges(row)
+                render_badges(row, limit=3)
             with top_r:
                 st.markdown(f'<div class="lotly-score-pill"><div class="num">{float(row.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div>', unsafe_allow_html=True)
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Guide", guide_display(row))
-            m2.metric("Desktop value", money(row.get("market_value") or row.get("comparable_valuation_mid")))
+            m2.metric("Estimated value", money(estimated_value(row)))
             m3.metric("Max buy", money(row.get("max_bid")))
-            m4.metric("Profit / equity", money(row.get("profit")))
+            m4.metric("Potential profit", money(row.get("profit")))
+            render_upside_line(row)
             st.markdown(f'<div class="card-reason"><strong>Why Lotly likes it:</strong> {top_deal_reason(row)}</div>', unsafe_allow_html=True)
             a1, a2, a3, a4 = st.columns([1.3, 1.1, 1, 1])
             with a1:
@@ -642,32 +805,31 @@ def render_featured_property(row):
 
 def render_compact_card(row):
     with st.container(border=True):
-        if row.get("image_url"):
-            st.image(row["image_url"], use_container_width=True)
-        else:
-            st.markdown('<div class="soft-panel" style="height:170px;display:flex;align-items:center;justify-content:center;color:#667085;text-align:center;">Image pending</div>', unsafe_allow_html=True)
+        st.markdown('<span class="lotly-card-marker"></span>', unsafe_allow_html=True)
+        render_property_image(row, featured=False)
         head_l, head_r = st.columns([4, 1])
         with head_l:
             st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} · Lot {row.get("lot_number") or "-"} · {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
         with head_r:
-            st.markdown(f'<div style="text-align:right;font-size:1.2rem;font-weight:850;color:#0B1F33">{float(row.get("browse_score") or 0):.1f}</div><div style="text-align:right;font-size:.58rem;color:#667085;text-transform:uppercase;letter-spacing:.06em">Lotly Score</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex;justify-content:flex-end"><div class="lotly-score-mini"><div class="num">{float(row.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="property-title">{clean_address(row)}</div>', unsafe_allow_html=True)
-        render_badges(row)
+        render_badges(row, limit=3)
         v1, v2, v3 = st.columns(3)
         v1.metric("Guide", guide_display(row))
-        v2.metric("Max buy", money(row.get("max_bid")))
-        v3.metric("Profit", money(row.get("profit")))
+        v2.metric("Estimated value", money(estimated_value(row)))
+        v3.metric("Max buy", money(row.get("max_bid")))
+        render_upside_line(row)
         st.markdown(f'<div class="card-reason"><strong>Why it ranks:</strong> {top_deal_reason(row)}</div>', unsafe_allow_html=True)
-        b1, b2, b3, b4 = st.columns([1.4, 1.05, .95, .95])
+        b1, b2, b3, b4 = st.columns([1.4, 1.05, 1.05, .95])
         with b1:
             if st.button("Open Deal Room", key=f"grid_open_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
                 st.rerun()
         with b2:
-            if st.button("♥" if row.get("shortlisted") else "♡ Save", key=f"grid_short_{row['id']}", use_container_width=True):
+            if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"grid_short_{row['id']}", use_container_width=True):
                 toggle_shortlist(row)
         with b3:
-            with st.popover("Quick", use_container_width=True):
+            with st.popover("Quick look", use_container_width=True):
                 render_quick_look(row)
         with b4:
             label = "✓" if row["id"] in set(st.session_state.get("compare_ids", [])) else "+ Compare"
@@ -675,32 +837,38 @@ def render_compact_card(row):
                 toggle_compare(row)
 
 
-def render_badges(row):
+def render_badges(row, limit=None):
     tags = []
+    def add(priority, label, css=""):
+        tags.append((priority, f'<span class="badge {css}">{label}</span>'))
     if row.get("status"):
-        cls = "badge-hot" if is_unsold(row) or row.get("status") == "Relisted" else ""
-        tags.append(f'<span class="badge {cls}">{row.get("status")}</span>')
-    if (row.get("failure_count") or 0) > 0:
-        tags.append(f'<span class="badge badge-hot">Failed {int(row.get("failure_count") or 0)}x</span>')
-    if (row.get("price_reduction_pct") or 0) > 0:
-        tags.append(f'<span class="badge badge-good">Guide down {float(row.get("price_reduction_pct")):.1f}%</span>')
-    if float(row.get("corporate_pressure_score") or 0) >= 7:
-        tags.append(f'<span class="badge badge-risk">Corporate pressure {float(row.get("corporate_pressure_score")):.1f}/10</span>')
-    if (row.get("features") or {}).get("vacant"):
-        tags.append('<span class="badge">Vacant</span>')
-    if row.get("listed_building_signal") or row.get("planning_listed_flag"):
-        tags.append('<span class="badge badge-risk">Listed / heritage</span>')
+        css = "badge-hot" if is_unsold(row) or row.get("status") == "Relisted" else ""
+        add(100, row.get("status"), css)
+    if legal_state(row) != "VERIFIED":
+        label = "Legal unverified" if legal_state(row) in {"CANDIDATES ONLY", "UNVERIFIED", "VERIFIED NO TEXT"} else "Legal not reviewed"
+        add(96, label, "badge-risk")
     if row.get("short_lease_signal"):
         yrs = row.get("effective_lease_years") or row.get("listing_lease_years") or row.get("legal_lease_years")
         label = f"Short lease ~{float(yrs):.0f}y" if yrs else "Short lease"
-        tags.append(f'<span class="badge badge-risk">{label}</span>')
+        add(95, label, "badge-risk")
+    if row.get("listed_building_signal") or row.get("planning_listed_flag"):
+        add(94, "Listed / heritage", "badge-risk")
+    if float(row.get("corporate_pressure_score") or 0) >= 7:
+        add(92, f"Corporate pressure {float(row.get('corporate_pressure_score')):.1f}/10", "badge-risk")
+    if (row.get("price_reduction_pct") or 0) > 0:
+        add(90, f"Guide down {float(row.get('price_reduction_pct')):.1f}%", "badge-good")
+    if (row.get("failure_count") or 0) > 0:
+        add(86, f"Failed {int(row.get('failure_count') or 0)}x", "badge-hot")
     if row.get("max_bid_provisional"):
-        tags.append('<span class="badge badge-risk">Max buy provisional</span>')
-    if legal_state(row) != "VERIFIED":
-        label = "Legal unverified" if legal_state(row) in {"CANDIDATES ONLY", "UNVERIFIED", "VERIFIED NO TEXT"} else "Legal not reviewed"
-        tags.append(f'<span class="badge badge-risk">{label}</span>')
-    st.markdown("".join(tags), unsafe_allow_html=True)
-
+        add(82, "Max buy provisional", "badge-risk")
+    if (row.get("features") or {}).get("vacant"):
+        add(65, "Vacant")
+    tags.sort(key=lambda x: x[0], reverse=True)
+    visible = tags if limit is None else tags[:limit]
+    html_tags = [x[1] for x in visible]
+    if limit is not None and len(tags) > limit:
+        html_tags.append(f'<span class="badge badge-more">+{len(tags)-limit} more</span>')
+    st.markdown("".join(html_tags), unsafe_allow_html=True)
 
 
 def score_label(score):
@@ -749,7 +917,7 @@ def render_property_card(row):
             else:
                 a, b, c, d = st.columns(4)
                 a.metric("Guide", guide_display(row))
-                b.metric("Desktop value", money(row.get("market_value") or row.get("comparable_valuation_mid")))
+                b.metric("Estimated value", money(row.get("market_value") or row.get("comparable_valuation_mid")))
                 c.metric("Max buy", money(row.get("max_bid")))
                 d.metric("Est. profit", money(row.get("profit")))
             meta1, meta2, meta3 = st.columns(3)
@@ -901,15 +1069,12 @@ def render_deal_room(chosen):
 
     left, right = st.columns([1.35, 2.65], vertical_alignment="top")
     with left:
-        if chosen.get("image_url"):
-            st.image(chosen["image_url"], use_container_width=True)
-        else:
-            st.markdown('<div class="soft-panel" style="height:280px;display:flex;align-items:center;justify-content:center;color:#667085;">Property image pending refresh</div>', unsafe_allow_html=True)
+        render_property_image(chosen, featured=True)
     with right:
         st.markdown('<div class="eyebrow">Lotly Deal Room</div>', unsafe_allow_html=True)
         st.caption(f"{chosen.get('source')} · Lot {chosen.get('lot_number') or '-'} · {chosen.get('property_type')} · {chosen.get('status')}")
         st.header(clean_address(chosen))
-        render_badges(chosen)
+        render_badges(chosen, limit=5)
         a, b, c, d = st.columns(4)
         a.metric("Lotly Score", f"{chosen.get('browse_score', 0):.1f}/10")
         b.metric("Vendor motivation", f"{chosen.get('motivation_score', 0):.1f}/10")
@@ -948,7 +1113,7 @@ def render_deal_room(chosen):
     with tabs[0]:
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Opening offer", money(chosen.get("opening_offer")))
-        m2.metric("Market value / GDV", money(chosen.get("market_value") or chosen.get("comparable_valuation_mid")))
+        m2.metric("Estimated value / GDV", money(chosen.get("market_value") or chosen.get("comparable_valuation_mid")))
         m3.metric("Profit / equity", money(chosen.get("profit")))
         m4.metric("ROI", pct(chosen.get("roi_pct")))
         m5.metric("UW confidence", f"{int(chosen.get('underwriting_confidence') or 0)}%")
@@ -1635,7 +1800,7 @@ def analyst_frame(items):
         "Lotly Score": r.get("browse_score"), "Decision": r.get("recommendation"), "Status": r.get("status"),
         "Auction house": r.get("source"), "Address": clean_address(r), "Type": r.get("property_type"),
         "Guide": r.get("guide_price"), "Opening offer": r.get("opening_offer"), "Max buy": r.get("max_bid"),
-        "Desktop value": r.get("market_value") or r.get("comparable_valuation_mid"), "Profit / equity": r.get("profit"),
+        "Estimated value": r.get("market_value") or r.get("comparable_valuation_mid"), "Profit / equity": r.get("profit"),
         "Seller motivation": r.get("motivation_score"), "Failures": r.get("failure_count"),
         "Guide reduction %": r.get("price_reduction_pct"), "Comparable confidence %": r.get("comparable_confidence"),
         "Legal pack %": r.get("legal_pack_completeness_pct"), "Legal": legal_state(r), "Planning": planning_state(r), "Listing": r.get("url"),
@@ -1664,7 +1829,7 @@ def render_compare_tray(all_rows):
         st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
             "Lotly Score": st.column_config.NumberColumn(format="%.1f"), "Guide": st.column_config.NumberColumn(format="GBP %d"),
             "Opening offer": st.column_config.NumberColumn(format="GBP %d"), "Max buy": st.column_config.NumberColumn(format="GBP %d"),
-            "Desktop value": st.column_config.NumberColumn(format="GBP %d"), "Profit / equity": st.column_config.NumberColumn(format="GBP %d"),
+            "Estimated value": st.column_config.NumberColumn(format="GBP %d"), "Profit / equity": st.column_config.NumberColumn(format="GBP %d"),
             "Seller motivation": st.column_config.NumberColumn(format="%.1f"), "Guide reduction %": st.column_config.NumberColumn(format="%.1f%%"),
             "Comparable confidence %": st.column_config.NumberColumn(format="%d%%"), "Legal pack %": st.column_config.ProgressColumn(min_value=0,max_value=100,format="%d%%"),
             "Listing": st.column_config.LinkColumn("Auction listing"),
@@ -1677,24 +1842,18 @@ def render_feed(feed_rows, shortlist_only=False):
     if shortlist_only:
         market_rows = [r for r in market_rows if r.get("shortlisted")]
 
-    mode_col, view_col = st.columns([1.0, 2.9], vertical_alignment="bottom")
-    with mode_col:
-        st.markdown('<div class="eyebrow">Market</div>', unsafe_allow_html=True)
-        st.segmented_control("Market feed", ["Residential", "Commercial"], default=market, key="market_feed_mode", label_visibility="collapsed")
-        if st.session_state.get("market_feed_mode") != st.session_state.get("market_mode"):
-            st.session_state["market_mode"] = st.session_state.get("market_feed_mode")
-            st.rerun()
-    with view_col:
-        if shortlist_only:
-            view = "Shortlist"
-            st.markdown('<div class="eyebrow">Saved opportunities</div>', unsafe_allow_html=True)
-            st.caption("Your saved lots, ranked by current Lotly Score.")
-        else:
-            st.markdown('<div class="eyebrow">Quick view</div>', unsafe_allow_html=True)
-            view = st.segmented_control(
-                "Opportunity view", ["For you", "Post-auction", "Reduced", "New", "Bid ready"],
-                default=st.session_state.get("browse_view_v112", "For you"), key="browse_view_v112", label_visibility="collapsed",
-            )
+    # Morning brief: persistent history lets Lotly show what actually changed since
+    # the previous browser session instead of forcing the user to rescan the market.
+    if not shortlist_only and st.session_state.get("lotly_last_visit_cutoff"):
+        new_count = sum(1 for r in market_rows if r.get("new_since_last_visit"))
+        reduced_count = sum(1 for r in market_rows if r.get("reduced_since_last_visit"))
+        post_count = sum(1 for r in market_rows if r.get("postauction_since_last_visit"))
+        if new_count or reduced_count or post_count:
+            bits = []
+            if new_count: bits.append(f'<span class="since-stat">{new_count} new</span>')
+            if reduced_count: bits.append(f'<span class="since-stat">{reduced_count} reduced</span>')
+            if post_count: bits.append(f'<span class="since-stat">{post_count} now post-auction</span>')
+            st.markdown('<div class="since-visit-banner"><strong>Since your last visit</strong>' + ''.join(bits) + '<span>Lotly has already re-ranked the feed.</span></div>', unsafe_allow_html=True)
 
     bid_ready = len([r for r in market_rows if legal_state(r) == "VERIFIED" and int(r.get("legal_pack_completeness_pct") or 0) >= 100 and planning_state(r) == "SCREENED" and r.get("max_bid")])
     k1, k2, k3, k4 = st.columns(4)
@@ -1703,7 +1862,28 @@ def render_feed(feed_rows, shortlist_only=False):
     k3.metric("Price reductions", len([r for r in market_rows if float(r.get("price_reduction_pct") or 0) > 0]))
     k4.metric("Bid ready", bid_ready, help="Core legal pack complete, planning screened and maximum buy available.")
 
+    # Sticky discovery controls: market, view, search and sort remain within reach
+    # while the user scans deep into a long opportunity feed.
     with st.container(border=True):
+        st.markdown('<span class="lotly-sticky-anchor"></span>', unsafe_allow_html=True)
+        mode_col, view_col = st.columns([1.0, 2.9], vertical_alignment="bottom")
+        with mode_col:
+            st.markdown('<div class="eyebrow">Market</div>', unsafe_allow_html=True)
+            st.segmented_control("Market feed", ["Residential", "Commercial"], default=market, key="market_feed_mode", label_visibility="collapsed")
+            if st.session_state.get("market_feed_mode") != st.session_state.get("market_mode"):
+                st.session_state["market_mode"] = st.session_state.get("market_feed_mode")
+                st.rerun()
+        with view_col:
+            if shortlist_only:
+                view = "Shortlist"
+                st.markdown('<div class="eyebrow">Saved opportunities</div>', unsafe_allow_html=True)
+                st.caption("Your saved lots, ranked by current Lotly Score.")
+            else:
+                st.markdown('<div class="eyebrow">Quick view</div>', unsafe_allow_html=True)
+                view = st.segmented_control(
+                    "Opportunity view", ["For you", "Post-auction", "Reduced", "New", "Bid ready"],
+                    default=st.session_state.get("browse_view_v112", "For you"), key="browse_view_v112", label_visibility="collapsed",
+                )
         s1, s2, s3, s4 = st.columns([2.7, 1.05, 1.2, 1.15])
         with s1:
             search = st.text_input("Search", placeholder="Search postcode, town, street or keyword", label_visibility="collapsed", key=f"search_{lotly_page}")
@@ -1712,7 +1892,7 @@ def render_feed(feed_rows, shortlist_only=False):
         with s3:
             source = st.selectbox("Auction house", ["All auction houses"] + sorted({r.get("source") or "Unknown" for r in market_rows}), label_visibility="collapsed", key=f"source_{lotly_page}")
         with s4:
-            sort = st.selectbox("Sort", ["Best deal", "Highest motivation", "Biggest discount", "Lowest guide", "Newest"], label_visibility="collapsed", key=f"sort_{lotly_page}")
+            sort = st.selectbox("Sort", ["Best deal", "Highest motivation", "Biggest discount", "Lowest guide", "Soonest auction", "Newest"], label_visibility="collapsed", key=f"sort_{lotly_page}")
         tool_l, tool_r = st.columns([1, 3.2])
         with tool_l:
             display_mode = st.segmented_control("Display", ["Cards", "Map", "Table"], default=st.session_state.get("display_mode", "Cards"), key=f"display_{lotly_page}", label_visibility="collapsed")
@@ -1762,8 +1942,9 @@ def render_feed(feed_rows, shortlist_only=False):
 
     if sort == "Best deal": filtered.sort(key=lambda r:(r.get("browse_score") or 0,r.get("motivation_score") or 0,r.get("deal_score") or 0),reverse=True)
     elif sort == "Highest motivation": filtered.sort(key=lambda r:(r.get("motivation_score") or 0,r.get("browse_score") or 0),reverse=True)
-    elif sort == "Biggest discount": filtered.sort(key=lambda r:(r.get("comparable_guide_discount_pct") or -999),reverse=True)
+    elif sort == "Biggest discount": filtered.sort(key=lambda r:(guide_to_value_discount(r) or -999),reverse=True)
     elif sort == "Lowest guide": filtered.sort(key=lambda r:r.get("guide_price") or 10**12)
+    elif sort == "Soonest auction": filtered.sort(key=lambda r:(str(r.get("auction_date") or "9999-12-31"), -(float(r.get("browse_score") or 0))))
     else: filtered.sort(key=lambda r:str(r.get("first_seen") or ""),reverse=True)
 
     render_compare_tray(feed_rows)
@@ -1785,7 +1966,7 @@ def render_feed(feed_rows, shortlist_only=False):
         st.dataframe(frame, hide_index=True, use_container_width=True, height=720, column_config={
             "Lotly Score": st.column_config.NumberColumn(format="%.1f"), "Guide": st.column_config.NumberColumn(format="GBP %d"),
             "Opening offer": st.column_config.NumberColumn(format="GBP %d"), "Max buy": st.column_config.NumberColumn(format="GBP %d"),
-            "Desktop value": st.column_config.NumberColumn(format="GBP %d"), "Profit / equity": st.column_config.NumberColumn(format="GBP %d"),
+            "Estimated value": st.column_config.NumberColumn(format="GBP %d"), "Profit / equity": st.column_config.NumberColumn(format="GBP %d"),
             "Seller motivation": st.column_config.NumberColumn(format="%.1f"), "Guide reduction %": st.column_config.NumberColumn(format="%.1f%%"),
             "Comparable confidence %": st.column_config.NumberColumn(format="%d%%"), "Legal pack %": st.column_config.ProgressColumn(min_value=0,max_value=100,format="%d%%"),
             "Listing": st.column_config.LinkColumn("Auction listing"),

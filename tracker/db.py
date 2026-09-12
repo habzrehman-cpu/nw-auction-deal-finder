@@ -266,6 +266,11 @@ CREATE TABLE IF NOT EXISTS shortlist (
   added_at TEXT NOT NULL,
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL
+);
 """
 
 PROPERTY_MIGRATIONS = {
@@ -1105,3 +1110,20 @@ class Database:
             return [dict(r) for r in con.execute(
                 "SELECT * FROM refresh_runs ORDER BY id DESC LIMIT 16"
             ).fetchall()]
+
+    def get_app_state(self, key, default=None):
+        with closing(self.connect()) as con:
+            row = con.execute("SELECT value FROM app_state WHERE key=?", (key,)).fetchone()
+            return row["value"] if row else default
+
+    def set_app_state(self, key, value):
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """
+                INSERT INTO app_state(key,value,updated_at) VALUES(?,?,?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+                """,
+                (key, str(value) if value is not None else "", now),
+            )
+            con.commit()

@@ -1,5 +1,20 @@
 # Lotly
 
+**Property Auction Intelligence** — Find your next opportunity.
+
+## Lotly v1.12.1
+Finished-product polish release. The discovery experience is now tuned for professional buyers who need to identify the strongest opportunities in seconds: one compact Lotly brand in navigation, fixed-ratio imagery and branded placeholders, consistent Lotly Score treatment, estimated-value framing, visible guide-to-value discount, compact badge prioritisation, sticky market/search/sort controls, a persistent "since your last visit" market brief, and a clearer Today summary. The v1.10.3 evidence firewall/revalidation rules remain intact underneath the customer experience.
+
+### v1.12.1 experience principles
+- The property is the hero: no duplicate masthead branding above the feed.
+- Guide, estimated value, max buy and potential profit are visible without opening diligence.
+- Only the three most decision-relevant badges are shown on browse cards; extra signals are disclosed on demand.
+- New, reduced and newly post-auction opportunities are highlighted from persistent history.
+- Discovery controls stay within reach while scanning long result sets.
+- Risk red remains reserved for blockers; teal carries brand interaction and selection.
+
+# Lotly
+
 ## v1.10.3 - Evidence Revalidation & Purge
 
 Version 1.10.3 is the final evidence-cleanup pass before broader day-to-day user testing. It fixes the case where an older build had already saved a wrongly trusted document: the newer Property Identity Lock could quarantine new fields, but stale derived evidence such as rent, contacts, company identity or legal-risk findings could remain in the persistent database.

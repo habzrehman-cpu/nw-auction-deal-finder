@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+auction_tracker.db
+auction_tracker.db-*
+.streamlit/secrets.toml
+.env
+.DS_Store
