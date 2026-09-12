@@ -1,4 +1,4 @@
-# North West Property Auction Deal Finder
+# Lotly
 
 ## v1.10.3 - Evidence Revalidation & Purge
 

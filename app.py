@@ -31,15 +31,19 @@ COMMERCIAL_TYPES = {"industrial", "commercial", "mixed use", "development", "lan
 SOLD_STATES = {"sold", "sold prior", "sold after"}
 UNSOLD_STATES = {"Available post-auction", "No Bids", "Last Bid", "Unsold"}
 
-st.set_page_config(page_title="NW Auction Deal Finder", page_icon="\U0001f3e0", layout="wide")
+ASSET_DIR = Path(__file__).with_name("assets")
+LOTLY_LOGO = ASSET_DIR / "lotly_logo.png"
+LOTLY_ICON = ASSET_DIR / "lotly_icon.png"
+
+st.set_page_config(page_title="Lotly | Property Auction Intelligence", page_icon="🏷️", layout="wide")
 
 st.markdown(
     """
 <style>
-:root {--ink:#172033;--muted:#667085;--line:#e6eaf0;--panel:#ffffff;--soft:#f7f9fc;--accent:#ef4f4f;--good:#16794a;--warn:#9a6700;--risk:#b42318;}
-.stApp {background:#f6f8fb;}
+:root {--ink:#0b1f33;--muted:#667085;--line:#e4e9ef;--panel:#ffffff;--soft:#f7fafb;--accent:#0f8f83;--accent2:#2dd4bf;--good:#147d5b;--warn:#9a6700;--risk:#b42318;}
+.stApp {background:linear-gradient(180deg,#fbfdfd 0%,#f7f9fb 100%);}
 .block-container {padding-top: 1.0rem; padding-bottom: 4rem; max-width: 1480px;}
-[data-testid="stSidebar"] {background:#fbfcfe; border-right:1px solid #e8ecf2;}
+[data-testid="stSidebar"] {background:#fbfdfd; border-right:1px solid #e4e9ef;}
 [data-testid="stSidebar"] .block-container {padding-top:.8rem;}
 [data-testid="stMetric"] {background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow:0 1px 2px rgba(16,24,40,.03);}
 [data-testid="stMetricLabel"] {font-size: 0.75rem; color: var(--muted);}
@@ -78,6 +82,15 @@ div.stButton > button, div.stLinkButton > a {border-radius:10px;min-height:42px;
 [data-testid="stSegmentedControl"] {margin-bottom:.25rem;}
 [data-testid="stHorizontalBlock"] {gap:.7rem;}
 hr {margin: 1rem 0;}
+.lotly-brandbar {display:flex;align-items:center;gap:14px;margin:2px 0 10px 0;}
+.lotly-kicker {font-size:.76rem;font-weight:780;letter-spacing:.11em;text-transform:uppercase;color:#0f8f83;margin-bottom:5px;}
+.lotly-title {font-size:2.35rem;font-weight:840;letter-spacing:-.04em;line-height:1.05;color:#0b1f33;margin:0 0 7px 0;}
+.lotly-subtitle {font-size:1rem;color:#667085;max-width:900px;line-height:1.5;}
+.lotly-trust {display:inline-flex;align-items:center;gap:7px;background:#ecfdf7;color:#116149;border:1px solid #b7ead6;border-radius:999px;padding:5px 10px;font-size:.76rem;font-weight:700;margin-top:10px;}
+div.stButton > button[kind="primary"] {background:linear-gradient(135deg,#0f8f83,#0b756d)!important;border-color:#0b756d!important;color:#fff!important;box-shadow:0 6px 16px rgba(15,143,131,.16);}
+div.stButton > button[kind="primary"]:hover {background:linear-gradient(135deg,#0b8278,#09675f)!important;}
+[data-baseweb="tab-highlight"] {background-color:#0f8f83!important;}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -305,8 +318,10 @@ def render_refresh_summary():
 
 # Sidebar keeps strategy visible and moves technical settings into compact groups.
 with st.sidebar:
-    st.markdown("### Deal workspace")
-    st.caption("Set your acquisition rules once, then work from the ranked deal feed.")
+    if LOTLY_LOGO.exists():
+        st.image(str(LOTLY_LOGO), width=175)
+    st.markdown("### Lotly workspace")
+    st.caption("Set your buying criteria once. Lotly ranks live auction opportunities around how you actually invest.")
 
     with st.expander("Acquisition strategy", expanded=True):
         commercial_target_psf = st.number_input("Commercial target GBP/sq ft", min_value=1, value=50, step=5)
@@ -384,7 +399,15 @@ underwriting_defaults = UnderwritingDefaults(
 )
 
 # Header and refresh controls.
-st.markdown('<div class="auction-hero"><h1>North West Auction Deal Finder</h1><div class="muted">Live auction stock ranked for acquisition, with valuation, auction history, planning and legal-pack intelligence.</div></div>', unsafe_allow_html=True)
+if LOTLY_LOGO.exists():
+    st.image(str(LOTLY_LOGO), width=230)
+st.markdown(
+    '<div class="auction-hero"><div class="lotly-kicker">Property Auction Intelligence</div>'
+    '<div class="lotly-title">Find your next opportunity.</div>'
+    '<div class="lotly-subtitle">Live auction stock ranked around value, seller motivation, evidence quality and risk — so you can move from discovery to decision faster.</div>'
+    '<div class="lotly-trust">● Evidence-led deal sourcing</div></div>',
+    unsafe_allow_html=True,
+)
 head1, head2, head3, head4 = st.columns([1.05, 1.0, 1.0, 2.7])
 with head1:
     if st.button("Refresh live data", type="primary", use_container_width=True):
@@ -1429,7 +1452,7 @@ def render_deal_room(chosen):
             st.info("Postcode coordinates not yet available.")
 
     with tabs[7]:
-        st.markdown("### Deal workspace")
+        st.markdown("### Lotly workspace")
         brief = deal_brief_markdown(chosen, story, readiness, actions)
         st.download_button(
             "Download one-page deal brief", brief,
@@ -1500,7 +1523,7 @@ selected = next((r for r in rows if r.get("id") == selected_id), None) if select
 if selected:
     render_deal_room(selected)
 elif not rows:
-    st.info("No auction stock has been collected yet. Click Refresh live data to build the first live North West catalogue.")
+    st.info("Lotly has not built the live opportunity feed yet. Click Refresh live data to pull the first auction catalogue.")
 else:
     # Modern deal-feed experience: fast scan first, deep diligence second.
     st.markdown('<div class="eyebrow">Live opportunity feed</div><div class="muted">Ranked around your acquisition strategy, not just auction date. Use the quick views to move from discovery to diligence.</div>', unsafe_allow_html=True)
@@ -1657,6 +1680,6 @@ else:
         })
 
 st.caption(
-    "Acquisition triage only. Auctioneer listings and the latest legal pack/addendum remain authoritative. "
+    "Lotly is an acquisition-intelligence tool. Auctioneer listings and the latest legal pack/addendum remain authoritative. "
     "Automated valuation, planning and risk outputs are evidence screens, not RICS valuation, legal or tax advice."
 )
