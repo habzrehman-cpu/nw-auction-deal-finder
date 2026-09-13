@@ -219,13 +219,14 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:
     unsafe_allow_html=True,
 )
 
-# v1.12.4 — approved Discover design. This layer deliberately overrides the
+# v1.12.6 — approved Discover design with robust hero rendering. This layer deliberately overrides the
 # generic Streamlit shell while leaving the underlying data/decision logic intact.
 st.markdown(
     """
 <style>
 /* App shell */
 [data-testid="stHeader"] {display:none!important;}
+[data-testid="stMain"], [data-testid="stMainBlockContainer"] {padding-top:0!important;margin-top:0!important;}
 .block-container {padding-top:0!important;padding-left:1.7rem!important;padding-right:1.7rem!important;padding-bottom:3rem!important;max-width:none!important;}
 [data-testid="stSidebar"] {background:#FBFDFD!important;border-right:1px solid #E3E9ED!important;width:252px!important;min-width:252px!important;max-width:252px!important;}
 [data-testid="stSidebarHeader"] {display:none!important;height:0!important;min-height:0!important;}
@@ -263,22 +264,18 @@ st.markdown(
 .tb-chevron {font-size:.82rem;color:#0B1F33;}
 
 /* Full-width approved hero with houses + diagonal mint treatment */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker),
-div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) {position:relative!important;overflow:hidden!important;border:0!important;border-radius:0!important;padding:0!important;margin:0 0 10px!important;box-shadow:none!important;background:linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 47%,#F3FCFA 72%,#E8F8F4 100%)!important;}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) > div,
-div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) > div {background:transparent!important;position:relative;z-index:2;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {position:relative!important;overflow:hidden!important;border:0!important;border-radius:0!important;padding:0!important;margin:-1rem 0 10px!important;box-shadow:none!important;background:linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 47%,#F3FCFA 72%,#E8F8F4 100%)!important;min-height:158px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) > div {background:transparent!important;position:relative;z-index:2;}
 .lotly-hero-marker {height:0;display:block;}
-.hero-house-art {position:absolute;z-index:0;right:0;top:0;width:58%;height:100%;object-fit:cover;object-position:right center;pointer-events:none;user-select:none;}
+.hero-house-art {display:none!important;}
 .hero-copy {position:relative;z-index:3;padding:11px 8px 12px 7px;min-height:111px;}
 .hero-copy .lotly-kicker {font-size:.65rem!important;color:#73859B!important;letter-spacing:.16em!important;margin:0 0 8px!important;}
 .hero-copy .lotly-title {font-size:2.30rem!important;line-height:1.02!important;margin:0 0 7px!important;letter-spacing:-.052em!important;}
 .hero-copy .lotly-subtitle {font-size:.88rem!important;color:#61748B!important;max-width:650px!important;line-height:1.40!important;}
 .hero-right-space {height:20px;}
 .hero-updated {text-align:right;font-size:.62rem;font-weight:760;color:#FFFFFF;text-shadow:0 1px 6px rgba(11,31,51,.32);margin-top:5px;padding-right:4px;}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"],
-div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) [data-testid="stPopover"] {position:relative;z-index:4;}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] button,
-div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) [data-testid="stPopover"] button {background:rgba(255,255,255,.96)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] {position:relative;z-index:4;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] button {background:rgba(255,255,255,.96)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
 
 /* KPI row */
 .kpi-strip {gap:12px!important;margin:0 0 14px!important;}
@@ -308,7 +305,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-
 /* Property cards matching the approved two-column design */
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:100%;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;}
 .lotly-dashboard-card-marker {height:0;display:block;}
-.property-image-shell.dashboard {height:265px!important;border-radius:11px!important;}
+.property-image-shell.dashboard {height:252px!important;border-radius:11px!important;}
 .dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .property-title {font-size:.93rem!important;line-height:1.25!important;margin:2px 0 5px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-sub {font-size:.64rem!important;margin-bottom:4px!important;}
@@ -329,17 +326,34 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
 /* Make the first screen read like the approved mockup. */
 @media (min-width: 1200px) {
   .block-container {padding-left:1.65rem!important;padding-right:1.65rem!important;}
-  .property-image-shell.dashboard {height:265px!important;}
+  .property-image-shell.dashboard {height:252px!important;}
 }
 @media (max-width: 1100px) {
   [data-testid="stSidebar"] {min-width:228px!important;max-width:228px!important;}
   .hero-copy .lotly-title {font-size:2rem!important;}
-  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {background-size:auto,auto,auto,58% 100%!important;}
 }
 </style>
 """,
     unsafe_allow_html=True,
 )
+
+# The hero artwork is applied to the exact Streamlit container as a CSS background.
+# This is more reliable than an absolutely positioned HTML image because Streamlit
+# wraps Markdown elements in additional positioned nodes that can collapse image height.
+if HERO_HOUSES_DATA_URI:
+    st.markdown(
+        f"""
+<style>
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {{
+  background-image:url('{HERO_HOUSES_DATA_URI}'),linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 46%,#F7FCFB 67%,#EAF8F5 100%)!important;
+  background-size:62% auto,100% 100%!important;
+  background-position:right center,center center!important;
+  background-repeat:no-repeat,no-repeat!important;
+}}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
 
 DB_PATH = Path(os.environ.get("AUCTION_DB_PATH", str(Path(__file__).with_name("auction_tracker.db"))))
 
@@ -746,9 +760,8 @@ if not deal_open and lotly_page in {"Discover", "Shortlist"}:
     if runs:
         raw_ts = str(runs[0].get("completed_at") or runs[0].get("started_at") or "")
         latest_text = raw_ts[0:16].replace("T", " ") if len(raw_ts) >= 16 else raw_ts
-    with st.container(border=False):
-        hero_art = f'<img class="hero-house-art" src="{HERO_HOUSES_DATA_URI}" alt="" aria-hidden="true">' if HERO_HOUSES_DATA_URI else ''
-        st.markdown('<span class="lotly-hero-marker"></span>' + hero_art, unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<span class="lotly-hero-marker"></span>', unsafe_allow_html=True)
         hleft, hright = st.columns([4.7, 1.35], vertical_alignment="top")
         with hleft:
             st.markdown(
