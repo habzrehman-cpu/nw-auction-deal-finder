@@ -214,6 +214,11 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:
   div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-sticky-anchor) {position:relative;top:auto;}
   .property-image-shell,.property-image-shell.featured {height:220px;}
 }
+
+/* v1.12.8: keep paired Discover listings precisely aligned */
+.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] {align-items:stretch!important;}
+.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {display:flex!important;flex-direction:column!important;}
+.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > div {height:100%!important;}
 </style>
 """,
     unsafe_allow_html=True,
@@ -303,16 +308,21 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-
 .opportunity-count {font-size:.82rem;font-weight:790;color:#17324B;}
 
 /* Property cards matching the approved two-column design */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:100%;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:100%;min-height:520px;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;}
 .lotly-dashboard-card-marker {height:0;display:block;}
 .property-image-shell.dashboard {height:252px!important;border-radius:11px!important;}
-.dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;}
+.dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;min-height:14px;}
+.dashboard-kicker.ghost {visibility:hidden;}
+.dashboard-header-zone {min-height:88px;}
+.dashboard-badge-zone {min-height:52px;display:flex;align-content:flex-start;align-items:flex-start;flex-wrap:wrap;}
+.dashboard-confidence-zone {min-height:23px;}
+.dashboard-reason-zone {min-height:54px;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .property-title {font-size:.93rem!important;line-height:1.25!important;margin:2px 0 5px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-sub {font-size:.64rem!important;margin-bottom:4px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-timing {font-size:.61rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .badge {font-size:.58rem!important;padding:4px 7px!important;margin:2px 3px 2px 0!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-grid-4 {gap:5px!important;margin:7px 0 4px!important;}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini {min-height:56px!important;padding:7px 7px!important;border-radius:10px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini {min-height:62px!important;padding:7px 7px!important;border-radius:10px!important;display:flex!important;flex-direction:column!important;justify-content:space-between!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini .label {font-size:.55rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini .value {font-size:.84rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .confidence-line {font-size:.62rem!important;margin-top:5px!important;}
@@ -740,7 +750,7 @@ with st.sidebar:
         <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
         st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-version">Lotly v1.12.7</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-version">Lotly v1.12.8</div>', unsafe_allow_html=True)
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -1122,12 +1132,11 @@ def render_featured_property(row):
 
 
 def render_dashboard_card(row, top_opportunity=False):
-    """Two-column Discover card matching the approved Lotly dashboard design."""
+    """Two-column Discover card with deterministic vertical alignment across every row."""
     with st.container(border=True):
         st.markdown('<span class="lotly-dashboard-card-marker"></span>', unsafe_allow_html=True)
         image_col, body_col = st.columns([1.06, 1.66], vertical_alignment="top")
         with image_col:
-            # The approved design uses a tall image block at the left of each card.
             css_class = "property-image-shell dashboard"
             image_url = str(row.get("image_url") or "").strip()
             ribbon = ""
@@ -1145,16 +1154,22 @@ def render_dashboard_card(row, top_opportunity=False):
         with body_col:
             top_l, top_r = st.columns([4.3, 1.05], vertical_alignment="top")
             with top_l:
-                if top_opportunity:
-                    st.markdown('<div class="dashboard-kicker">Top opportunity</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} · Lot {row.get("lot_number") or "-"} · {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="property-title">{clean_address(row)}</div>', unsafe_allow_html=True)
+                kicker = '<div class="dashboard-kicker">Top opportunity</div>' if top_opportunity else '<div class="dashboard-kicker ghost">Top opportunity</div>'
+                header_html = (
+                    '<div class="dashboard-header-zone">'
+                    + kicker
+                    + f'<div class="card-sub">{html.escape(str(row.get("source") or "Auction"))} · Lot {html.escape(str(row.get("lot_number") or "-"))} · {html.escape(str(row.get("property_type") or "Property"))}</div>'
+                    + f'<div class="property-title">{html.escape(clean_address(row))}</div>'
+                    + '</div>'
+                )
+                st.markdown(header_html, unsafe_allow_html=True)
             with top_r:
                 st.markdown(f'<div style="display:flex;justify-content:flex-end"><div class="lotly-score-mini"><div class="num">{float(row.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div></div>', unsafe_allow_html=True)
-            render_badges(row, limit=3)
+            st.markdown(f'<div class="dashboard-badge-zone">{badges_html(row, limit=3)}</div>', unsafe_allow_html=True)
             st.markdown(metric_grid_html(row), unsafe_allow_html=True)
-            st.markdown(confidence_html(row), unsafe_allow_html=True)
-            st.markdown(f'<div class="card-reason"><strong>Why Lotly likes it:</strong> {top_deal_reason(row)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="dashboard-confidence-zone">{confidence_html(row)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="dashboard-reason-zone"><div class="card-reason"><strong>Why Lotly likes it:</strong> {html.escape(top_deal_reason(row))}</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="dashboard-actions"></div>', unsafe_allow_html=True)
         b1, b2, b3, b4 = st.columns([1.4, 1.08, 1.08, .98])
         with b1:
             if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
@@ -1170,6 +1185,7 @@ def render_dashboard_card(row, top_opportunity=False):
             label = "✓ Compare" if row["id"] in set(st.session_state.get("compare_ids", [])) else "+ Compare"
             if st.button(label, key=f"dash_compare_{row['id']}", use_container_width=True):
                 toggle_compare(row)
+
 
 def render_compact_card(row):
     with st.container(border=True):
@@ -1208,10 +1224,10 @@ def render_compact_card(row):
                 toggle_compare(row)
 
 
-def render_badges(row, limit=None):
+def badges_html(row, limit=None):
     tags = []
     def add(priority, label, css=""):
-        tags.append((priority, f'<span class="badge {css}">{label}</span>'))
+        tags.append((priority, f'<span class="badge {css}">{html.escape(str(label))}</span>'))
     if row.get("status"):
         css = "badge-hot" if is_unsold(row) or row.get("status") == "Relisted" else ""
         add(100, row.get("status"), css)
@@ -1239,7 +1255,11 @@ def render_badges(row, limit=None):
     html_tags = [x[1] for x in visible]
     if limit is not None and len(tags) > limit:
         html_tags.append(f'<span class="badge badge-more">+{len(tags)-limit} more</span>')
-    st.markdown("".join(html_tags), unsafe_allow_html=True)
+    return "".join(html_tags)
+
+
+def render_badges(row, limit=None):
+    st.markdown(badges_html(row, limit=limit), unsafe_allow_html=True)
 
 
 def score_label(score):
@@ -2365,13 +2385,15 @@ def render_feed(feed_rows, shortlist_only=False):
         })
     else:
         card_rows = filtered[:24]
-        for i in range(0, len(card_rows), 2):
-            cols = st.columns(2, gap="small")
-            with cols[0]:
-                render_dashboard_card(card_rows[i], top_opportunity=(i == 0 and not shortlist_only and view == "For you"))
-            if i + 1 < len(card_rows):
-                with cols[1]:
-                    render_dashboard_card(card_rows[i+1], top_opportunity=False)
+        with st.container(key="lotly_cards_grid"):
+            for i in range(0, len(card_rows), 2):
+                with st.container(key=f"lotly_card_row_{i//2}"):
+                    cols = st.columns(2, gap="small")
+                    with cols[0]:
+                        render_dashboard_card(card_rows[i], top_opportunity=(i == 0 and not shortlist_only and view == "For you"))
+                    if i + 1 < len(card_rows):
+                        with cols[1]:
+                            render_dashboard_card(card_rows[i+1], top_opportunity=False)
         if len(filtered) > len(card_rows):
             st.caption("Showing the strongest opportunities first. Use Table for the complete result set.")
 
