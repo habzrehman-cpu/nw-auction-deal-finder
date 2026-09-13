@@ -44,6 +44,7 @@ def _asset_data_uri(path):
         return ""
 
 LOTLY_ICON_DATA_URI = _asset_data_uri(LOTLY_ICON)
+LOTLY_LOGO_DATA_URI = _asset_data_uri(LOTLY_LOGO)
 
 st.set_page_config(page_title="Lotly | Property Auction Intelligence", page_icon=str(LOTLY_ICON) if LOTLY_ICON.exists() else "🏷️", layout="wide", initial_sidebar_state="expanded")
 
@@ -67,6 +68,24 @@ html, body, [class*="css"] {font-family:Inter,ui-sans-serif,system-ui,-apple-sys
 footer {visibility:hidden;}
 
 /* Navigation */
+.sidebar-brand-hero {
+  position:relative;overflow:hidden;min-height:142px;
+  margin:-1.15rem -.85rem 14px;padding:20px 16px 17px;
+  background:linear-gradient(138deg,#082E35 0%,#086B65 48%,#12A895 100%);
+  border-bottom-right-radius:24px;box-shadow:0 12px 30px rgba(5,55,58,.18);
+}
+.sidebar-brand-hero:before {
+  content:"";position:absolute;inset:0;opacity:.92;background-size:cover;background-position:center bottom;background-repeat:no-repeat;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 160'%3E%3Cg fill='%23FFFFFF' fill-opacity='.075'%3E%3Cpath d='M-12 137V83l38-28 34 24V55l29-22 34 26v26l38-30 45 34v-17l29-21 31 23v63z'/%3E%3Cpath d='M18 137V94h20v43zm56 0V75h22v62zm53 0V99h19v38zm55 0V89h22v48zm56 0V86h20v51z' fill-opacity='.055'/%3E%3C/g%3E%3Cg fill='none' stroke='%23FFFFFF' stroke-opacity='.10' stroke-width='2'%3E%3Cpath d='M-5 87l31-23 34 24 29-22 34 26 38-29 45 34 29-21 36 27'/%3E%3Cpath d='M9 108h38M70 91h40M126 108h39M181 103h42M235 100h37'/%3E%3C/g%3E%3C/svg%3E");
+}
+.sidebar-brand-hero:after {content:"";position:absolute;right:-46px;top:-54px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(120,255,224,.24),rgba(120,255,224,0) 70%);}
+.sidebar-brand-content {position:relative;z-index:2;display:flex;align-items:center;gap:11px;}
+.sidebar-brand-mark {width:50px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:15px;background:rgba(255,255,255,.96);box-shadow:0 8px 22px rgba(4,37,42,.20);border:1px solid rgba(255,255,255,.58);flex:0 0 auto;}
+.sidebar-brand-mark img {width:43px;height:43px;object-fit:contain;}
+.sidebar-brand-name {font-size:1.34rem;font-weight:880;letter-spacing:-.045em;color:#FFFFFF;line-height:1;}
+.sidebar-brand-sub {font-size:.64rem;color:rgba(255,255,255,.78);margin-top:5px;line-height:1.25;font-weight:650;}
+.sidebar-brand-line {position:relative;z-index:2;width:36px;height:2px;border-radius:99px;background:rgba(153,255,229,.75);margin:14px 0 8px;}
+.sidebar-brand-tag {position:relative;z-index:2;font-size:.61rem;line-height:1.35;color:rgba(255,255,255,.72);max-width:170px;}
 .side-brand {display:flex;align-items:center;gap:10px;padding:4px 2px 14px;}
 .side-brand-name {font-size:1.15rem;font-weight:850;letter-spacing:-.035em;color:var(--ink);line-height:1;}
 .side-brand-sub {font-size:.68rem;color:var(--muted);margin-top:3px;}
@@ -520,13 +539,18 @@ _nav_icons = {
 }
 
 with st.sidebar:
-    brand_col, name_col = st.columns([0.30, 0.70], vertical_alignment="center")
-    with brand_col:
-        if LOTLY_ICON.exists():
-            st.image(str(LOTLY_ICON), width=46)
-    with name_col:
-        st.markdown('<div class="side-brand-name">Lotly</div><div class="side-brand-sub">Property Auction Intelligence</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-scope">Professional auction sourcing, underwriting and due-diligence intelligence.</div>', unsafe_allow_html=True)
+    brand_img = f'<img src="{LOTLY_ICON_DATA_URI}" alt="Lotly">' if LOTLY_ICON_DATA_URI else '<span style="font-size:1.45rem">◇</span>'
+    brand_html = (
+        '<div class="sidebar-brand-hero">'
+        '<div class="sidebar-brand-content">'
+        f'<div class="sidebar-brand-mark">{brand_img}</div>'
+        '<div><div class="sidebar-brand-name">Lotly</div><div class="sidebar-brand-sub">Property Auction<br>Intelligence</div></div>'
+        '</div>'
+        '<div class="sidebar-brand-line"></div>'
+        '<div class="sidebar-brand-tag">Find opportunity first. Evidence-led auction intelligence for serious buyers.</div>'
+        '</div>'
+    )
+    st.markdown(brand_html, unsafe_allow_html=True)
     st.markdown('<div class="side-section">Workspace</div>', unsafe_allow_html=True)
     lotly_page = st.radio(
         "Navigation",
