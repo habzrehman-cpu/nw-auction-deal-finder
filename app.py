@@ -224,6 +224,27 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:
 div[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .lotly-dashboard-card-marker) {align-items:stretch!important;}
 [data-testid="stColumn"]:has(.lotly-dashboard-card-marker) {display:flex!important;flex-direction:column!important;min-width:0!important;}
 [data-testid="stColumn"]:has(.lotly-dashboard-card-marker) > div {height:100%!important;width:100%!important;}
+
+/* v1.13.3 Financials + comparable evidence */
+.deal-financial-truth {background:#FFF8E8;border:1px solid #F0D9A4;border-radius:12px;padding:10px 12px;margin:9px 0 13px;font-size:.67rem;line-height:1.45;color:#68541C;}
+.deal-financial-truth strong {color:#0B1F33;}
+.deal-scenario-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:7px 0 12px;}
+.deal-scenario-card {background:#fff;border:1px solid #E0E8EB;border-radius:13px;padding:11px 12px;min-height:126px;}
+.deal-scenario-card.final {background:#F3FAF8;border-color:#C4E7DE;}
+.deal-scenario-card .scenario-name {font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:#7A899A;font-weight:850;}
+.deal-scenario-card .scenario-price {font-size:1.2rem;font-weight:900;color:#0B1F33;letter-spacing:-.035em;margin:4px 0 8px;}
+.deal-scenario-card .scenario-line {display:flex;justify-content:space-between;gap:8px;font-size:.61rem;color:#718195;padding:2px 0;}
+.deal-scenario-card .scenario-line strong {color:#17324B;}
+.deal-scenario-card .scenario-foot {font-size:.58rem;color:#08786F;margin-top:7px;font-weight:750;}
+.deal-comp-verdict {display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:center;border-radius:13px;padding:11px 13px;margin:7px 0 12px;border:1px solid #E0E8EB;background:#fff;}
+.deal-comp-verdict.good {background:#F2FAF7;border-color:#C7E8DE}.deal-comp-verdict.warn {background:#FFF9EC;border-color:#F0D89F}.deal-comp-verdict.risk {background:#FFF3F2;border-color:#F3C7C2}
+.deal-comp-verdict .verdict-label {font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:#7A899A;font-weight:850;}
+.deal-comp-verdict .verdict-value {font-size:.96rem;font-weight:900;color:#0B1F33;margin-top:3px;}
+.deal-comp-verdict .verdict-copy {font-size:.66rem;line-height:1.42;color:#607489;}
+.deal-comp-proof-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:7px 0 10px;}
+.deal-comp-proof-card {background:#F9FBFB;border:1px solid #E3E9EB;border-radius:11px;padding:9px 10px;min-height:78px;}
+.deal-comp-proof-card .proof-label {font-size:.54rem;color:#7B899A}.deal-comp-proof-card .proof-value {font-size:.90rem;font-weight:870;color:#0B1F33;margin-top:3px}.deal-comp-proof-card .proof-sub {font-size:.56rem;line-height:1.35;color:#8390A0;margin-top:3px;}
+@media(max-width:1100px){.deal-scenario-grid,.deal-comp-proof-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-comp-verdict{grid-template-columns:1fr;}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -466,6 +487,7 @@ st.markdown(
 .deal-readiness-label {font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:#9DB0C2;margin-top:4px;}
 .deal-progress-track {height:7px;background:rgba(255,255,255,.16);border-radius:999px;margin:12px 0 10px;overflow:hidden;}
 .deal-progress-fill {height:100%;background:#31C8B2;border-radius:999px;}
+.deal-progress-fill.blocked {background:#D92D20;}
 .deal-blocker {font-size:.65rem;line-height:1.4;color:#D8E3EC;margin-top:5px;}
 .deal-facts-title {font-size:.83rem;font-weight:820;color:#0B1F33;margin:6px 0 4px;}
 
@@ -1648,7 +1670,7 @@ def render_deal_room(chosen):
                 _metric_html("Estimated value / GDV", money(estimated), f'{int(chosen.get("comparable_confidence") or 0)}% comp confidence'),
                 _metric_html("Opening offer", money(chosen.get("opening_offer")), "Negotiation starting point"),
                 _metric_html("Max buy", money(chosen.get("max_bid")), "Provisional" if chosen.get("max_bid_provisional") else "Underwritten ceiling"),
-                _metric_html("Profit / equity", money(chosen.get("profit")), pct(chosen.get("roi_pct")) + " ROI" if chosen.get("roi_pct") is not None else "Current model"),
+                _metric_html("Profit @ working price", money(chosen.get("profit")), f"At {money(chosen.get('working_purchase_price'))} purchase · {pct(chosen.get('roi_pct'))} ROI" if chosen.get("roi_pct") is not None else f"At {money(chosen.get('working_purchase_price'))} purchase"),
             ]
             st.markdown('<div class="deal-metric-grid">' + ''.join(metrics) + '</div>', unsafe_allow_html=True)
 
@@ -1709,7 +1731,7 @@ def render_deal_room(chosen):
             if guide_discount is None and guide and estimated_value:
                 guide_discount = max(0.0, (estimated_value - guide) / estimated_value * 100)
 
-            price_value = f"{float(guide_discount):.1f}% below value" if guide_discount is not None else "Not evidenced"
+            price_value = f"{float(guide_discount):.1f}% below modelled value" if guide_discount is not None else "Not evidenced"
             price_sub = f"Guide {money(guide)} vs midpoint {money(estimated_value)}" if guide and estimated_value else "Comparable evidence still required"
             auction_value = "Post-auction" if post_auction else (f"{failure_count} failed attempt{'s' if failure_count != 1 else ''}" if failure_count else "Live auction")
             auction_sub = f"{failure_count} failed-auction signal{'s' if failure_count != 1 else ''} observed" if failure_count else "No failed-auction signal recorded"
@@ -1717,9 +1739,9 @@ def render_deal_room(chosen):
             equity_sub = "Modelled profit/equity at guide" if profit_at_guide is not None else "Current underwritten model"
             signals = [
                 ("Price edge", price_value, price_sub, "good" if guide_discount is not None and float(guide_discount) >= 15 else "warn" if guide_discount is not None else ""),
-                ("Seller leverage", f"{motivation_score:.1f}/10", motivation_label, "good" if motivation_score >= 7 else "warn" if motivation_score >= 5 else ""),
+                ("Negotiation leverage", f"{motivation_score:.1f}/10", motivation_label, "good" if motivation_score >= 7 else "warn" if motivation_score >= 5 else ""),
                 ("Auction signal", auction_value, auction_sub, "good" if post_auction or failure_count else ""),
-                ("Potential margin", equity_value, equity_sub, "good" if float(profit_at_guide or chosen.get("profit") or 0) > 0 else "warn"),
+                ("Profit @ guide" if profit_at_guide is not None else "Modelled profit/equity", equity_value, equity_sub, "good" if float(profit_at_guide or chosen.get("profit") or 0) > 0 else "warn"),
             ]
             signal_html = ''.join(
                 f'<div class="deal-signal-card {tone}"><div class="eyebrow">{html.escape(label)}</div><div class="signal-value">{html.escape(str(value))}</div><div class="signal-sub">{html.escape(str(sub))}</div></div>'
@@ -1761,10 +1783,11 @@ def render_deal_room(chosen):
             blockers = readiness.get("readiness_blockers") or []
             blocker_text = '<br>'.join(html.escape(str(x)) for x in blockers[:3]) if blockers else "No automated bid blocker is currently recorded."
             readiness_pct = max(0, min(100, int(readiness.get("readiness_pct") or 0)))
+            readiness_progress_class = " blocked" if readiness_status == "BID BLOCKED" else ""
             st.markdown(
                 '<div class="deal-snapshot-lower">'
                 f'<div class="deal-risk-register"><h4>Risk register</h4>{risk_html}</div>'
-                f'<div class="deal-snapshot-card deal-readiness-card deal-readiness-compact"><h4>Decision readiness</h4><div class="deal-readiness-score">{readiness_pct}%</div><div class="deal-readiness-label">{html.escape(readiness_status)}</div><div class="deal-progress-track"><div class="deal-progress-fill" style="width:{readiness_pct}%"></div></div><div class="deal-blocker">{blocker_text}</div></div>'
+                f'<div class="deal-snapshot-card deal-readiness-card deal-readiness-compact"><h4>Decision readiness</h4><div class="deal-readiness-score">{readiness_pct}%</div><div class="deal-readiness-label">{html.escape(readiness_status)}</div><div class="deal-progress-track"><div class="deal-progress-fill{readiness_progress_class}" style="width:{readiness_pct}%"></div></div><div class="deal-blocker">{blocker_text}</div></div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
@@ -1972,25 +1995,46 @@ def render_deal_room(chosen):
             st.caption("Only professional/business contact details found in the supplied/public legal evidence are surfaced here; the app does not hunt for private personal contact details.")
 
     with tabs[2]:
+        strategy = "commercial" if is_commercial(chosen) else "residential"
+        saved = db.underwriting_for(chosen["id"])
+        working_price = float(chosen.get("working_purchase_price") or 0)
+        guide_price = float(chosen.get("guide_price") or 0)
+        max_bid = float(chosen.get("max_bid") or 0)
+        market_value = float(chosen.get("market_value") or chosen.get("comparable_valuation_mid") or 0)
+        working_profit = chosen.get("profit")
+        guide_profit = chosen.get("profit_at_guide")
+
         f1, f2, f3, f4, f5 = st.columns(5)
-        f1.metric("Working purchase", money(chosen.get("working_purchase_price")))
-        f2.metric("All-in cost", money(chosen.get("all_in_cost")))
-        f3.metric("Max bid", money(chosen.get("max_bid")))
-        f4.metric("Profit / equity", money(chosen.get("profit")))
+        f1.metric("Working purchase", money(working_price))
+        f2.metric("All-in @ working price", money(chosen.get("all_in_cost")))
+        f3.metric("Maximum bid", money(max_bid))
+        f4.metric("Profit @ working price", money(working_profit))
         f5.metric("Financial score", f"{chosen.get('financial_score', 0):.1f}/10")
+
+        if working_price and guide_price and working_profit is not None and guide_profit is not None and abs(working_price - guide_price) >= 1:
+            st.markdown(
+                f'<div class="deal-financial-truth"><strong>Why the profit figures differ:</strong> the current working purchase is {html.escape(money(working_price))}, producing {html.escape(money(working_profit))} modelled profit/equity. Buying at the auction guide of {html.escape(money(guide_price))} produces {html.escape(money(guide_profit))}. The value/GDV assumption is unchanged; only acquisition price and price-linked costs move.</div>',
+                unsafe_allow_html=True,
+            )
+
         if chosen.get("works_missing"):
             st.error("Works/refurbishment is indicated in the listing but the works budget is GBP 0. The return score is capped and the maximum bid is provisional until a works estimate is entered.")
         if chosen.get("detected_fee_evidence"):
             st.info("Auction fee evidence detected: " + " | ".join(chosen.get("detected_fee_evidence") or []))
 
-        st.markdown("### Purchase-price scenario compare")
-        guide = float(chosen.get("guide_price") or 0)
-        candidates = [chosen.get("opening_offer"), guide * 0.90 if guide else None, guide or None, chosen.get("max_bid")]
-        labels = ["Opening offer", "90% of guide", "Guide", "Maximum bid"]
-        saved = db.underwriting_for(chosen["id"])
+        st.markdown("### Purchase-price scenarios")
+        midpoint_price = None
+        if guide_price and max_bid and max_bid > guide_price:
+            midpoint_price = round(((guide_price + max_bid) / 2) / 5000) * 5000
+        candidates = [
+            ("Opening offer", chosen.get("opening_offer")),
+            ("Guide", guide_price or None),
+            ("Mid-ceiling", midpoint_price),
+            ("Maximum bid", max_bid or None),
+        ]
         scenario_data = []
         seen_prices = set()
-        for label, price in zip(labels, candidates):
+        for label, price in candidates:
             if not price:
                 continue
             price = int(round(float(price) / 1000) * 1000)
@@ -2000,19 +2044,40 @@ def render_deal_room(chosen):
             assumptions = dict(saved)
             assumptions["purchase_price"] = price
             result = underwrite_property(chosen, chosen, assumptions=assumptions, defaults=underwriting_defaults, strategy="auto")
+            profit_value = result.get("profit")
+            headroom = (max_bid - price) if max_bid else None
+            ceiling_state = "At ceiling" if max_bid and abs(price - max_bid) < 1000 else "Within ceiling" if max_bid and price < max_bid else "Above ceiling" if max_bid else "Ceiling pending"
             scenario_data.append({
                 "Scenario": label, "Purchase": price, "All-in": result.get("all_in_cost"),
-                "Profit/equity": result.get("profit"), "ROI %": result.get("roi_pct"),
-                "Financial score": result.get("financial_score"), "Decision": result.get("recommendation"),
+                "Profit/equity": profit_value, "ROI %": result.get("roi_pct"),
+                "Profit margin %": result.get("profit_margin_pct") if strategy == "residential" else result.get("equity_uplift_pct"),
+                "Headroom to max": headroom, "Ceiling": ceiling_state, "Decision": result.get("recommendation"),
             })
+
         if scenario_data:
-            st.dataframe(pd.DataFrame(scenario_data), hide_index=True, use_container_width=True, column_config={
-                "Purchase": st.column_config.NumberColumn(format="GBP %d"),
-                "All-in": st.column_config.NumberColumn(format="GBP %d"),
-                "Profit/equity": st.column_config.NumberColumn(format="GBP %d"),
-                "ROI %": st.column_config.NumberColumn(format="%.1f%%"),
-                "Financial score": st.column_config.NumberColumn(format="%.1f"),
-            })
+            scenario_cards = []
+            for item in scenario_data:
+                roi_text = f"{float(item.get('ROI %') or 0):.1f}% ROI" if item.get("ROI %") is not None else "ROI pending"
+                tone = "final" if item["Ceiling"] == "At ceiling" else ""
+                scenario_cards.append(
+                    f'<div class="deal-scenario-card {tone}"><div class="scenario-name">{html.escape(str(item["Scenario"]))}</div><div class="scenario-price">{html.escape(money(item["Purchase"]))}</div><div class="scenario-line"><span>All-in</span><strong>{html.escape(money(item["All-in"]))}</strong></div><div class="scenario-line"><span>Profit/equity</span><strong>{html.escape(money(item["Profit/equity"]))}</strong></div><div class="scenario-foot">{html.escape(roi_text)} · {html.escape(str(item["Ceiling"]))}</div></div>'
+                )
+            st.markdown('<div class="deal-scenario-grid">' + ''.join(scenario_cards) + '</div>', unsafe_allow_html=True)
+            with st.expander("Scenario detail table"):
+                st.dataframe(pd.DataFrame(scenario_data), hide_index=True, use_container_width=True, column_config={
+                    "Purchase": st.column_config.NumberColumn(format="GBP %d"),
+                    "All-in": st.column_config.NumberColumn(format="GBP %d"),
+                    "Profit/equity": st.column_config.NumberColumn(format="GBP %d"),
+                    "ROI %": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Profit margin %": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Headroom to max": st.column_config.NumberColumn(format="GBP %d"),
+                })
+
+        if market_value:
+            st.markdown(
+                f'<div class="deal-proof-banner"><strong>Financial basis:</strong> returns above use a current modelled value/GDV of {html.escape(money(market_value))}. This is an acquisition-screening model, not a guaranteed resale value. Change the valuation, works, finance or fee assumptions below to stress-test the ceiling.</div>',
+                unsafe_allow_html=True,
+            )
 
         underwriting_form(chosen)
         st.markdown("### Cost stack at working purchase price")
@@ -2043,23 +2108,69 @@ def render_deal_room(chosen):
                 st.rerun()
         with c2:
             st.caption(f"Provider: {chosen.get('comparable_provider') or 'Not run'} | Confidence: {int(chosen.get('comparable_confidence') or 0)}% | Usable comps: {int(chosen.get('comparable_count') or 0)}")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Low", money(chosen.get("comparable_valuation_low")))
-        c2.metric("Midpoint", money(chosen.get("comparable_valuation_mid")))
-        c3.metric("High", money(chosen.get("comparable_valuation_high")))
-        c4.metric("Guide discount", pct(chosen.get("comparable_guide_discount_pct")))
+
         _comp_count = int(chosen.get("comparable_count") or 0)
         _comp_conf = int(chosen.get("comparable_confidence") or 0)
+        _comp_low = chosen.get("comparable_valuation_low")
         _comp_mid = chosen.get("comparable_valuation_mid")
-        _proof_state = "strong" if _comp_conf >= 70 else "review" if _comp_conf >= 50 else "weak"
+        _comp_high = chosen.get("comparable_valuation_high")
+        _guide = float(chosen.get("guide_price") or 0)
+        _discount = chosen.get("comparable_guide_discount_pct")
+        if _discount is None and _guide and _comp_mid:
+            _discount = (float(_comp_mid) - _guide) / float(_comp_mid) * 100
+        _spread_pct = ((float(_comp_high) - float(_comp_low)) / float(_comp_mid) * 100) if _comp_low and _comp_high and _comp_mid else None
+        if _comp_conf >= 75 and _comp_count >= 5:
+            _verdict, _verdict_class, _verdict_text = "SUPPORTED", "good", "The modelled midpoint has a comparatively strong evidence base for desktop acquisition screening."
+        elif _comp_conf >= 60 and _comp_count >= 4:
+            _verdict, _verdict_class, _verdict_text = "USABLE WITH REVIEW", "warn", "The midpoint is usable for screening, but the local comp set should be checked before relying on it as a bid ceiling."
+        else:
+            _verdict, _verdict_class, _verdict_text = "NOT YET DEFENSIBLE", "risk", "Comparable evidence is not strong enough to support a final acquisition ceiling without additional valuation evidence."
+
         st.markdown(
-            f'<div class="deal-proof-banner"><strong>Valuation proof:</strong> midpoint {html.escape(money(_comp_mid))} from {_comp_count} usable comparable sale{"s" if _comp_count != 1 else ""}, with {_comp_conf}% evidence confidence. Evidence state: <strong>{_proof_state.upper()}</strong>. Treat the midpoint as an acquisition-screening basis, not a RICS valuation.</div>',
+            f'<div class="deal-comp-verdict {_verdict_class}"><div><div class="verdict-label">Can Lotly defend the modelled value?</div><div class="verdict-value">{html.escape(_verdict)}</div></div><div class="verdict-copy">{html.escape(_verdict_text)}</div></div>',
             unsafe_allow_html=True,
         )
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Low", money(_comp_low))
+        c2.metric("Modelled midpoint", money(_comp_mid))
+        c3.metric("High", money(_comp_high))
+        c4.metric("Guide vs midpoint", f"{float(_discount):.1f}% below" if _discount is not None else "-")
+
+        proof_cards = [
+            ("Usable comps", str(_comp_count), "Evidence retained in the model"),
+            ("Evidence confidence", f"{_comp_conf}%", "70%+ is preferred for a strong desktop screen"),
+            ("Valuation spread", f"{_spread_pct:.1f}%" if _spread_pct is not None else "-", "High spread means more uncertainty"),
+            ("Guide", money(_guide), f"vs {money(_comp_mid)} modelled midpoint"),
+        ]
+        proof_html = ''.join(
+            f'<div class="deal-comp-proof-card"><div class="proof-label">{html.escape(label)}</div><div class="proof-value">{html.escape(value)}</div><div class="proof-sub">{html.escape(sub)}</div></div>'
+            for label, value, sub in proof_cards
+        )
+        st.markdown('<div class="deal-comp-proof-grid">' + proof_html + '</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            f'<div class="deal-proof-banner"><strong>Valuation proof:</strong> modelled midpoint {html.escape(money(_comp_mid))} from {_comp_count} usable comparable sale{"s" if _comp_count != 1 else ""}, with {_comp_conf}% evidence confidence. Treat this as an acquisition-screening basis, not a RICS valuation.</div>',
+            unsafe_allow_html=True,
+        )
+
         comps = db.comparables_for(chosen["id"])
         if comps:
-            frame = pd.DataFrame([{k: r.get(k) for k in ["address", "postcode", "sale_price", "sale_date", "property_type", "tenure", "distance_miles", "price_per_sqft", "match_score"]} for r in comps])
-            st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"sale_price": st.column_config.NumberColumn(format="GBP %d"), "price_per_sqft": st.column_config.NumberColumn(format="GBP %.2f"), "distance_miles": st.column_config.NumberColumn(format="%.2f mi"), "match_score": st.column_config.NumberColumn(format="%.0f")})
+            ordered = sorted(comps, key=lambda r: float(r.get("match_score") or 0), reverse=True)
+            st.markdown("### Best-matching sold evidence")
+            top_frame = pd.DataFrame([{
+                "Address": r.get("address"), "Sold price": r.get("sale_price"), "Sold date": r.get("sale_date"),
+                "Distance": r.get("distance_miles"), "Property type": r.get("property_type"),
+                "Tenure": r.get("tenure"), "Match": r.get("match_score"),
+            } for r in ordered[:5]])
+            st.dataframe(top_frame, hide_index=True, use_container_width=True, column_config={
+                "Sold price": st.column_config.NumberColumn(format="GBP %d"),
+                "Distance": st.column_config.NumberColumn(format="%.2f mi"),
+                "Match": st.column_config.NumberColumn(format="%.0f"),
+            })
+            with st.expander("All comparable evidence"):
+                frame = pd.DataFrame([{k: r.get(k) for k in ["address", "postcode", "sale_price", "sale_date", "property_type", "tenure", "distance_miles", "price_per_sqft", "match_score"]} for r in ordered])
+                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"sale_price": st.column_config.NumberColumn(format="GBP %d"), "price_per_sqft": st.column_config.NumberColumn(format="GBP %.2f"), "distance_miles": st.column_config.NumberColumn(format="%.2f mi"), "match_score": st.column_config.NumberColumn(format="%.0f")})
         else:
             st.info("No comparable evidence stored yet.")
         for warning in chosen.get("comparable_warnings") or []:
