@@ -411,7 +411,7 @@ if HERO_HOUSES_DATA_URI:
     )
 
 
-# v1.13.1 - Deal Room navigation hotfix. Discover remains design-locked; every selector below is Deal Room scoped.
+# v1.13.2 - Deal Room decision-workspace refinement. Discover remains design-locked; every selector below is Deal Room scoped.
 st.markdown(
     """
 <style>
@@ -482,6 +482,43 @@ st.markdown(
 .deal-stage-line {font-size:.64rem;color:#5F7184;margin:5px 0 8px;}
 
 @media(max-width:1100px){.deal-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.deal-evidence-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-snapshot-grid{grid-template-columns:1fr;}.deal-index-strip{grid-template-columns:repeat(2,minmax(0,1fr));}}
+
+/* v1.13.2 Deal Room decision-summary components */
+.deal-signal-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:5px 0 12px;}
+.deal-signal-card {background:#fff;border:1px solid #E0E8EB;border-radius:13px;padding:11px 12px;min-height:86px;}
+.deal-signal-card .eyebrow {font-size:.55rem;text-transform:uppercase;letter-spacing:.09em;color:#7C8999;font-weight:800;margin-bottom:5px;}
+.deal-signal-card .signal-value {font-size:1.12rem;line-height:1.1;font-weight:900;color:#0B1F33;letter-spacing:-.035em;}
+.deal-signal-card .signal-sub {font-size:.60rem;line-height:1.32;color:#718195;margin-top:5px;}
+.deal-signal-card.good {border-color:#C8E9DF;background:#F8FCFB;}.deal-signal-card.good .signal-value{color:#08786F;}
+.deal-signal-card.warn {border-color:#F1D99E;background:#FFFDF8;}.deal-signal-card.warn .signal-value{color:#8A6200;}
+.deal-snapshot-lower {display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.65fr);gap:12px;margin:0 0 12px;}
+.deal-risk-register {background:#fff;border:1px solid #E0E8EB;border-radius:14px;padding:13px 14px;}
+.deal-risk-register h4 {font-size:.82rem;margin:0 0 9px;color:#0B1F33;}
+.deal-risk-row {display:grid;grid-template-columns:78px 135px 1fr;align-items:start;gap:9px;padding:9px 0;border-top:1px solid #EEF2F3;}
+.deal-risk-row:first-of-type {border-top:0;padding-top:2px;}
+.deal-risk-severity {display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:4px 7px;font-size:.52rem;font-weight:850;text-transform:uppercase;letter-spacing:.05em;width:max-content;}
+.deal-risk-severity.critical {background:#FDECEC;color:#B42318;border:1px solid #F6C9C5;}
+.deal-risk-severity.review {background:#FFF7E6;color:#946200;border:1px solid #F0D79A;}
+.deal-risk-severity.clear {background:#ECF9F3;color:#08786F;border:1px solid #C7E9DC;}
+.deal-risk-name {font-size:.66rem;font-weight:830;color:#17324B;line-height:1.35;}
+.deal-risk-detail {font-size:.64rem;color:#62758A;line-height:1.38;}
+.deal-readiness-compact {min-height:100%!important;padding:14px!important;}
+.deal-recommend-banner {background:linear-gradient(135deg,#F0FAF7,#FAFDFC);border:1px solid #CFE9E3;border-radius:14px;padding:12px 14px;margin:0 0 12px;}
+.deal-recommend-banner .label {font-size:.55rem;text-transform:uppercase;letter-spacing:.09em;color:#08786F;font-weight:850;margin-bottom:4px;}
+.deal-recommend-banner .action {font-size:.88rem;line-height:1.32;font-weight:850;color:#0B1F33;}
+.deal-recommend-banner .reason {font-size:.64rem;color:#607489;line-height:1.4;margin-top:4px;}
+.deal-maxbid-wrap {background:#fff;border:1px solid #E0E8EB;border-radius:14px;padding:13px 14px;margin:0 0 12px;}
+.deal-maxbid-head {display:flex;justify-content:space-between;gap:10px;align-items:end;margin-bottom:9px;}
+.deal-maxbid-head h4 {font-size:.82rem;margin:0;color:#0B1F33;}.deal-maxbid-head span{font-size:.58rem;color:#7B8999;}
+.deal-maxbid-grid {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;}
+.deal-maxbid-step {background:#F8FAFA;border:1px solid #E5EBED;border-radius:10px;padding:8px 9px;min-height:69px;}
+.deal-maxbid-step .label {font-size:.54rem;color:#7A899A;line-height:1.25;}.deal-maxbid-step .value {font-size:.82rem;font-weight:860;color:#0B1F33;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.deal-maxbid-step.final {background:#ECF9F5;border-color:#BFE4D9;}.deal-maxbid-step.final .value{color:#08786F;font-size:.94rem;}
+.deal-maxbid-note {font-size:.60rem;color:#6B7D90;line-height:1.4;margin-top:8px;}
+.deal-proof-banner {background:#F7FBFA;border:1px solid #DCEBE7;border-radius:12px;padding:10px 12px;margin:8px 0 11px;font-size:.68rem;line-height:1.42;color:#536A7D;}
+.deal-proof-banner strong {color:#0B1F33;}
+@media(max-width:1100px){.deal-signal-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-snapshot-lower{grid-template-columns:1fr;}.deal-maxbid-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-risk-row{grid-template-columns:78px 1fr;}.deal-risk-detail{grid-column:2;}}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -790,6 +827,10 @@ st.session_state.setdefault("lotly_page", "Discover")
 _pending_lotly_page = st.session_state.pop("_lotly_pending_page", None)
 if _pending_lotly_page in {"Discover", "Shortlist", "Pipeline", "Deal Room", "Reports", "Settings"}:
     st.session_state["lotly_page"] = _pending_lotly_page
+# An open property is always a Deal Room context. Apply this before the radio widget
+# is instantiated so the sidebar active state stays truthful without mutating a live widget.
+if st.session_state.get("selected_deal_id"):
+    st.session_state["lotly_page"] = "Deal Room"
 st.session_state.setdefault("compare_ids", [])
 st.session_state.setdefault("market_mode", "Residential")
 
@@ -1569,7 +1610,9 @@ def render_deal_room(chosen):
         )
 
     recommendation = str(chosen.get("recommendation") or "WATCH").upper()
-    rec_class = "pass" if recommendation == "PASS" else ("watch" if recommendation == "WATCH" else "")
+    readiness_status = str(readiness.get("readiness_status") or "Reviewing")
+    hero_decision = "DO NOT BID" if readiness_status == "BID BLOCKED" else recommendation
+    rec_class = "pass" if hero_decision in {"PASS", "DO NOT BID"} else ("watch" if hero_decision == "WATCH" else "")
     estimated = chosen.get("market_value") or chosen.get("comparable_valuation_mid")
     next_action_text = actions[0].get("action") if actions else (chosen.get("recommended_action") or "Continue due diligence")
     next_action_reason = actions[0].get("reason") if actions else "Complete the remaining evidence checks before committing capital."
@@ -1610,7 +1653,7 @@ def render_deal_room(chosen):
             st.markdown('<div class="deal-metric-grid">' + ''.join(metrics) + '</div>', unsafe_allow_html=True)
 
             st.markdown(
-                f'<div class="deal-decision-panel"><div class="deal-decision-word {rec_class}">{_safe(recommendation)}</div>'
+                f'<div class="deal-decision-panel"><div class="deal-decision-word {rec_class}">{_safe(hero_decision)}</div>'
                 f'<div class="deal-decision-copy"><strong>{_safe(readiness.get("readiness_status") or "Reviewing")}</strong> · {int(readiness.get("readiness_pct") or 0)}% decision-ready.<br>'
                 f'Next move: <strong>{_safe(next_action_text)}</strong></div></div>',
                 unsafe_allow_html=True,
@@ -1653,47 +1696,123 @@ def render_deal_room(chosen):
         tabs = st.tabs(["Snapshot", "Seller", "Financials", "Comparables", "Auction", "Legal & Planning", "Location", "Workspace"])
 
         with tabs[0]:
-            positives = []
-            positives.extend(chosen.get("reasons") or [])
-            positives.extend(chosen.get("motivation_reasons") or [])
-            if chosen.get("comparable_guide_discount_pct") is not None:
-                positives.append(f"Guide is {chosen.get('comparable_guide_discount_pct'):.1f}% below the comparable midpoint")
-            if not positives:
-                positives = ["No strong positive signal has been verified yet."]
+            guide = float(chosen.get("guide_price") or 0)
+            estimated_value = float(estimated or 0)
+            comp_conf = int(chosen.get("comparable_confidence") or 0)
+            uw_conf = int(chosen.get("underwriting_confidence") or 0)
+            motivation_score = float(chosen.get("motivation_score") or 0)
+            motivation_label = str(chosen.get("motivation_label") or "Automated seller signal")
+            failure_count = int(chosen.get("failure_count") or 0)
+            post_auction = bool(is_unsold(chosen))
+            profit_at_guide = chosen.get("profit_at_guide")
+            guide_discount = chosen.get("comparable_guide_discount_pct")
+            if guide_discount is None and guide and estimated_value:
+                guide_discount = max(0.0, (estimated_value - guide) / estimated_value * 100)
 
-            concerns = []
-            concerns.extend(chosen.get("underwriting_warnings") or [])
-            concerns.extend(chosen.get("warnings") or [])
-            if legal_state(chosen) != "VERIFIED":
-                concerns.insert(0, "Authoritative lot-bound legal evidence is not yet verified.")
-            elif int(chosen.get("legal_pack_completeness_pct") or 0) < 100:
-                concerns.insert(0, "Verified legal evidence is partial; the core pack is incomplete.")
-            if planning_state(chosen) != "SCREENED":
-                concerns.insert(0, "Planning screening is incomplete.")
-            if not concerns:
-                concerns = ["No major automated warning is recorded; normal auction due diligence still applies."]
+            price_value = f"{float(guide_discount):.1f}% below value" if guide_discount is not None else "Not evidenced"
+            price_sub = f"Guide {money(guide)} vs midpoint {money(estimated_value)}" if guide and estimated_value else "Comparable evidence still required"
+            auction_value = "Post-auction" if post_auction else (f"{failure_count} failed attempt{'s' if failure_count != 1 else ''}" if failure_count else "Live auction")
+            auction_sub = f"{failure_count} failed-auction signal{'s' if failure_count != 1 else ''} observed" if failure_count else "No failed-auction signal recorded"
+            equity_value = money(profit_at_guide if profit_at_guide is not None else chosen.get("profit"))
+            equity_sub = "Modelled profit/equity at guide" if profit_at_guide is not None else "Current underwritten model"
+            signals = [
+                ("Price edge", price_value, price_sub, "good" if guide_discount is not None and float(guide_discount) >= 15 else "warn" if guide_discount is not None else ""),
+                ("Seller leverage", f"{motivation_score:.1f}/10", motivation_label, "good" if motivation_score >= 7 else "warn" if motivation_score >= 5 else ""),
+                ("Auction signal", auction_value, auction_sub, "good" if post_auction or failure_count else ""),
+                ("Potential margin", equity_value, equity_sub, "good" if float(profit_at_guide or chosen.get("profit") or 0) > 0 else "warn"),
+            ]
+            signal_html = ''.join(
+                f'<div class="deal-signal-card {tone}"><div class="eyebrow">{html.escape(label)}</div><div class="signal-value">{html.escape(str(value))}</div><div class="signal-sub">{html.escape(str(sub))}</div></div>'
+                for label, value, sub, tone in signals
+            )
+            st.markdown('<div class="deal-facts-title">Investment signals</div><div class="deal-signal-grid">' + signal_html + '</div>', unsafe_allow_html=True)
 
-            positive_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in positives[:6])
-            concern_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in concerns[:6])
+            legal_status = legal_state(chosen)
+            legal_complete = legal_status == "VERIFIED" and int(chosen.get("legal_pack_completeness_pct") or 0) >= 100 and not chosen.get("legal_pack_changed")
+            planning_status = planning_state(chosen)
+            risks = []
+            if not legal_complete:
+                risks.append(("critical", "Legal pack", "Bid blocker: authoritative lot-bound legal evidence is missing, incomplete or requires re-review."))
+            else:
+                risks.append(("clear", "Legal pack", "Core legal pack is verified and complete under the current evidence policy."))
+            if planning_status == "SCREENED":
+                risks.append(("clear", "Planning", "Official planning screen has been run; review any returned constraints in Legal & Planning."))
+            else:
+                risks.append(("review", "Planning", "Planning screening is incomplete, so planning/designation risk is not yet closed."))
+            if comp_conf >= 70:
+                risks.append(("clear", "Valuation", f"Comparable evidence confidence is {comp_conf}% using {int(chosen.get('comparable_count') or 0)} usable comps."))
+            elif comp_conf >= 50:
+                risks.append(("review", "Valuation", f"Comparable evidence is usable but only {comp_conf}% confident; verify the local comp set before relying on the ceiling."))
+            else:
+                risks.append(("critical", "Valuation", f"Comparable confidence is only {comp_conf}%; the valuation is not strong enough for a final bid decision."))
+            if chosen.get("short_lease_signal"):
+                risks.append(("critical", "Tenure / lease", "Short-lease signal detected; price extension cost, lender impact and saleability before bidding."))
+            elif chosen.get("works_missing"):
+                risks.append(("critical", "Works / capex", "Works are indicated but no robust works budget is entered; max buy remains provisional."))
+            elif chosen.get("max_bid_provisional") or uw_conf < 70:
+                risks.append(("review", "Underwriting", f"Maximum bid is provisional / underwriting confidence is {uw_conf}%; confirm remaining assumptions."))
+            else:
+                risks.append(("clear", "Underwriting", f"Underwriting confidence is {uw_conf}% and no automated works/lease blocker is recorded."))
+
+            risk_html = ''.join(
+                f'<div class="deal-risk-row"><span class="deal-risk-severity {severity}">{"Critical" if severity == "critical" else "Review" if severity == "review" else "Clear"}</span><div class="deal-risk-name">{html.escape(name)}</div><div class="deal-risk-detail">{html.escape(detail)}</div></div>'
+                for severity, name, detail in risks[:5]
+            )
+            blockers = readiness.get("readiness_blockers") or []
+            blocker_text = '<br>'.join(html.escape(str(x)) for x in blockers[:3]) if blockers else "No automated bid blocker is currently recorded."
+            readiness_pct = max(0, min(100, int(readiness.get("readiness_pct") or 0)))
+            st.markdown(
+                '<div class="deal-snapshot-lower">'
+                f'<div class="deal-risk-register"><h4>Risk register</h4>{risk_html}</div>'
+                f'<div class="deal-snapshot-card deal-readiness-card deal-readiness-compact"><h4>Decision readiness</h4><div class="deal-readiness-score">{readiness_pct}%</div><div class="deal-readiness-label">{html.escape(readiness_status)}</div><div class="deal-progress-track"><div class="deal-progress-fill" style="width:{readiness_pct}%"></div></div><div class="deal-blocker">{blocker_text}</div></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                f'<div class="deal-recommend-banner"><div class="label">Recommended action</div><div class="action">{html.escape(str(next_action_text))}</div><div class="reason">{html.escape(str(next_action_reason))}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+            saved_uw = db.underwriting_for(chosen["id"])
+            strategy = "commercial" if is_commercial(chosen) else "residential"
+            max_buy = float(chosen.get("max_bid") or 0)
+            max_all_in = float(chosen.get("max_bid_all_in") or 0)
+            if strategy == "residential":
+                target_pct = float(saved_uw.get("target_profit_margin_pct") if saved_uw.get("target_profit_margin_pct") is not None else underwriting_defaults.target_residential_profit_margin_pct)
+                target_all_in = estimated_value * (1 - target_pct / 100) if estimated_value else 0
+                reserve_label = "Target profit reserve"
+            else:
+                target_pct = float(saved_uw.get("target_equity_margin_pct") if saved_uw.get("target_equity_margin_pct") is not None else underwriting_defaults.target_commercial_equity_margin_pct)
+                target_all_in = estimated_value / (1 + target_pct / 100) if estimated_value else 0
+                reserve_label = "Target equity buffer"
+            reserve = max(0.0, estimated_value - target_all_in) if estimated_value else 0
+            cost_stack_at_ceiling = max(0.0, max_all_in - max_buy) if max_all_in and max_buy else max(0.0, target_all_in - max_buy) if target_all_in and max_buy else 0
+            if estimated_value and max_buy:
+                bridge = [
+                    ("Value / GDV", money(estimated_value), ""),
+                    (reserve_label, money(reserve), ""),
+                    ("Allowable all-in", money(target_all_in), ""),
+                    ("Tax + fees + works + finance", money(cost_stack_at_ceiling), ""),
+                    ("Maximum buy", money(max_buy), "final"),
+                ]
+                bridge_html = ''.join(
+                    f'<div class="deal-maxbid-step {klass}"><div class="label">{html.escape(label)}</div><div class="value">{html.escape(value)}</div></div>'
+                    for label, value, klass in bridge
+                )
+                st.markdown(
+                    f'<div class="deal-maxbid-wrap"><div class="deal-maxbid-head"><h4>How Lotly gets to the maximum buy</h4><span>{target_pct:.0f}% target {"profit margin" if strategy == "residential" else "equity uplift"}</span></div><div class="deal-maxbid-grid">{bridge_html}</div><div class="deal-maxbid-note">Lotly solves backwards from the current value/GDV, preserves the target return, then allows for acquisition tax, auction/admin fees, legal/DD, finance, works, contingency, holding and exit costs. The final ceiling is rounded down to the model bid step and remains provisional while evidence blockers are open.</div></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("Maximum-buy transparency will appear when both a valuation basis and maximum bid are available.")
+
             action_rows = ''
             for i, action in enumerate((actions or [])[:3], start=1):
                 action_rows += f'<div class="deal-next-row"><span class="number">{i}</span><strong>{html.escape(str(action.get("action") or "Review"))}</strong><br><span style="padding-left:34px">{html.escape(str(action.get("reason") or ""))}</span></div>'
             if not action_rows:
                 action_rows = f'<div class="deal-next-row"><span class="number">1</span><strong>{html.escape(next_action_text)}</strong><br><span style="padding-left:34px">{html.escape(next_action_reason)}</span></div>'
-
-            blockers = readiness.get("readiness_blockers") or []
-            blocker_text = '<br>'.join(html.escape(str(x)) for x in blockers[:3]) if blockers else "No automated bid blocker is currently recorded."
-            readiness_pct = max(0, min(100, int(readiness.get("readiness_pct") or 0)))
-            st.markdown(
-                '<div class="deal-snapshot-grid">'
-                f'<div class="deal-snapshot-card"><h4>Investment case</h4><ul>{positive_items}</ul></div>'
-                f'<div class="deal-snapshot-card"><h4>Risks & checks</h4><ul>{concern_items}</ul></div>'
-                f'<div class="deal-snapshot-card deal-readiness-card"><h4>Decision readiness</h4><div class="deal-readiness-score">{readiness_pct}%</div><div class="deal-readiness-label">{html.escape(str(readiness.get("readiness_status") or "Reviewing"))}</div><div class="deal-progress-track"><div class="deal-progress-fill" style="width:{readiness_pct}%"></div></div><div class="deal-blocker">{blocker_text}</div></div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.markdown('<div class="deal-facts-title">Recommended next move</div>', unsafe_allow_html=True)
+            st.markdown('<div class="deal-facts-title">Action queue</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="deal-snapshot-card deal-next-action">{action_rows}</div>', unsafe_allow_html=True)
 
             with st.expander("Acquisition readiness checklist"):
@@ -1929,6 +2048,14 @@ def render_deal_room(chosen):
         c2.metric("Midpoint", money(chosen.get("comparable_valuation_mid")))
         c3.metric("High", money(chosen.get("comparable_valuation_high")))
         c4.metric("Guide discount", pct(chosen.get("comparable_guide_discount_pct")))
+        _comp_count = int(chosen.get("comparable_count") or 0)
+        _comp_conf = int(chosen.get("comparable_confidence") or 0)
+        _comp_mid = chosen.get("comparable_valuation_mid")
+        _proof_state = "strong" if _comp_conf >= 70 else "review" if _comp_conf >= 50 else "weak"
+        st.markdown(
+            f'<div class="deal-proof-banner"><strong>Valuation proof:</strong> midpoint {html.escape(money(_comp_mid))} from {_comp_count} usable comparable sale{"s" if _comp_count != 1 else ""}, with {_comp_conf}% evidence confidence. Evidence state: <strong>{_proof_state.upper()}</strong>. Treat the midpoint as an acquisition-screening basis, not a RICS valuation.</div>',
+            unsafe_allow_html=True,
+        )
         comps = db.comparables_for(chosen["id"])
         if comps:
             frame = pd.DataFrame([{k: r.get(k) for k in ["address", "postcode", "sale_price", "sale_date", "property_type", "tenure", "distance_miles", "price_per_sqft", "match_score"]} for r in comps])
