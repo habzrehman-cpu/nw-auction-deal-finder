@@ -215,10 +215,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:
   .property-image-shell,.property-image-shell.featured {height:220px;}
 }
 
-/* v1.12.8: keep paired Discover listings precisely aligned */
-.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] {align-items:stretch!important;}
-.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {display:flex!important;flex-direction:column!important;}
-.st-key-lotly_cards_grid [class*="st-key-lotly_card_row_"] > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > div {height:100%!important;}
+/* v1.12.9: deterministic row/card alignment for Discover listings */
+div[data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .lotly-dashboard-card-marker) {align-items:stretch!important;}
+[data-testid="stColumn"]:has(.lotly-dashboard-card-marker) {display:flex!important;flex-direction:column!important;min-width:0!important;}
+[data-testid="stColumn"]:has(.lotly-dashboard-card-marker) > div {height:100%!important;width:100%!important;}
 </style>
 """,
     unsafe_allow_html=True,
@@ -308,15 +308,18 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-
 .opportunity-count {font-size:.82rem;font-weight:790;color:#17324B;}
 
 /* Property cards matching the approved two-column design */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:100%;min-height:520px;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {position:relative!important;height:500px!important;min-height:500px!important;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px 10px 58px!important;background:#FFFFFF!important;overflow:hidden!important;}
 .lotly-dashboard-card-marker {height:0;display:block;}
 .property-image-shell.dashboard {height:252px!important;border-radius:11px!important;}
 .dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;min-height:14px;}
 .dashboard-kicker.ghost {visibility:hidden;}
-.dashboard-header-zone {min-height:88px;}
-.dashboard-badge-zone {min-height:52px;display:flex;align-content:flex-start;align-items:flex-start;flex-wrap:wrap;}
-.dashboard-confidence-zone {min-height:23px;}
-.dashboard-reason-zone {min-height:54px;}
+.dashboard-header-zone {height:90px!important;min-height:90px!important;max-height:90px!important;overflow:hidden!important;}
+.dashboard-header-zone .card-sub {white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}
+.dashboard-header-zone .property-title {display:-webkit-box!important;-webkit-line-clamp:3!important;-webkit-box-orient:vertical!important;overflow:hidden!important;}
+.dashboard-badge-zone {height:54px!important;min-height:54px!important;max-height:54px!important;overflow:hidden!important;display:flex;align-content:flex-start;align-items:flex-start;flex-wrap:wrap;}
+.dashboard-confidence-zone {height:23px!important;min-height:23px!important;max-height:23px!important;overflow:hidden!important;}
+.dashboard-reason-zone {height:56px!important;min-height:56px!important;max-height:56px!important;overflow:hidden!important;}
+.dashboard-reason-zone .card-reason {height:46px!important;max-height:46px!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .property-title {font-size:.93rem!important;line-height:1.25!important;margin:2px 0 5px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-sub {font-size:.64rem!important;margin-bottom:4px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-timing {font-size:.61rem!important;}
@@ -331,6 +334,8 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .num {font-size:1.25rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .lbl {font-size:.43rem!important;}
 .dashboard-actions {margin-top:8px;}
+[class*="st-key-dash_actions_"] {position:absolute!important;left:10px!important;right:10px!important;bottom:10px!important;z-index:3!important;margin:0!important;}
+[class*="st-key-dash_actions_"] [data-testid="stHorizontalBlock"] {gap:.55rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) button {font-size:.68rem!important;min-height:36px!important;}
 
 /* Make the first screen read like the approved mockup. */
@@ -341,6 +346,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
 @media (max-width: 1100px) {
   [data-testid="stSidebar"] {min-width:228px!important;max-width:228px!important;}
   .hero-copy .lotly-title {font-size:2rem!important;}
+  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:auto!important;min-height:520px!important;padding-bottom:58px!important;}
 }
 </style>
 """,
@@ -750,7 +756,7 @@ with st.sidebar:
         <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
         st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-version">Lotly v1.12.8</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-version">Lotly v1.12.9</div>', unsafe_allow_html=True)
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -1170,21 +1176,22 @@ def render_dashboard_card(row, top_opportunity=False):
             st.markdown(f'<div class="dashboard-confidence-zone">{confidence_html(row)}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="dashboard-reason-zone"><div class="card-reason"><strong>Why Lotly likes it:</strong> {html.escape(top_deal_reason(row))}</div></div>', unsafe_allow_html=True)
         st.markdown('<div class="dashboard-actions"></div>', unsafe_allow_html=True)
-        b1, b2, b3, b4 = st.columns([1.4, 1.08, 1.08, .98])
-        with b1:
-            if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
-                st.session_state["selected_deal_id"] = row["id"]
-                st.rerun()
-        with b2:
-            if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"dash_short_{row['id']}", use_container_width=True):
-                toggle_shortlist(row)
-        with b3:
-            with st.popover("Quick look  ⌄", use_container_width=True):
-                render_quick_look(row)
-        with b4:
-            label = "✓ Compare" if row["id"] in set(st.session_state.get("compare_ids", [])) else "+ Compare"
-            if st.button(label, key=f"dash_compare_{row['id']}", use_container_width=True):
-                toggle_compare(row)
+        with st.container(key=f"dash_actions_{row['id']}"):
+            b1, b2, b3, b4 = st.columns([1.4, 1.08, 1.08, .98])
+            with b1:
+                if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
+                    st.session_state["selected_deal_id"] = row["id"]
+                    st.rerun()
+            with b2:
+                if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"dash_short_{row['id']}", use_container_width=True):
+                    toggle_shortlist(row)
+            with b3:
+                with st.popover("Quick look  ⌄", use_container_width=True):
+                    render_quick_look(row)
+            with b4:
+                label = "✓ Compare" if row["id"] in set(st.session_state.get("compare_ids", [])) else "+ Compare"
+                if st.button(label, key=f"dash_compare_{row['id']}", use_container_width=True):
+                    toggle_compare(row)
 
 
 def render_compact_card(row):
