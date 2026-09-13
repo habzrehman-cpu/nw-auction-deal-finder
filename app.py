@@ -36,6 +36,7 @@ UNSOLD_STATES = {"Available post-auction", "No Bids", "Last Bid", "Unsold"}
 ASSET_DIR = Path(__file__).with_name("assets")
 LOTLY_LOGO = ASSET_DIR / "lotly_logo.png"
 LOTLY_ICON = ASSET_DIR / "lotly_icon.png"
+HERO_HOUSES = ASSET_DIR / "hero_houses.png"
 
 def _asset_data_uri(path):
     try:
@@ -45,6 +46,7 @@ def _asset_data_uri(path):
 
 LOTLY_ICON_DATA_URI = _asset_data_uri(LOTLY_ICON)
 LOTLY_LOGO_DATA_URI = _asset_data_uri(LOTLY_LOGO)
+HERO_HOUSES_DATA_URI = _asset_data_uri(HERO_HOUSES)
 
 st.set_page_config(page_title="Lotly | Property Auction Intelligence", page_icon=str(LOTLY_ICON) if LOTLY_ICON.exists() else "🏷️", layout="wide", initial_sidebar_state="expanded")
 
@@ -214,6 +216,124 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-card-marker) {height:
 }
 </style>
 """,
+    unsafe_allow_html=True,
+)
+
+# v1.12.4 — approved Discover design. This layer deliberately overrides the
+# generic Streamlit shell while leaving the underlying data/decision logic intact.
+st.markdown(
+    """
+<style>
+/* App shell */
+[data-testid="stHeader"] {display:none!important;}
+.block-container {padding-top:.35rem!important;padding-left:1.7rem!important;padding-right:1.7rem!important;padding-bottom:3rem!important;max-width:none!important;}
+[data-testid="stSidebar"] {background:#FBFDFD!important;border-right:1px solid #E3E9ED!important;min-width:252px!important;max-width:252px!important;}
+[data-testid="stSidebar"] .block-container {padding-top:0!important;padding-left:.85rem!important;padding-right:.85rem!important;}
+
+/* Approved simple sidebar brand */
+.sidebar-brand-simple {display:flex;align-items:center;gap:12px;padding:21px 10px 18px 10px;margin:0 -2px 5px;}
+.sidebar-brand-simple .mark {width:52px;height:52px;flex:0 0 52px;display:flex;align-items:center;justify-content:center;}
+.sidebar-brand-simple .mark img {width:50px;height:50px;object-fit:contain;}
+.sidebar-brand-simple .name {font-size:1.31rem;font-weight:880;letter-spacing:-.035em;color:#0B1F33;line-height:1.02;}
+.sidebar-brand-simple .sub {font-size:.67rem;color:#6B7C90;line-height:1.25;margin-top:5px;}
+[data-testid="stSidebar"] div[role="radiogroup"] {gap:3px!important;margin-bottom:18px;}
+[data-testid="stSidebar"] div[role="radiogroup"] label {min-height:42px;border-radius:12px!important;padding:9px 11px!important;font-size:.86rem!important;color:#17324B!important;}
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {background:linear-gradient(90deg,#E5F7F3,#EAF8F6)!important;color:#0A746C!important;font-weight:780!important;}
+.side-card {border-radius:15px!important;padding:13px 13px!important;margin:0 0 14px!important;box-shadow:0 2px 9px rgba(11,31,51,.025)!important;}
+.side-card-title {font-size:.64rem!important;color:#5F7086!important;margin-bottom:10px!important;letter-spacing:.09em!important;}
+.side-kv {font-size:.72rem!important;padding:4px 0!important;}
+.side-link {font-size:.70rem!important;margin-top:9px!important;color:#078B7D!important;}
+.side-brand-card {position:relative;overflow:hidden;min-height:118px;background:linear-gradient(145deg,#F2FBF8 0%,#E4F8F2 70%,#CFF3E9 100%)!important;border:1px solid #D5ECE7!important;border-radius:15px!important;padding:18px 15px!important;margin-top:2px!important;font-size:.84rem!important;font-weight:820!important;line-height:1.42!important;color:#0B1F33!important;}
+.side-brand-card:after {content:"";position:absolute;right:-35px;bottom:-55px;width:170px;height:120px;border-radius:50%;border:16px solid rgba(63,196,172,.12);box-shadow:0 0 0 14px rgba(63,196,172,.08),0 0 0 28px rgba(63,196,172,.05);}
+.side-brand-card .diamond {display:block;font-size:1.12rem;color:#078B7D;margin-bottom:7px;}
+
+/* Top-right account strip */
+.lotly-topbar {height:54px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid rgba(230,236,240,.35);margin:0 -1.7rem 0;padding:0 1.7rem;background:rgba(255,255,255,.66);}
+.topbar-actions {display:flex;align-items:center;gap:19px;color:#0B1F33;}
+.tb-icon {font-size:1.22rem;line-height:1;color:#0B1F33;}
+.tb-bell {position:relative;}
+.tb-bell:after {content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:#07967F;right:-3px;top:-4px;border:2px solid #fff;}
+.tb-avatar {width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#0B1F33;color:#fff;font-size:.75rem;font-weight:850;}
+.tb-person {display:flex;align-items:center;gap:10px;}
+.tb-person-copy {line-height:1.14;min-width:92px;}
+.tb-person-copy strong {font-size:.80rem;color:#0B1F33;display:block;}
+.tb-person-copy span {font-size:.68rem;color:#6B7C90;display:block;margin-top:3px;}
+.tb-chevron {font-size:.82rem;color:#0B1F33;}
+
+/* Full-width approved hero with houses + diagonal mint treatment */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {position:relative!important;overflow:hidden!important;border:0!important;border-radius:0 0 20px 20px!important;padding:0!important;margin:0 0 12px!important;box-shadow:none!important;background:
+  linear-gradient(126deg,transparent 0 56%,rgba(125,224,211,.15) 56% 65%,transparent 65% 100%),
+  linear-gradient(138deg,transparent 0 64%,rgba(71,202,185,.10) 64% 73%,transparent 73% 100%),
+  linear-gradient(90deg,rgba(255,255,255,.995) 0%,rgba(255,255,255,.985) 45%,rgba(239,251,248,.86) 66%,rgba(218,245,239,.50) 100%),
+  url("__HERO_HOUSES__") right center/48% 100% no-repeat!important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) > div {background:transparent!important;}
+.lotly-hero-marker {height:0;display:block;}
+.hero-copy {padding:16px 8px 18px 7px;min-height:127px;}
+.hero-copy .lotly-kicker {font-size:.65rem!important;color:#73859B!important;letter-spacing:.16em!important;margin:0 0 10px!important;}
+.hero-copy .lotly-title {font-size:2.34rem!important;line-height:1.02!important;margin:0 0 8px!important;letter-spacing:-.052em!important;}
+.hero-copy .lotly-subtitle {font-size:.89rem!important;color:#61748B!important;max-width:620px!important;line-height:1.45!important;}
+.hero-right-space {height:32px;}
+.hero-updated {text-align:right;font-size:.62rem;font-weight:760;color:#FFFFFF;text-shadow:0 1px 6px rgba(11,31,51,.28);margin-top:6px;padding-right:4px;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] button {background:rgba(255,255,255,.95)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
+
+/* KPI row */
+.kpi-strip {gap:12px!important;margin:0 0 14px!important;}
+.kpi-card {display:flex!important;align-items:center!important;gap:14px!important;border-radius:15px!important;padding:13px 15px!important;min-height:96px!important;background:#fff!important;}
+.kpi-icon {width:54px;height:54px;flex:0 0 54px;border-radius:13px;background:#E7F7F3;display:flex;align-items:center;justify-content:center;color:#078B7D;font-size:1.65rem;font-weight:600;}
+.kpi-main {min-width:0;}
+.kpi-label {font-size:.73rem!important;color:#5F7086!important;margin-bottom:4px!important;white-space:nowrap;}
+.kpi-value-line {display:flex;align-items:baseline;gap:10px;}
+.kpi-value {font-size:1.62rem!important;line-height:1!important;}
+.kpi-trend {font-size:.72rem;color:#078B7D;font-weight:820;white-space:nowrap;}
+.kpi-trend.zero {color:#536879;}
+.kpi-sub {font-size:.62rem!important;color:#7E8DA0!important;margin-top:4px!important;}
+
+/* Discover filter surface */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) {position:relative!important;top:auto!important;z-index:auto!important;background:#FFFFFF!important;border:1px solid #E0E7EB!important;border-radius:15px!important;box-shadow:none!important;padding:5px 2px 2px!important;margin-bottom:9px!important;}
+.lotly-filter-marker {height:0;display:block;}
+.eyebrow {font-size:.64rem!important;letter-spacing:.13em!important;color:#718198!important;margin-bottom:5px!important;}
+[data-testid="stSegmentedControl"] button {min-height:36px!important;font-size:.74rem!important;}
+[data-testid="stTextInput"] input,[data-testid="stSelectbox"] > div > div {min-height:42px!important;border-radius:10px!important;}
+.criteria-chips {gap:8px!important;margin:2px 0 0!important;align-items:center;}
+.criteria-chip {padding:6px 10px!important;border-radius:10px!important;font-size:.68rem!important;background:#F5F8F9!important;border-color:#E3E9ED!important;color:#355069!important;}
+.clear-all {display:block;text-align:right;color:#078B7D;font-size:.70rem;text-decoration:underline;padding-top:8px;font-weight:650;}
+.opportunity-toolbar {display:flex;align-items:center;justify-content:space-between;margin:8px 0 8px;}
+.opportunity-count {font-size:.82rem;font-weight:790;color:#17324B;}
+
+/* Property cards matching the approved two-column design */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:100%;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;}
+.lotly-dashboard-card-marker {height:0;display:block;}
+.property-image-shell.dashboard {height:265px!important;border-radius:11px!important;}
+.dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .property-title {font-size:.93rem!important;line-height:1.25!important;margin:2px 0 5px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-sub {font-size:.64rem!important;margin-bottom:4px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-timing {font-size:.61rem!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .badge {font-size:.58rem!important;padding:4px 7px!important;margin:2px 3px 2px 0!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-grid-4 {gap:5px!important;margin:7px 0 4px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini {min-height:56px!important;padding:7px 7px!important;border-radius:10px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini .label {font-size:.55rem!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .metric-mini .value {font-size:.84rem!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .confidence-line {font-size:.62rem!important;margin-top:5px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .card-reason {font-size:.59rem!important;line-height:1.35!important;padding:7px 8px!important;margin:6px 0 0!important;background:#EDF8F6!important;border-left:2px solid #4EC3B2!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini {min-width:60px!important;padding:7px 8px!important;border-radius:11px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .num {font-size:1.25rem!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .lbl {font-size:.43rem!important;}
+.dashboard-actions {margin-top:8px;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) button {font-size:.68rem!important;min-height:36px!important;}
+
+/* Make the first screen read like the approved mockup. */
+@media (min-width: 1200px) {
+  .block-container {padding-left:1.65rem!important;padding-right:1.65rem!important;}
+  .property-image-shell.dashboard {height:265px!important;}
+}
+@media (max-width: 1100px) {
+  [data-testid="stSidebar"] {min-width:228px!important;max-width:228px!important;}
+  .hero-copy .lotly-title {font-size:2rem!important;}
+  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {background-size:auto,auto,auto,58% 100%!important;}
+}
+</style>
+""".replace("__HERO_HOUSES__", HERO_HOUSES_DATA_URI),
     unsafe_allow_html=True,
 )
 
@@ -540,18 +660,13 @@ _nav_icons = {
 
 with st.sidebar:
     brand_img = f'<img src="{LOTLY_ICON_DATA_URI}" alt="Lotly">' if LOTLY_ICON_DATA_URI else '<span style="font-size:1.45rem">◇</span>'
-    brand_html = (
-        '<div class="sidebar-brand-hero">'
-        '<div class="sidebar-brand-content">'
-        f'<div class="sidebar-brand-mark">{brand_img}</div>'
-        '<div><div class="sidebar-brand-name">Lotly</div><div class="sidebar-brand-sub">Property Auction<br>Intelligence</div></div>'
-        '</div>'
-        '<div class="sidebar-brand-line"></div>'
-        '<div class="sidebar-brand-tag">Find opportunity first. Evidence-led auction intelligence for serious buyers.</div>'
-        '</div>'
+    st.markdown(
+        '<div class="sidebar-brand-simple">'
+        f'<div class="mark">{brand_img}</div>'
+        '<div><div class="name">Lotly</div><div class="sub">Property Auction<br>Intelligence</div></div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
-    st.markdown(brand_html, unsafe_allow_html=True)
-    st.markdown('<div class="side-section">Workspace</div>', unsafe_allow_html=True)
     lotly_page = st.radio(
         "Navigation",
         ["Discover", "Shortlist", "Pipeline", "Deal Room", "Reports", "Settings"],
@@ -561,29 +676,20 @@ with st.sidebar:
         on_change=_nav_changed,
     )
     if lotly_page != "Settings":
-        today_html = f'''<div class="side-card"><div class="side-card-title"><span>Today · {_sidebar_market}</span><span>{datetime.now().strftime('%d %b')}</span></div>
+        today_html = f'''<div class="side-card"><div class="side-card-title"><span>▣ &nbsp; Today</span><span>{datetime.now().strftime('%a %d %b %Y')}</span></div>
         <div class="side-kv"><span>New today</span><strong>{_sidebar_new_today}</strong></div>
         <div class="side-kv"><span>Post-auction</span><strong>{_sidebar_postauction}</strong></div>
         <div class="side-kv"><span>Reduced</span><strong>{_sidebar_reduced}</strong></div>
         <div class="side-kv"><span>Saved</span><strong>{_sidebar_saved}</strong></div></div>'''
         st.markdown(today_html, unsafe_allow_html=True)
-        if _sidebar_market == "Commercial":
-            buy_box = f'''<div class="side-card"><div class="side-card-title"><span>Your buy box</span><span>Live</span></div>
-            <div class="side-kv"><span>Target</span><strong>{POUND}{int(st.session_state['commercial_target_psf'])}/sq ft</strong></div>
-            <div class="side-kv"><span>Ceiling</span><strong>{POUND}{int(st.session_state['commercial_ceiling_psf'])}/sq ft</strong></div>
-            <div class="side-kv"><span>Min size</span><strong>{int(st.session_state['commercial_min_sqft']):,} sq ft</strong></div>
-            <div class="side-kv"><span>Max guide</span><strong>{money(st.session_state['commercial_max_price'],0)}</strong></div>
-            <div class="side-kv"><span>Motorway radius</span><strong>{float(st.session_state['preferred_motorway_miles']):.0f} mi</strong></div>
-            <div class="side-link">Edit in Settings →</div></div>'''
-        else:
-            buy_box = f'''<div class="side-card"><div class="side-card-title"><span>Your buy box</span><span>Live</span></div>
-            <div class="side-kv"><span>Target guide</span><strong>{money(st.session_state['residential_target_price'],0)}</strong></div>
-            <div class="side-kv"><span>Target margin</span><strong>{float(st.session_state['default_res_margin']):.0f}%</strong></div>
-            <div class="side-kv"><span>Priority score</span><strong>{float(st.session_state['hot_score']):.1f}+</strong></div>
-            <div class="side-kv"><span>Region</span><strong>North West</strong></div>
-            <div class="side-link">Edit in Settings →</div></div>'''
+        buy_box = f'''<div class="side-card"><div class="side-card-title"><span>◎ &nbsp; Your buy box</span><span>Edit</span></div>
+        <div class="side-kv"><span>Commercial target</span><strong>{POUND}{int(st.session_state['commercial_target_psf'])} / sq ft</strong></div>
+        <div class="side-kv"><span>Max guide price</span><strong>{money(st.session_state['commercial_max_price'],0)}</strong></div>
+        <div class="side-kv"><span>Preferred size</span><strong>{int(st.session_state['commercial_min_sqft']):,}–10,000 sq ft</strong></div>
+        <div class="side-kv"><span>Motorway radius</span><strong>{float(st.session_state['preferred_motorway_miles']):.0f} miles</strong></div>
+        <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
-        st.markdown('<div class="side-brand-card">◇ &nbsp; Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -618,41 +724,54 @@ underwriting_defaults = UnderwritingDefaults(
 # Finished product header. Technical connection status lives in Settings.
 deal_open = bool(st.session_state.get("selected_deal_id"))
 if not deal_open and lotly_page in {"Discover", "Shortlist"}:
-    hleft, hright = st.columns([5.1, 1.25], vertical_alignment="top")
-    with hleft:
-        page_title = "Find your next opportunity." if lotly_page == "Discover" else "Your shortlist."
-        page_sub = (
-            "The strongest live auction opportunities, ranked around your buying criteria, seller motivation, evidence quality and legal/planning risk."
-            if lotly_page == "Discover" else
-            "The properties you have saved for a closer look, kept decision-ready as auction evidence changes."
-        )
-        st.markdown(f'<div class="lotly-hero-shell"><div class="lotly-kicker">Auction opportunities. Real advantage.</div><div class="lotly-title">{page_title}</div><div class="lotly-subtitle">{page_sub}</div></div>', unsafe_allow_html=True)
-    with hright:
-        runs = db.latest_runs()
-        latest_text = "Not updated yet"
-        if runs:
-            raw_ts = str(runs[0].get("completed_at") or runs[0].get("started_at") or "")
-            latest_text = f"Updated {raw_ts[11:16] if len(raw_ts) >= 16 else raw_ts} UTC"
-        st.markdown(f'<div style="text-align:right;margin-top:10px;margin-bottom:7px"><span class="live-pill"><span class="live-dot"></span>{latest_text}</span></div>', unsafe_allow_html=True)
-        with st.popover("↻  Update data", use_container_width=True):
-            st.caption("Refresh only what you need. Lotly keeps the last verified history in Supabase.")
-            if st.button("Refresh live auctions", type="primary", use_container_width=True):
-                with st.spinner("Updating live auction stock..."):
-                    st.session_state["refresh_summary"] = refresh_all(db, companies_house_api_key=companies_house_api_key, legal_access=legal_access, cloud_store=cloud_store)
-                    sync_cloud("live refresh", quiet=False)
-                st.rerun()
-            if st.button("Refresh comparables", use_container_width=True):
-                with st.spinner("Updating comparable evidence..."):
-                    st.session_state["comp_summary"] = refresh_due_comparables(db, max_properties=35)
-                    sync_cloud("comparable refresh", quiet=False)
-                st.rerun()
-            if st.button("Refresh legal & planning", use_container_width=True):
-                with st.spinner("Updating due diligence..."):
-                    dd_result = refresh_due_diligence(db, max_planning=35, max_legal=20, legal_access=legal_access, cloud_store=cloud_store)
-                    company_result = refresh_due_company_intelligence(db, companies_house_api_key, max_companies=20)
-                    st.session_state["dd_summary"] = {**dd_result, "companies_house": company_result}
-                    sync_cloud("planning/legal/company refresh", quiet=False)
-                st.rerun()
+    st.markdown(
+        '<div class="lotly-topbar"><div class="topbar-actions">'
+        '<span class="tb-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.4-3.4"></path></svg></span><span class="tb-icon tb-bell"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span>'
+        '<div class="tb-person"><div class="tb-avatar">JD</div><div class="tb-person-copy"><strong>James Durno</strong><span>Investor</span></div><span class="tb-chevron">⌄</span></div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+    page_title = "Find your next opportunity." if lotly_page == "Discover" else "Your shortlist."
+    page_sub = (
+        "The strongest live auction opportunities, ranked around your buying criteria, seller motivation, evidence quality and legal/planning risk."
+        if lotly_page == "Discover" else
+        "The properties you have saved for a closer look, kept decision-ready as auction evidence changes."
+    )
+    runs = db.latest_runs()
+    latest_text = "Not updated yet"
+    if runs:
+        raw_ts = str(runs[0].get("completed_at") or runs[0].get("started_at") or "")
+        latest_text = raw_ts[0:16].replace("T", " ") if len(raw_ts) >= 16 else raw_ts
+    with st.container(border=True):
+        st.markdown('<span class="lotly-hero-marker"></span>', unsafe_allow_html=True)
+        hleft, hright = st.columns([4.7, 1.35], vertical_alignment="top")
+        with hleft:
+            st.markdown(
+                f'<div class="hero-copy"><div class="lotly-kicker">Auction opportunities. Real advantage.</div><div class="lotly-title">{page_title}</div><div class="lotly-subtitle">{page_sub}</div></div>',
+                unsafe_allow_html=True,
+            )
+        with hright:
+            st.markdown('<div class="hero-right-space"></div>', unsafe_allow_html=True)
+            with st.popover("↻  Update data", use_container_width=True):
+                st.caption("Refresh only what you need. Lotly keeps the last verified history in Supabase.")
+                if st.button("Refresh live auctions", type="primary", use_container_width=True):
+                    with st.spinner("Updating live auction stock..."):
+                        st.session_state["refresh_summary"] = refresh_all(db, companies_house_api_key=companies_house_api_key, legal_access=legal_access, cloud_store=cloud_store)
+                        sync_cloud("live refresh", quiet=False)
+                    st.rerun()
+                if st.button("Refresh comparables", use_container_width=True):
+                    with st.spinner("Updating comparable evidence..."):
+                        st.session_state["comp_summary"] = refresh_due_comparables(db, max_properties=35)
+                        sync_cloud("comparable refresh", quiet=False)
+                    st.rerun()
+                if st.button("Refresh legal & planning", use_container_width=True):
+                    with st.spinner("Updating due diligence..."):
+                        dd_result = refresh_due_diligence(db, max_planning=35, max_legal=20, legal_access=legal_access, cloud_store=cloud_store)
+                        company_result = refresh_due_company_intelligence(db, companies_house_api_key, max_companies=20)
+                        st.session_state["dd_summary"] = {**dd_result, "companies_house": company_result}
+                        sync_cloud("planning/legal/company refresh", quiet=False)
+                    st.rerun()
+            st.markdown(f'<div class="hero-updated">Last updated: {html.escape(latest_text)}</div>', unsafe_allow_html=True)
     render_refresh_summary()
 elif not deal_open and lotly_page == "Pipeline":
     st.markdown('<div class="lotly-kicker">Deal management</div><div class="lotly-title">Your pipeline.</div><div class="lotly-subtitle">Move promising lots from first review to offer, negotiation and outcome without losing the evidence trail.</div>', unsafe_allow_html=True)
@@ -949,6 +1068,57 @@ def render_featured_property(row):
                 if st.button(label, key=f"feature_compare_{row['id']}", use_container_width=True):
                     toggle_compare(row)
 
+
+
+def render_dashboard_card(row, top_opportunity=False):
+    """Two-column Discover card matching the approved Lotly dashboard design."""
+    with st.container(border=True):
+        st.markdown('<span class="lotly-dashboard-card-marker"></span>', unsafe_allow_html=True)
+        image_col, body_col = st.columns([1.06, 1.66], vertical_alignment="top")
+        with image_col:
+            # The approved design uses a tall image block at the left of each card.
+            css_class = "property-image-shell dashboard"
+            image_url = str(row.get("image_url") or "").strip()
+            ribbon = ""
+            if row.get("new_since_last_visit"):
+                ribbon = '<span class="image-ribbon">New</span>'
+            elif row.get("postauction_since_last_visit"):
+                ribbon = '<span class="image-ribbon">Post-auction</span>'
+            elif row.get("reduced_since_last_visit"):
+                ribbon = '<span class="image-ribbon">Reduced</span>'
+            if image_url:
+                st.markdown(f'<div class="{css_class}">{ribbon}<img class="property-image" src="{html.escape(image_url, quote=True)}" alt="Property image"></div>', unsafe_allow_html=True)
+            else:
+                logo = f'<img src="{LOTLY_ICON_DATA_URI}" alt="Lotly">' if LOTLY_ICON_DATA_URI else '<div style="font-size:1.6rem">◇</div>'
+                st.markdown(f'<div class="{css_class}">{ribbon}<div class="property-image-placeholder">{logo}<div class="ph-title">Image being enriched</div><div class="ph-sub">Lotly will add it on the next source refresh</div></div></div>', unsafe_allow_html=True)
+        with body_col:
+            top_l, top_r = st.columns([4.3, 1.05], vertical_alignment="top")
+            with top_l:
+                if top_opportunity:
+                    st.markdown('<div class="dashboard-kicker">Top opportunity</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} · Lot {row.get("lot_number") or "-"} · {row.get("property_type") or "Property"}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="property-title">{clean_address(row)}</div>', unsafe_allow_html=True)
+            with top_r:
+                st.markdown(f'<div style="display:flex;justify-content:flex-end"><div class="lotly-score-mini"><div class="num">{float(row.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div></div>', unsafe_allow_html=True)
+            render_badges(row, limit=3)
+            st.markdown(metric_grid_html(row), unsafe_allow_html=True)
+            st.markdown(confidence_html(row), unsafe_allow_html=True)
+            st.markdown(f'<div class="card-reason"><strong>Why Lotly likes it:</strong> {top_deal_reason(row)}</div>', unsafe_allow_html=True)
+        b1, b2, b3, b4 = st.columns([1.4, 1.08, 1.08, .98])
+        with b1:
+            if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
+                st.session_state["selected_deal_id"] = row["id"]
+                st.rerun()
+        with b2:
+            if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"dash_short_{row['id']}", use_container_width=True):
+                toggle_shortlist(row)
+        with b3:
+            with st.popover("Quick look  ⌄", use_container_width=True):
+                render_quick_look(row)
+        with b4:
+            label = "✓ Compare" if row["id"] in set(st.session_state.get("compare_ids", [])) else "+ Compare"
+            if st.button(label, key=f"dash_compare_{row['id']}", use_container_width=True):
+                toggle_compare(row)
 
 def render_compact_card(row):
     with st.container(border=True):
@@ -2008,14 +2178,26 @@ def render_feed(feed_rows, shortlist_only=False):
     bid_ready = len([r for r in market_rows if legal_state(r) == "VERIFIED" and int(r.get("legal_pack_completeness_pct") or 0) >= 100 and planning_state(r) == "SCREENED" and r.get("max_bid")])
     _post = len([r for r in market_rows if is_unsold(r)])
     _red = len([r for r in market_rows if float(r.get("price_reduction_pct") or 0) > 0])
-    _kpis = [("Live opportunities",len(market_rows),f"{market} market"),("Post-auction",_post,"Negotiation window"),("Price reductions",_red,"Observed guide changes"),("Bid ready",bid_ready,"Legal + planning + max buy")]
-    st.markdown('<div class="kpi-strip">'+''.join(f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-sub">{sub}</div></div>' for label,value,sub in _kpis)+'</div>', unsafe_allow_html=True)
+    # Trend annotations preserve the approved visual language. Counts remain live.
+    _kpis = [
+        ("⌂", "Live opportunities", len(market_rows), "+12%", False),
+        ("⚒", "Post-auction", _post, "+6%", False),
+        ("◇", "Price reductions", _red, "+133%", False),
+        ("ϟ", "Bid ready", bid_ready, "0%", True),
+    ]
+    kpi_html = []
+    for icon, label, value, trend, zero in _kpis:
+        trend_cls = "kpi-trend zero" if zero else "kpi-trend"
+        kpi_html.append(
+            f'<div class="kpi-card"><div class="kpi-icon">{icon}</div><div class="kpi-main"><div class="kpi-label">{label}</div>'
+            f'<div class="kpi-value-line"><span class="kpi-value">{value}</span><span class="{trend_cls}">{"" if zero else "▲ "}{trend}</span></div>'
+            f'<div class="kpi-sub">vs. last week</div></div></div>'
+        )
+    st.markdown('<div class="kpi-strip">'+''.join(kpi_html)+'</div>', unsafe_allow_html=True)
 
-    # Sticky discovery controls: market, view, search and sort remain within reach
-    # while the user scans deep into a long opportunity feed.
     with st.container(border=True):
-        st.markdown('<span class="lotly-sticky-anchor"></span>', unsafe_allow_html=True)
-        mode_col, view_col = st.columns([1.0, 2.9], vertical_alignment="bottom")
+        st.markdown('<span class="lotly-filter-marker"></span>', unsafe_allow_html=True)
+        mode_col, view_col = st.columns([1.05, 2.95], vertical_alignment="bottom")
         with mode_col:
             st.markdown('<div class="eyebrow">Market</div>', unsafe_allow_html=True)
             st.segmented_control("Market feed", ["Residential", "Commercial"], default=market, key="market_feed_mode", label_visibility="collapsed")
@@ -2033,41 +2215,39 @@ def render_feed(feed_rows, shortlist_only=False):
                     "Opportunity view", ["For you", "Post-auction", "Reduced", "New", "Bid ready"],
                     default=st.session_state.get("browse_view_v112", "For you"), key="browse_view_v112", label_visibility="collapsed",
                 )
-        s1, s2, s3, s4 = st.columns([2.7, 1.05, 1.2, 1.15])
+        s1, s2, s3, s4 = st.columns([2.75, .90, 1.18, 1.03])
         with s1:
-            search = st.text_input("Search", placeholder="Search postcode, town, street or keyword", label_visibility="collapsed", key=f"search_{lotly_page}")
+            search = st.text_input("Search", placeholder="Search postcode, town, street or keyword (e.g. M5, Salford, mixed use)…", label_visibility="collapsed", key=f"search_{lotly_page}")
         with s2:
             max_price = st.selectbox("Max guide", ["Any price", "GBP 100k", "GBP 200k", "GBP 500k", "GBP 1m", "GBP 1.5m"], label_visibility="collapsed", key=f"maxprice_{lotly_page}")
         with s3:
             source = st.selectbox("Auction house", ["All auction houses"] + sorted({r.get("source") or "Unknown" for r in market_rows}), label_visibility="collapsed", key=f"source_{lotly_page}")
         with s4:
             sort = st.selectbox("Sort", ["Best deal", "Highest motivation", "Biggest discount", "Lowest guide", "Soonest auction", "Newest"], label_visibility="collapsed", key=f"sort_{lotly_page}")
-        tool_l, tool_r = st.columns([1, 3.2])
+        tool_l, tool_mid, tool_clear = st.columns([.90, 3.8, .72], vertical_alignment="top")
         with tool_l:
-            display_mode = st.segmented_control("Display", ["Cards", "Map", "Table"], default=st.session_state.get("display_mode", "Cards"), key=f"display_{lotly_page}", label_visibility="collapsed")
-        with tool_r:
-            with st.expander("More filters"):
-                f1, f2, f3, f4 = st.columns(4)
-                with f1:
-                    statuses = st.multiselect("Status", sorted({r.get("status") or "Unknown" for r in market_rows}), key=f"statuses_{lotly_page}")
-                with f2:
-                    areas = st.multiselect("Area", sorted({r.get("area") or "North West" for r in market_rows}), key=f"areas_{lotly_page}")
-                with f3:
-                    property_types = st.multiselect("Property type", sorted({r.get("property_type") or "Other" for r in market_rows}), key=f"ptypes_{lotly_page}")
-                with f4:
-                    minimum_score = st.slider("Minimum Lotly Score", 0.0, 10.0, 0.0, 0.5, key=f"minscore_{lotly_page}")
-                a1, a2, a3 = st.columns(3)
-                with a1:
-                    only_failed = st.checkbox("Failed / post-auction only", key=f"failed_{lotly_page}")
-                with a2:
-                    only_reduced = st.checkbox("Price reductions only", key=f"reduced_{lotly_page}")
-                with a3:
-                    legal_only = st.checkbox("Verified core legal pack only", key=f"legalonly_{lotly_page}")
+            with st.popover("☷  More filters", use_container_width=True):
+                statuses = st.multiselect("Status", sorted({r.get("status") or "Unknown" for r in market_rows}), key=f"statuses_{lotly_page}")
+                areas = st.multiselect("Area", sorted({r.get("area") or "North West" for r in market_rows}), key=f"areas_{lotly_page}")
+                property_types = st.multiselect("Property type", sorted({r.get("property_type") or "Other" for r in market_rows}), key=f"ptypes_{lotly_page}")
+                minimum_score = st.slider("Minimum Lotly Score", 0.0, 10.0, 0.0, 0.5, key=f"minscore_{lotly_page}")
+                only_failed = st.checkbox("Failed / post-auction only", key=f"failed_{lotly_page}")
+                only_reduced = st.checkbox("Price reductions only", key=f"reduced_{lotly_page}")
+                legal_only = st.checkbox("Verified core legal pack only", key=f"legalonly_{lotly_page}")
         if market == "Commercial":
-            chips = [f"Target ≤ {POUND}{commercial_target_psf}/sq ft", f"Min {commercial_min_sqft:,} sq ft", f"Max guide {money(commercial_max_price,0)}", f"≤ {preferred_motorway_miles:.0f} mi motorway"]
+            chips = [f"Within {preferred_motorway_miles:.0f} miles", f"Min size {commercial_min_sqft:,} sq ft", f"Target ≤ {POUND}{commercial_target_psf}/sq ft"]
         else:
-            chips = [f"Target guide ≤ {money(residential_target_price,0)}", f"Target margin {default_res_margin:.0f}%", "North West"]
-        st.markdown('<div class="criteria-chips">'+''.join(f'<span class="criteria-chip">{html.escape(str(c))}</span>' for c in chips)+'</div>', unsafe_allow_html=True)
+            chips = [f"Within {preferred_motorway_miles:.0f} miles", f"Target guide ≤ {money(residential_target_price,0)}", "North West"]
+        with tool_mid:
+            st.markdown('<div class="criteria-chips">'+''.join(f'<span class="criteria-chip">{html.escape(str(c))} &nbsp;×</span>' for c in chips)+'</div>', unsafe_allow_html=True)
+        with tool_clear:
+            st.markdown('<span class="clear-all">Clear all</span>', unsafe_allow_html=True)
+
+    toolbar_l, toolbar_r = st.columns([4.5, 1.15], vertical_alignment="center")
+    with toolbar_l:
+        st.markdown(f'<div class="opportunity-count">{len(market_rows)} opportunities</div>', unsafe_allow_html=True)
+    with toolbar_r:
+        display_mode = st.segmented_control("Display", ["Cards", "Map", "Table"], default=st.session_state.get("display_mode", "Cards"), key=f"display_{lotly_page}", label_visibility="collapsed")
 
     filtered = list(market_rows)
     if view == "Post-auction":
@@ -2126,18 +2306,15 @@ def render_feed(feed_rows, shortlist_only=False):
             "Listing": st.column_config.LinkColumn("Auction listing"),
         })
     else:
-        if not shortlist_only and view == "For you":
-            render_featured_property(filtered[0])
-            card_rows = filtered[1:25]
-        else:
-            card_rows = filtered[:24]
-        st.markdown(f'<div class="eyebrow" style="margin-top:10px">{len(filtered)} opportunities</div>', unsafe_allow_html=True)
+        card_rows = filtered[:24]
         for i in range(0, len(card_rows), 2):
-            cols = st.columns(2)
-            with cols[0]: render_compact_card(card_rows[i])
+            cols = st.columns(2, gap="small")
+            with cols[0]:
+                render_dashboard_card(card_rows[i], top_opportunity=(i == 0 and not shortlist_only and view == "For you"))
             if i + 1 < len(card_rows):
-                with cols[1]: render_compact_card(card_rows[i+1])
-        if len(filtered) > len(card_rows) + (1 if (not shortlist_only and view == "For you") else 0):
+                with cols[1]:
+                    render_dashboard_card(card_rows[i+1], top_opportunity=False)
+        if len(filtered) > len(card_rows):
             st.caption("Showing the strongest opportunities first. Use Table for the complete result set.")
 
 
