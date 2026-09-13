@@ -308,7 +308,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-
 .opportunity-count {font-size:.82rem;font-weight:790;color:#17324B;}
 
 /* Property cards matching the approved two-column design */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {position:relative!important;height:500px!important;min-height:500px!important;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px 10px 58px!important;background:#FFFFFF!important;overflow:hidden!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {position:relative!important;min-height:438px!important;border-radius:15px!important;border:1px solid #DFE7EB!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;padding:10px!important;background:#FFFFFF!important;overflow:visible!important;}
 .lotly-dashboard-card-marker {height:0;display:block;}
 .property-image-shell.dashboard {height:252px!important;border-radius:11px!important;}
 .dashboard-kicker {font-size:.58rem;text-transform:uppercase;letter-spacing:.13em;font-weight:850;color:#078B7D;margin:1px 0 5px;min-height:14px;}
@@ -333,9 +333,11 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini {min-width:60px!important;padding:7px 8px!important;border-radius:11px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .num {font-size:1.25rem!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) .lotly-score-mini .lbl {font-size:.43rem!important;}
-.dashboard-actions {margin-top:8px;}
-[class*="st-key-dash_actions_"] {position:absolute!important;left:10px!important;right:10px!important;bottom:10px!important;z-index:3!important;margin:0!important;}
-[class*="st-key-dash_actions_"] [data-testid="stHorizontalBlock"] {gap:.55rem!important;}
+.dashboard-actions {height:0!important;margin:0!important;padding:0!important;}
+[class*="st-key-dash_actions_"] {position:static!important;inset:auto!important;z-index:auto!important;margin-top:10px!important;margin-bottom:0!important;}
+[class*="st-key-dash_actions_"] [data-testid="stVerticalBlock"] {gap:0!important;}
+[class*="st-key-dash_actions_"] [data-testid="stHorizontalBlock"] {gap:.55rem!important;align-items:stretch!important;}
+[class*="st-key-dash_actions_"] button {height:38px!important;min-height:38px!important;}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) button {font-size:.68rem!important;min-height:36px!important;}
 
 /* Make the first screen read like the approved mockup. */
@@ -346,7 +348,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
 @media (max-width: 1100px) {
   [data-testid="stSidebar"] {min-width:228px!important;max-width:228px!important;}
   .hero-copy .lotly-title {font-size:2rem!important;}
-  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:auto!important;min-height:520px!important;padding-bottom:58px!important;}
+  div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker) {height:auto!important;min-height:438px!important;padding:10px!important;}
 }
 </style>
 """,
