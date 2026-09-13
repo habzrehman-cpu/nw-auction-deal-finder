@@ -226,12 +226,14 @@ st.markdown(
 <style>
 /* App shell */
 [data-testid="stHeader"] {display:none!important;}
-.block-container {padding-top:.35rem!important;padding-left:1.7rem!important;padding-right:1.7rem!important;padding-bottom:3rem!important;max-width:none!important;}
-[data-testid="stSidebar"] {background:#FBFDFD!important;border-right:1px solid #E3E9ED!important;min-width:252px!important;max-width:252px!important;}
-[data-testid="stSidebar"] .block-container {padding-top:0!important;padding-left:.85rem!important;padding-right:.85rem!important;}
+.block-container {padding-top:0!important;padding-left:1.7rem!important;padding-right:1.7rem!important;padding-bottom:3rem!important;max-width:none!important;}
+[data-testid="stSidebar"] {background:#FBFDFD!important;border-right:1px solid #E3E9ED!important;width:252px!important;min-width:252px!important;max-width:252px!important;}
+[data-testid="stSidebarHeader"] {display:none!important;height:0!important;min-height:0!important;}
+[data-testid="stSidebarContent"] {padding-top:0!important;margin-top:0!important;}
+[data-testid="stSidebar"] .block-container {padding-top:0!important;margin-top:0!important;padding-left:.85rem!important;padding-right:.85rem!important;}
 
 /* Approved simple sidebar brand */
-.sidebar-brand-simple {display:flex;align-items:center;gap:12px;padding:21px 10px 18px 10px;margin:0 -2px 5px;}
+.sidebar-brand-simple {display:flex;align-items:center;gap:12px;padding:18px 10px 15px 10px;margin:0 -2px 4px;}
 .sidebar-brand-simple .mark {width:52px;height:52px;flex:0 0 52px;display:flex;align-items:center;justify-content:center;}
 .sidebar-brand-simple .mark img {width:50px;height:50px;object-fit:contain;}
 .sidebar-brand-simple .name {font-size:1.31rem;font-weight:880;letter-spacing:-.035em;color:#0B1F33;line-height:1.02;}
@@ -248,7 +250,7 @@ st.markdown(
 .side-brand-card .diamond {display:block;font-size:1.12rem;color:#078B7D;margin-bottom:7px;}
 
 /* Top-right account strip */
-.lotly-topbar {height:54px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid rgba(230,236,240,.35);margin:0 -1.7rem 0;padding:0 1.7rem;background:rgba(255,255,255,.66);}
+.lotly-topbar {height:58px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid rgba(230,236,240,.35);margin:0 -1.7rem 0;padding:0 1.7rem;background:rgba(255,255,255,.72);}
 .topbar-actions {display:flex;align-items:center;gap:19px;color:#0B1F33;}
 .tb-icon {font-size:1.22rem;line-height:1;color:#0B1F33;}
 .tb-bell {position:relative;}
@@ -261,25 +263,26 @@ st.markdown(
 .tb-chevron {font-size:.82rem;color:#0B1F33;}
 
 /* Full-width approved hero with houses + diagonal mint treatment */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {position:relative!important;overflow:hidden!important;border:0!important;border-radius:0 0 20px 20px!important;padding:0!important;margin:0 0 12px!important;box-shadow:none!important;background:
-  linear-gradient(126deg,transparent 0 56%,rgba(125,224,211,.15) 56% 65%,transparent 65% 100%),
-  linear-gradient(138deg,transparent 0 64%,rgba(71,202,185,.10) 64% 73%,transparent 73% 100%),
-  linear-gradient(90deg,rgba(255,255,255,.995) 0%,rgba(255,255,255,.985) 45%,rgba(239,251,248,.86) 66%,rgba(218,245,239,.50) 100%),
-  url("__HERO_HOUSES__") right center/48% 100% no-repeat!important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) > div {background:transparent!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker),
+div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) {position:relative!important;overflow:hidden!important;border:0!important;border-radius:0!important;padding:0!important;margin:0 0 10px!important;box-shadow:none!important;background:linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 47%,#F3FCFA 72%,#E8F8F4 100%)!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) > div,
+div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) > div {background:transparent!important;position:relative;z-index:2;}
 .lotly-hero-marker {height:0;display:block;}
-.hero-copy {padding:16px 8px 18px 7px;min-height:127px;}
-.hero-copy .lotly-kicker {font-size:.65rem!important;color:#73859B!important;letter-spacing:.16em!important;margin:0 0 10px!important;}
-.hero-copy .lotly-title {font-size:2.34rem!important;line-height:1.02!important;margin:0 0 8px!important;letter-spacing:-.052em!important;}
-.hero-copy .lotly-subtitle {font-size:.89rem!important;color:#61748B!important;max-width:620px!important;line-height:1.45!important;}
-.hero-right-space {height:32px;}
-.hero-updated {text-align:right;font-size:.62rem;font-weight:760;color:#FFFFFF;text-shadow:0 1px 6px rgba(11,31,51,.28);margin-top:6px;padding-right:4px;}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] button {background:rgba(255,255,255,.95)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
+.hero-house-art {position:absolute;z-index:0;right:0;top:0;width:58%;height:100%;object-fit:cover;object-position:right center;pointer-events:none;user-select:none;}
+.hero-copy {position:relative;z-index:3;padding:11px 8px 12px 7px;min-height:111px;}
+.hero-copy .lotly-kicker {font-size:.65rem!important;color:#73859B!important;letter-spacing:.16em!important;margin:0 0 8px!important;}
+.hero-copy .lotly-title {font-size:2.30rem!important;line-height:1.02!important;margin:0 0 7px!important;letter-spacing:-.052em!important;}
+.hero-copy .lotly-subtitle {font-size:.88rem!important;color:#61748B!important;max-width:650px!important;line-height:1.40!important;}
+.hero-right-space {height:20px;}
+.hero-updated {text-align:right;font-size:.62rem;font-weight:760;color:#FFFFFF;text-shadow:0 1px 6px rgba(11,31,51,.32);margin-top:5px;padding-right:4px;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"],
+div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) [data-testid="stPopover"] {position:relative;z-index:4;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-testid="stPopover"] button,
+div[data-testid="stVerticalBlock"]:has(.lotly-hero-marker) [data-testid="stPopover"] button {background:rgba(255,255,255,.96)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
 
 /* KPI row */
 .kpi-strip {gap:12px!important;margin:0 0 14px!important;}
-.kpi-card {display:flex!important;align-items:center!important;gap:14px!important;border-radius:15px!important;padding:13px 15px!important;min-height:96px!important;background:#fff!important;}
+.kpi-card {display:flex!important;align-items:center!important;gap:14px!important;border-radius:15px!important;padding:12px 15px!important;min-height:92px!important;background:#fff!important;}
 .kpi-icon {width:54px;height:54px;flex:0 0 54px;border-radius:13px;background:#E7F7F3;display:flex;align-items:center;justify-content:center;color:#078B7D;font-size:1.65rem;font-weight:600;}
 .kpi-main {min-width:0;}
 .kpi-label {font-size:.73rem!important;color:#5F7086!important;margin-bottom:4px!important;white-space:nowrap;}
@@ -290,7 +293,8 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) [data-te
 .kpi-sub {font-size:.62rem!important;color:#7E8DA0!important;margin-top:4px!important;}
 
 /* Discover filter surface */
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) {position:relative!important;top:auto!important;z-index:auto!important;background:#FFFFFF!important;border:1px solid #E0E7EB!important;border-radius:15px!important;box-shadow:none!important;padding:5px 2px 2px!important;margin-bottom:9px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) {position:relative!important;top:auto!important;z-index:auto!important;background:#FFFFFF!important;border:1px solid #E0E7EB!important;border-radius:15px!important;box-shadow:none!important;padding:2px 2px 0!important;margin-bottom:7px!important;}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-testid="stVerticalBlock"] {gap:.55rem!important;}
 .lotly-filter-marker {height:0;display:block;}
 .eyebrow {font-size:.64rem!important;letter-spacing:.13em!important;color:#718198!important;margin-bottom:5px!important;}
 [data-testid="stSegmentedControl"] button {min-height:36px!important;font-size:.74rem!important;}
@@ -333,7 +337,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
   div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {background-size:auto,auto,auto,58% 100%!important;}
 }
 </style>
-""".replace("__HERO_HOUSES__", HERO_HOUSES_DATA_URI),
+""",
     unsafe_allow_html=True,
 )
 
@@ -742,8 +746,9 @@ if not deal_open and lotly_page in {"Discover", "Shortlist"}:
     if runs:
         raw_ts = str(runs[0].get("completed_at") or runs[0].get("started_at") or "")
         latest_text = raw_ts[0:16].replace("T", " ") if len(raw_ts) >= 16 else raw_ts
-    with st.container(border=True):
-        st.markdown('<span class="lotly-hero-marker"></span>', unsafe_allow_html=True)
+    with st.container(border=False):
+        hero_art = f'<img class="hero-house-art" src="{HERO_HOUSES_DATA_URI}" alt="" aria-hidden="true">' if HERO_HOUSES_DATA_URI else ''
+        st.markdown('<span class="lotly-hero-marker"></span>' + hero_art, unsafe_allow_html=True)
         hleft, hright = st.columns([4.7, 1.35], vertical_alignment="top")
         with hleft:
             st.markdown(
@@ -2188,8 +2193,15 @@ def render_feed(feed_rows, shortlist_only=False):
     kpi_html = []
     for icon, label, value, trend, zero in _kpis:
         trend_cls = "kpi-trend zero" if zero else "kpi-trend"
+        svg_icons = {
+            "Live opportunities": '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path><path d="M9.5 20v-6h5v6"></path></svg>',
+            "Post-auction": '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m14 4 6 6"></path><path d="m13 5 2-2 6 6-2 2"></path><path d="m8 10 6 6"></path><path d="m7 11 2-2 6 6-2 2"></path><path d="M4 20h10"></path><path d="m5 19 7-7"></path></svg>',
+            "Price reductions": '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1.2"></circle></svg>',
+            "Bid ready": '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m13 2-7 12h6l-1 8 7-12h-6z"></path></svg>',
+        }
+        icon_html = svg_icons.get(label, icon)
         kpi_html.append(
-            f'<div class="kpi-card"><div class="kpi-icon">{icon}</div><div class="kpi-main"><div class="kpi-label">{label}</div>'
+            f'<div class="kpi-card"><div class="kpi-icon">{icon_html}</div><div class="kpi-main"><div class="kpi-label">{label}</div>'
             f'<div class="kpi-value-line"><span class="kpi-value">{value}</span><span class="{trend_cls}">{"" if zero else "▲ "}{trend}</span></div>'
             f'<div class="kpi-sub">vs. last week</div></div></div>'
         )
