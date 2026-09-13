@@ -411,7 +411,7 @@ if HERO_HOUSES_DATA_URI:
     )
 
 
-# v1.13.0 - Deal Room decision cockpit. Discover is design-locked; every selector below is Deal Room scoped.
+# v1.13.1 - Deal Room navigation hotfix. Discover remains design-locked; every selector below is Deal Room scoped.
 st.markdown(
     """
 <style>
@@ -784,6 +784,12 @@ SETTINGS_DEFAULTS = {
 for _key, _value in SETTINGS_DEFAULTS.items():
     st.session_state.setdefault(_key, _value)
 st.session_state.setdefault("lotly_page", "Discover")
+# Programmatic navigation must be applied before the sidebar radio widget is instantiated.
+# Buttons elsewhere in the app queue the destination here and then rerun; writing directly
+# to the radio widget key after instantiation raises StreamlitWidgetAlreadyInstantiatedError.
+_pending_lotly_page = st.session_state.pop("_lotly_pending_page", None)
+if _pending_lotly_page in {"Discover", "Shortlist", "Pipeline", "Deal Room", "Reports", "Settings"}:
+    st.session_state["lotly_page"] = _pending_lotly_page
 st.session_state.setdefault("compare_ids", [])
 st.session_state.setdefault("market_mode", "Residential")
 
@@ -1207,7 +1213,7 @@ def render_featured_property(row):
             with a1:
                 if st.button("Open Deal Room", key=f"feature_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
-                    st.session_state["lotly_page"] = "Deal Room"
+                    st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
             with a2:
                 if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"feature_short_{row['id']}", use_container_width=True):
@@ -1266,7 +1272,7 @@ def render_dashboard_card(row, top_opportunity=False):
             with b1:
                 if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
-                    st.session_state["lotly_page"] = "Deal Room"
+                    st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
             with b2:
                 if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"dash_short_{row['id']}", use_container_width=True):
@@ -1304,7 +1310,7 @@ def render_compact_card(row):
         with b1:
             if st.button("Open Deal Room", key=f"grid_open_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
-                st.session_state["lotly_page"] = "Deal Room"
+                st.session_state["_lotly_pending_page"] = "Deal Room"
                 st.rerun()
         with b2:
             if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"grid_short_{row['id']}", use_container_width=True):
@@ -1422,7 +1428,7 @@ def render_property_card(row):
             st.write("")
             if st.button("Open deal room", key=f"view_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
-                st.session_state["lotly_page"] = "Deal Room"
+                st.session_state["_lotly_pending_page"] = "Deal Room"
                 st.rerun()
             star = "Remove" if row.get("shortlisted") else "Shortlist"
             if st.button(star, key=f"short_{row['id']}", use_container_width=True):
@@ -1571,7 +1577,7 @@ def render_deal_room(chosen):
 
     if st.button("← Back to Deal Room", key=f"deal_back_{chosen['id']}"):
         st.session_state.pop("selected_deal_id", None)
-        st.session_state["lotly_page"] = "Deal Room"
+        st.session_state["_lotly_pending_page"] = "Deal Room"
         st.rerun()
 
     with st.container(border=False, key=f"dealroom_hero_{chosen['id']}"):
@@ -2570,7 +2576,7 @@ def render_pipeline_page(feed_rows):
             with c3:
                 if st.button("Open", key=f"pipeline_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
-                    st.session_state["lotly_page"] = "Deal Room"
+                    st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
 
 
@@ -2633,7 +2639,7 @@ def render_deal_room_index(feed_rows):
                         st.markdown(f'<div class="deal-stage-line">Stage: <strong>{html.escape(str(stage))}</strong> · Lotly Score <strong>{float(row.get("browse_score") or 0):.1f}/10</strong></div>', unsafe_allow_html=True)
                         if st.button("Open Deal Room  →", key=f"room_index_{row['id']}", type="primary", use_container_width=True):
                             st.session_state["selected_deal_id"] = row["id"]
-                            st.session_state["lotly_page"] = "Deal Room"
+                            st.session_state["_lotly_pending_page"] = "Deal Room"
                             st.rerun()
 
 
