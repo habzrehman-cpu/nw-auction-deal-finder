@@ -48,6 +48,11 @@ LOTLY_ICON_DATA_URI = _asset_data_uri(LOTLY_ICON)
 LOTLY_LOGO_DATA_URI = _asset_data_uri(LOTLY_LOGO)
 HERO_HOUSES_DATA_URI = _asset_data_uri(HERO_HOUSES)
 
+try:
+    APP_VERSION = Path(__file__).with_name("VERSION").read_text().strip() or "dev"
+except Exception:
+    APP_VERSION = "dev"
+
 st.set_page_config(page_title="Lotly | Property Auction Intelligence", page_icon=str(LOTLY_ICON) if LOTLY_ICON.exists() else "🏷️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -405,6 +410,83 @@ if HERO_HOUSES_DATA_URI:
         unsafe_allow_html=True,
     )
 
+
+# v1.13.0 - Deal Room decision cockpit. Discover is design-locked; every selector below is Deal Room scoped.
+st.markdown(
+    """
+<style>
+/* Deal Room hero */
+[class*="st-key-dealroom_hero_"] {
+  background:linear-gradient(135deg,#FFFFFF 0%,#F7FCFB 62%,#ECF9F6 100%)!important;
+  border:1px solid #DDE9E6!important;border-radius:20px!important;
+  box-shadow:0 8px 28px rgba(11,31,51,.045)!important;
+  padding:14px!important;margin:2px 0 14px!important;overflow:hidden!important;
+}
+[class*="st-key-dealroom_hero_"] .property-image-shell.featured {height:300px!important;border-radius:14px!important;}
+.deal-breadcrumb {font-size:.66rem;color:#718198;font-weight:720;margin:2px 0 8px;}
+.deal-room-kicker {font-size:.62rem;text-transform:uppercase;letter-spacing:.15em;font-weight:850;color:#078B7D;margin:0 0 6px;}
+.deal-room-address {font-size:1.72rem;line-height:1.10;font-weight:880;letter-spacing:-.04em;color:#0B1F33;margin:0 0 7px;}
+.deal-room-meta {font-size:.72rem;color:#6A7B8F;margin-bottom:7px;}
+.deal-score-panel {display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:84px;background:#0B1F33;color:#fff;border-radius:15px;padding:11px 10px;box-shadow:0 7px 18px rgba(11,31,51,.12);}
+.deal-score-panel .num {font-size:1.65rem;line-height:1;font-weight:900;letter-spacing:-.04em;}
+.deal-score-panel .lbl {font-size:.48rem;text-transform:uppercase;letter-spacing:.08em;opacity:.72;margin-top:4px;}
+.deal-metric-grid {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0 9px;}
+.deal-metric-card {background:#fff;border:1px solid #DFE8EB;border-radius:12px;padding:9px 10px;min-height:69px;}
+.deal-metric-card .label {font-size:.58rem;color:#7A899A;margin-bottom:4px;}
+.deal-metric-card .value {font-size:.96rem;font-weight:850;color:#0B1F33;letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.deal-metric-card .sub {font-size:.54rem;color:#8490A1;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.deal-decision-panel {display:grid;grid-template-columns:115px 1fr;gap:12px;align-items:center;background:#F3FAF8;border:1px solid #D4ECE6;border-radius:13px;padding:10px 12px;margin:7px 0 8px;}
+.deal-decision-word {font-size:.98rem;font-weight:900;letter-spacing:.05em;color:#0A7068;}
+.deal-decision-word.pass {color:#B42318}.deal-decision-word.watch {color:#9A6700}
+.deal-decision-copy {font-size:.72rem;color:#40566A;line-height:1.38;}
+.deal-decision-copy strong {color:#0B1F33;}
+.deal-evidence-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:7px 0 2px;}
+.deal-evidence-item {display:flex;align-items:center;justify-content:space-between;gap:7px;background:rgba(255,255,255,.78);border:1px solid #E0E9E7;border-radius:10px;padding:7px 8px;font-size:.61rem;color:#667085;}
+.deal-evidence-item strong {color:#17324B;font-size:.64rem;white-space:nowrap;}
+.deal-evidence-dot {width:7px;height:7px;border-radius:50%;background:#0F8F83;display:inline-block;margin-right:5px;}
+.deal-evidence-dot.warn {background:#D39B1E}.deal-evidence-dot.risk {background:#D92D20}
+[class*="st-key-dealroom_hero_"] button {min-height:38px!important;font-size:.70rem!important;}
+
+/* Deal Room tab workspace */
+[class*="st-key-dealroom_body_"] {margin-top:0!important;}
+[class*="st-key-dealroom_body_"] [data-baseweb="tab-list"] {gap:4px;background:#F5F8F8;border:1px solid #E1E8EA;border-radius:12px;padding:4px;margin-bottom:12px;}
+[class*="st-key-dealroom_body_"] [data-baseweb="tab"] {height:38px;border-radius:9px;padding:0 12px;font-size:.72rem;font-weight:700;color:#52677A;}
+[class*="st-key-dealroom_body_"] [aria-selected="true"] {background:#FFFFFF!important;color:#078B7D!important;box-shadow:0 1px 4px rgba(11,31,51,.07);}
+.deal-snapshot-grid {display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:12px;margin:5px 0 13px;}
+.deal-snapshot-card {background:#fff;border:1px solid #E0E8EB;border-radius:14px;padding:13px 14px;min-height:190px;}
+.deal-snapshot-card h4 {font-size:.82rem;margin:0 0 8px;color:#0B1F33;letter-spacing:-.01em;}
+.deal-snapshot-card ul {margin:0;padding-left:17px;color:#52677A;font-size:.72rem;line-height:1.48;}
+.deal-snapshot-card li {margin-bottom:4px;}
+.deal-next-action {background:linear-gradient(140deg,#F0FAF7,#F8FCFB);border-color:#CFE9E3;}
+.deal-next-action .number {width:24px;height:24px;border-radius:50%;background:#078B7D;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:850;margin-right:7px;}
+.deal-next-row {font-size:.72rem;color:#40566A;line-height:1.35;margin:7px 0;}
+.deal-readiness-card {background:#0B1F33;color:#fff!important;}
+.deal-readiness-card h4 {color:#fff!important;}
+.deal-readiness-score {font-size:2rem;font-weight:900;letter-spacing:-.05em;line-height:1;color:#fff;}
+.deal-readiness-label {font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:#9DB0C2;margin-top:4px;}
+.deal-progress-track {height:7px;background:rgba(255,255,255,.16);border-radius:999px;margin:12px 0 10px;overflow:hidden;}
+.deal-progress-fill {height:100%;background:#31C8B2;border-radius:999px;}
+.deal-blocker {font-size:.65rem;line-height:1.4;color:#D8E3EC;margin-top:5px;}
+.deal-facts-title {font-size:.83rem;font-weight:820;color:#0B1F33;margin:6px 0 4px;}
+
+/* Deal Room index */
+.deal-index-strip {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0 14px;}
+.deal-index-kpi {background:#fff;border:1px solid #E1E8EB;border-radius:14px;padding:11px 13px;}
+.deal-index-kpi .label {font-size:.64rem;color:#728196;}.deal-index-kpi .value {font-size:1.35rem;font-weight:880;color:#0B1F33;margin-top:2px;}
+[class*="st-key-deal_index_card_"] {border:1px solid #DFE7EA!important;border-radius:15px!important;padding:11px!important;background:#fff!important;box-shadow:0 2px 8px rgba(11,31,51,.025)!important;}
+[class*="st-key-deal_index_card_"] .property-image-shell {height:180px!important;border-radius:11px!important;}
+.deal-index-title {font-size:.98rem;font-weight:840;line-height:1.25;color:#0B1F33;margin:4px 0 7px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.deal-index-meta {font-size:.64rem;color:#7A8999;margin-bottom:5px;}
+.deal-index-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0;}
+.deal-index-metric {border:1px solid #E3EAED;border-radius:9px;padding:7px;background:#FBFCFC;}.deal-index-metric span{display:block;font-size:.54rem;color:#8390A0}.deal-index-metric strong{font-size:.76rem;color:#0B1F33;}
+.deal-stage-line {font-size:.64rem;color:#5F7184;margin:5px 0 8px;}
+
+@media(max-width:1100px){.deal-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.deal-evidence-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-snapshot-grid{grid-template-columns:1fr;}.deal-index-strip{grid-template-columns:repeat(2,minmax(0,1fr));}}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 DB_PATH = Path(os.environ.get("AUCTION_DB_PATH", str(Path(__file__).with_name("auction_tracker.db"))))
 
 # Optional private cloud persistence. Streamlit Community Cloud has ephemeral local
@@ -758,7 +840,7 @@ with st.sidebar:
         <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
         st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-version">Lotly v1.12.9</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sidebar-version">Lotly v{html.escape(APP_VERSION)}</div>', unsafe_allow_html=True)
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -1125,6 +1207,7 @@ def render_featured_property(row):
             with a1:
                 if st.button("Open Deal Room", key=f"feature_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["lotly_page"] = "Deal Room"
                     st.rerun()
             with a2:
                 if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"feature_short_{row['id']}", use_container_width=True):
@@ -1183,6 +1266,7 @@ def render_dashboard_card(row, top_opportunity=False):
             with b1:
                 if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["lotly_page"] = "Deal Room"
                     st.rerun()
             with b2:
                 if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"dash_short_{row['id']}", use_container_width=True):
@@ -1220,6 +1304,7 @@ def render_compact_card(row):
         with b1:
             if st.button("Open Deal Room", key=f"grid_open_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
+                st.session_state["lotly_page"] = "Deal Room"
                 st.rerun()
         with b2:
             if st.button("♥ Saved" if row.get("shortlisted") else "♡ Shortlist", key=f"grid_short_{row['id']}", use_container_width=True):
@@ -1337,6 +1422,7 @@ def render_property_card(row):
             st.write("")
             if st.button("Open deal room", key=f"view_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
+                st.session_state["lotly_page"] = "Deal Room"
                 st.rerun()
             star = "Remove" if row.get("shortlisted") else "Shortlist"
             if st.button(star, key=f"short_{row['id']}", use_container_width=True):
@@ -1428,10 +1514,6 @@ def underwriting_form(chosen):
 
 
 def render_deal_room(chosen):
-    if st.button("← Back to deal feed"):
-        st.session_state.pop("selected_deal_id", None)
-        st.rerun()
-
     # Assemble evidence-led intelligence for this property only when its Deal Room is opened.
     hist = db.history_for(chosen["id"])
     planning_items = db.planning_items_for(chosen["id"])
@@ -1467,130 +1549,180 @@ def render_deal_room(chosen):
     actions = next_actions(chosen, story)
     profile = story.get("seller_profile") or {}
 
-    left, right = st.columns([1.35, 2.65], vertical_alignment="top")
-    with left:
-        render_property_image(chosen, featured=True)
-    with right:
-        st.markdown('<div class="eyebrow">Lotly Deal Room</div>', unsafe_allow_html=True)
-        st.caption(f"{chosen.get('source')} · Lot {chosen.get('lot_number') or '-'} · {chosen.get('property_type')} · {chosen.get('status')}")
-        st.header(clean_address(chosen))
-        render_badges(chosen, limit=5)
-        a, b, c, d = st.columns(4)
-        a.metric("Lotly Score", f"{chosen.get('browse_score', 0):.1f}/10")
-        b.metric("Vendor motivation", f"{chosen.get('motivation_score', 0):.1f}/10")
-        c.metric("Buyer leverage", f"{story.get('buyer_leverage_score', 0):.1f}/10")
-        d.metric("Deal readiness", f"{readiness.get('readiness_pct', 0)}%")
-        e, f, g, h = st.columns(4)
-        e.metric("Guide", guide_display(chosen))
-        f.metric("Opening offer", money(chosen.get("opening_offer")))
-        g.metric("Max buy", money(chosen.get("max_bid")), delta="PROVISIONAL" if chosen.get("max_bid_provisional") else None)
-        h.metric("Seller-story confidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
-        next_action_text = actions[0].get("action") if actions else (chosen.get("recommended_action") or "Continue due diligence")
-        st.markdown(
-            f'<div class="decision-banner"><span class="eyebrow">Current decision</span><br><strong>{readiness.get("readiness_status")}</strong> · {readiness.get("readiness_pct", 0)}% ready &nbsp;—&nbsp; Next: {next_action_text}</div>',
-            unsafe_allow_html=True,
+
+    def _safe(value):
+        return html.escape(str(value if value not in (None, "") else "-"))
+
+    def _metric_html(label, value, sub=""):
+        return (
+            '<div class="deal-metric-card">'
+            f'<div class="label">{_safe(label)}</div>'
+            f'<div class="value">{_safe(value)}</div>'
+            f'<div class="sub">{_safe(sub)}</div>'
+            '</div>'
         )
-        if chosen.get("recommended_action"):
-            if chosen.get("recommendation") == "PURSUE":
-                st.success(f"PURSUE - {chosen.get('recommended_action')}")
-            elif chosen.get("recommendation") == "PASS":
-                st.error(f"PASS - {chosen.get('recommended_action')}")
-            else:
-                st.warning(f"WATCH - {chosen.get('recommended_action')}")
-        act1, act2, act3 = st.columns(3)
-        with act1:
-            if st.button("Remove from shortlist" if chosen.get("shortlisted") else "Add to shortlist", key=f"deal_short_{chosen['id']}", use_container_width=True):
-                toggle_shortlist(chosen)
-        with act2:
-            if chosen.get("url"):
-                st.link_button("Open auctioneer listing", chosen["url"], use_container_width=True)
-        with act3:
-            if profile.get("company_number"):
-                st.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
 
-    tabs = st.tabs(["Snapshot", "Seller", "Financials", "Comparables", "Auction", "Legal & Planning", "Location", "Workspace"])
+    recommendation = str(chosen.get("recommendation") or "WATCH").upper()
+    rec_class = "pass" if recommendation == "PASS" else ("watch" if recommendation == "WATCH" else "")
+    estimated = chosen.get("market_value") or chosen.get("comparable_valuation_mid")
+    next_action_text = actions[0].get("action") if actions else (chosen.get("recommended_action") or "Continue due diligence")
+    next_action_reason = actions[0].get("reason") if actions else "Complete the remaining evidence checks before committing capital."
+    deal_brief = deal_brief_markdown(chosen, story, readiness, actions)
 
-    with tabs[0]:
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Opening offer", money(chosen.get("opening_offer")))
-        m2.metric("Estimated value / GDV", money(chosen.get("market_value") or chosen.get("comparable_valuation_mid")))
-        m3.metric("Profit / equity", money(chosen.get("profit")))
-        m4.metric("ROI", pct(chosen.get("roi_pct")))
-        m5.metric("UW confidence", f"{int(chosen.get('underwriting_confidence') or 0)}%")
+    if st.button("← Back to Deal Room", key=f"deal_back_{chosen['id']}"):
+        st.session_state.pop("selected_deal_id", None)
+        st.session_state["lotly_page"] = "Deal Room"
+        st.rerun()
 
-        st.markdown("### Acquisition readiness")
-        st.progress(readiness.get("readiness_pct", 0) / 100.0, text=f"{readiness.get('readiness_status')} - {readiness.get('readiness_pct')}% complete")
-        if readiness.get("readiness_blockers"):
-            st.error("Bid blockers: " + " | ".join(readiness.get("readiness_blockers")[:5]))
-        with st.expander("Readiness checklist"):
-            readiness_frame = pd.DataFrame([{
-                "Check": x.get("name"), "Status": x.get("state").title(), "Detail": x.get("detail"), "Bid blocker": bool(x.get("blocker"))
-            } for x in readiness.get("readiness_checks") or []])
-            st.dataframe(readiness_frame, hide_index=True, use_container_width=True)
+    with st.container(border=False, key=f"dealroom_hero_{chosen['id']}"):
+        image_col, body_col = st.columns([1.18, 2.82], vertical_alignment="top")
+        with image_col:
+            render_property_image(chosen, featured=True)
+        with body_col:
+            title_col, score_col = st.columns([5.0, 1.0], vertical_alignment="top")
+            with title_col:
+                st.markdown('<div class="deal-room-kicker">Lotly Deal Room · Decision workspace</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="deal-room-meta">{_safe(chosen.get("source") or "Auction")} · Lot {_safe(chosen.get("lot_number") or "-")} · {_safe(chosen.get("property_type") or "Property")} · {_safe(chosen.get("status") or "Live")}</div>'
+                    f'<div class="deal-room-address">{html.escape(clean_address(chosen))}</div>',
+                    unsafe_allow_html=True,
+                )
+                render_badges(chosen, limit=5)
+            with score_col:
+                st.markdown(
+                    f'<div class="deal-score-panel"><div class="num">{float(chosen.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-        good, concern = st.columns(2)
-        with good:
-            st.markdown("### Why this may be a deal")
+            metrics = [
+                _metric_html("Guide", guide_display(chosen), "Current auction guide"),
+                _metric_html("Estimated value / GDV", money(estimated), f'{int(chosen.get("comparable_confidence") or 0)}% comp confidence'),
+                _metric_html("Opening offer", money(chosen.get("opening_offer")), "Negotiation starting point"),
+                _metric_html("Max buy", money(chosen.get("max_bid")), "Provisional" if chosen.get("max_bid_provisional") else "Underwritten ceiling"),
+                _metric_html("Profit / equity", money(chosen.get("profit")), pct(chosen.get("roi_pct")) + " ROI" if chosen.get("roi_pct") is not None else "Current model"),
+            ]
+            st.markdown('<div class="deal-metric-grid">' + ''.join(metrics) + '</div>', unsafe_allow_html=True)
+
+            st.markdown(
+                f'<div class="deal-decision-panel"><div class="deal-decision-word {rec_class}">{_safe(recommendation)}</div>'
+                f'<div class="deal-decision-copy"><strong>{_safe(readiness.get("readiness_status") or "Reviewing")}</strong> · {int(readiness.get("readiness_pct") or 0)}% decision-ready.<br>'
+                f'Next move: <strong>{_safe(next_action_text)}</strong></div></div>',
+                unsafe_allow_html=True,
+            )
+
+            legal_ok = legal_state(chosen) == "VERIFIED"
+            planning_ok = planning_state(chosen) == "SCREENED"
+            comp_conf = int(chosen.get("comparable_confidence") or 0)
+            uw_conf = int(chosen.get("underwriting_confidence") or 0)
+            evidence_html = [
+                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if comp_conf >= 70 else "warn"}"></i>Comparables</span><strong>{comp_conf}%</strong></div>',
+                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if legal_ok else "warn"}"></i>Legal pack</span><strong>{_safe(legal_state(chosen).title())}</strong></div>',
+                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if planning_ok else "warn"}"></i>Planning</span><strong>{_safe(planning_state(chosen).title())}</strong></div>',
+                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if uw_conf >= 70 else "warn"}"></i>Underwriting</span><strong>{uw_conf}%</strong></div>',
+            ]
+            st.markdown('<div class="deal-evidence-grid">' + ''.join(evidence_html) + '</div>', unsafe_allow_html=True)
+
+            a1, a2, a3, a4 = st.columns(4)
+            with a1:
+                if st.button("Remove shortlist" if chosen.get("shortlisted") else "Add to shortlist", key=f"deal_short_{chosen['id']}", use_container_width=True):
+                    toggle_shortlist(chosen)
+            with a2:
+                if chosen.get("url"):
+                    st.link_button("Auction listing", chosen["url"], use_container_width=True)
+                else:
+                    st.button("Auction listing", disabled=True, key=f"no_listing_{chosen['id']}", use_container_width=True)
+            with a3:
+                if profile.get("company_number"):
+                    st.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
+                else:
+                    st.button("Seller record pending", disabled=True, key=f"no_ch_{chosen['id']}", use_container_width=True)
+            with a4:
+                st.download_button(
+                    "Download deal brief", deal_brief,
+                    file_name=f"lotly-deal-{chosen.get('postcode') or chosen.get('id')}.md".replace(" ", "-"),
+                    mime="text/markdown", key=f"hero_brief_{chosen['id']}", use_container_width=True,
+                )
+
+    with st.container(border=False, key=f"dealroom_body_{chosen['id']}"):
+        tabs = st.tabs(["Snapshot", "Seller", "Financials", "Comparables", "Auction", "Legal & Planning", "Location", "Workspace"])
+
+        with tabs[0]:
             positives = []
             positives.extend(chosen.get("reasons") or [])
             positives.extend(chosen.get("motivation_reasons") or [])
             if chosen.get("comparable_guide_discount_pct") is not None:
                 positives.append(f"Guide is {chosen.get('comparable_guide_discount_pct'):.1f}% below the comparable midpoint")
             if not positives:
-                positives = ["Insufficient positive evidence has been captured yet."]
-            for item in positives[:10]:
-                st.write(f"- {item}")
-        with concern:
-            st.markdown("### What needs checking")
+                positives = ["No strong positive signal has been verified yet."]
+
             concerns = []
             concerns.extend(chosen.get("underwriting_warnings") or [])
             concerns.extend(chosen.get("warnings") or [])
             if legal_state(chosen) != "VERIFIED":
-                concerns.insert(0, "Authoritative lot-bound legal documents have not been verified: legal risk remains UNKNOWN.")
+                concerns.insert(0, "Authoritative lot-bound legal evidence is not yet verified.")
             elif int(chosen.get("legal_pack_completeness_pct") or 0) < 100:
-                concerns.insert(0, "Verified legal evidence is only partial: the core legal pack is incomplete and bid approval remains blocked.")
+                concerns.insert(0, "Verified legal evidence is partial; the core pack is incomplete.")
             if planning_state(chosen) != "SCREENED":
-                concerns.insert(0, "Planning screen is incomplete: planning risk remains UNKNOWN.")
+                concerns.insert(0, "Planning screening is incomplete.")
             if not concerns:
-                concerns = ["No major automated warning is currently recorded; normal auction due diligence still applies."]
-            for item in concerns[:10]:
-                st.write(f"- {item}")
+                concerns = ["No major automated warning is recorded; normal auction due diligence still applies."]
 
-        st.markdown("### Recommended next actions")
-        if actions:
-            for n, action in enumerate(actions, start=1):
-                st.markdown(f"**{n}. {action['action']}**  ")
-                st.caption(action["reason"])
-        else:
-            st.caption("No automated action queue has been generated yet.")
+            positive_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in positives[:6])
+            concern_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in concerns[:6])
+            action_rows = ''
+            for i, action in enumerate((actions or [])[:3], start=1):
+                action_rows += f'<div class="deal-next-row"><span class="number">{i}</span><strong>{html.escape(str(action.get("action") or "Review"))}</strong><br><span style="padding-left:34px">{html.escape(str(action.get("reason") or ""))}</span></div>'
+            if not action_rows:
+                action_rows = f'<div class="deal-next-row"><span class="number">1</span><strong>{html.escape(next_action_text)}</strong><br><span style="padding-left:34px">{html.escape(next_action_reason)}</span></div>'
 
-        st.markdown("### Key property facts")
-        extracted = chosen.get("legal_extracted_fields") or {}
-        facts = pd.DataFrame([
-            ["Auction house", chosen.get("source")],
-            ["Status", chosen.get("status")],
-            ["Auction date", chosen.get("auction_date")],
-            ["Property type", chosen.get("property_type")],
-            ["Tenure", chosen.get("tenure")],
-            ["Lease remaining", f"{float(chosen.get('legal_lease_years') or chosen.get('listing_lease_years')):.1f} years" if (chosen.get("legal_lease_years") or chosen.get("listing_lease_years")) else "Unknown"],
-            ["Lease start", chosen.get("listing_lease_start_date") or "Unknown"],
-            ["Guide range", guide_display(chosen)],
-            ["EPC", chosen.get("listing_epc_rating") or "Unknown"],
-            ["Allocated parking", "Yes" if (chosen.get("features") or {}).get("parking") else "Not confirmed"],
-            ["Balcony", "Yes" if (chosen.get("features") or {}).get("balcony") else "Not confirmed"],
-            ["Auctioneer phone", chosen.get("listing_auctioneer_phone") or "Unknown"],
-            ["Auctioneer email", chosen.get("listing_auctioneer_email") or "Unknown"],
-            ["Published admin fee", money(chosen.get("detected_auction_admin_fee_fixed")) if chosen.get("detected_auction_admin_fee_fixed") is not None else "Not detected"],
-            ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Unknown"],
-            ["Title number", extracted.get("title_number") or "Unknown"],
-            ["Floor area", f"{int(chosen.get('size_sqft')):,} sq ft" if chosen.get("size_sqft") else "Unknown"],
-            ["Guide / sq ft", money(chosen.get("price_per_sqft"), 2) if chosen.get("price_per_sqft") else "Unknown"],
-            ["Failed auction attempts", int(chosen.get("failure_count") or 0)],
-            ["Observed guide reduction", pct(chosen.get("price_reduction_pct"))],
-            ["Legal status", legal_state(chosen)],
-            ["Planning status", planning_state(chosen)],
-        ], columns=["Item", "Value"])
-        st.dataframe(facts, hide_index=True, use_container_width=True)
+            blockers = readiness.get("readiness_blockers") or []
+            blocker_text = '<br>'.join(html.escape(str(x)) for x in blockers[:3]) if blockers else "No automated bid blocker is currently recorded."
+            readiness_pct = max(0, min(100, int(readiness.get("readiness_pct") or 0)))
+            st.markdown(
+                '<div class="deal-snapshot-grid">'
+                f'<div class="deal-snapshot-card"><h4>Investment case</h4><ul>{positive_items}</ul></div>'
+                f'<div class="deal-snapshot-card"><h4>Risks & checks</h4><ul>{concern_items}</ul></div>'
+                f'<div class="deal-snapshot-card deal-readiness-card"><h4>Decision readiness</h4><div class="deal-readiness-score">{readiness_pct}%</div><div class="deal-readiness-label">{html.escape(str(readiness.get("readiness_status") or "Reviewing"))}</div><div class="deal-progress-track"><div class="deal-progress-fill" style="width:{readiness_pct}%"></div></div><div class="deal-blocker">{blocker_text}</div></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            st.markdown('<div class="deal-facts-title">Recommended next move</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="deal-snapshot-card deal-next-action">{action_rows}</div>', unsafe_allow_html=True)
+
+            with st.expander("Acquisition readiness checklist"):
+                readiness_frame = pd.DataFrame([{
+                    "Check": x.get("name"), "Status": x.get("state").title(), "Detail": x.get("detail"), "Bid blocker": bool(x.get("blocker"))
+                } for x in readiness.get("readiness_checks") or []])
+                st.dataframe(readiness_frame, hide_index=True, use_container_width=True)
+
+            extracted = chosen.get("legal_extracted_fields") or {}
+            facts = pd.DataFrame([
+                ["Auction house", chosen.get("source")],
+                ["Status", chosen.get("status")],
+                ["Auction date", chosen.get("auction_date")],
+                ["Property type", chosen.get("property_type")],
+                ["Tenure", chosen.get("tenure")],
+                ["Lease remaining", f"{float(chosen.get('legal_lease_years') or chosen.get('listing_lease_years')):.1f} years" if (chosen.get("legal_lease_years") or chosen.get("listing_lease_years")) else "Unknown"],
+                ["Lease start", chosen.get("listing_lease_start_date") or "Unknown"],
+                ["Guide range", guide_display(chosen)],
+                ["EPC", chosen.get("listing_epc_rating") or "Unknown"],
+                ["Allocated parking", "Yes" if (chosen.get("features") or {}).get("parking") else "Not confirmed"],
+                ["Balcony", "Yes" if (chosen.get("features") or {}).get("balcony") else "Not confirmed"],
+                ["Auctioneer phone", chosen.get("listing_auctioneer_phone") or "Unknown"],
+                ["Auctioneer email", chosen.get("listing_auctioneer_email") or "Unknown"],
+                ["Published admin fee", money(chosen.get("detected_auction_admin_fee_fixed")) if chosen.get("detected_auction_admin_fee_fixed") is not None else "Not detected"],
+                ["Registered proprietor / seller", extracted.get("seller_name") or extracted.get("proprietor_name") or "Unknown"],
+                ["Title number", extracted.get("title_number") or "Unknown"],
+                ["Floor area", f"{int(chosen.get('size_sqft')):,} sq ft" if chosen.get("size_sqft") else "Unknown"],
+                ["Guide / sq ft", money(chosen.get("price_per_sqft"), 2) if chosen.get("price_per_sqft") else "Unknown"],
+                ["Failed auction attempts", int(chosen.get("failure_count") or 0)],
+                ["Observed guide reduction", pct(chosen.get("price_reduction_pct"))],
+                ["Legal status", legal_state(chosen)],
+                ["Planning status", planning_state(chosen)],
+            ], columns=["Item", "Value"])
+            with st.expander("Key property facts"):
+                st.dataframe(facts, hide_index=True, use_container_width=True)
 
     with tabs[1]:
         s1, s2, s3 = st.columns(3)
@@ -2438,27 +2570,71 @@ def render_pipeline_page(feed_rows):
             with c3:
                 if st.button("Open", key=f"pipeline_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["lotly_page"] = "Deal Room"
                     st.rerun()
 
 
 def render_deal_room_index(feed_rows):
     actionable = [r for r in feed_rows if is_actionable(r)]
-    priority = sorted(actionable, key=lambda r:(float(r.get("browse_score") or 0), float(r.get("motivation_score") or 0)), reverse=True)[:12]
+    priority = sorted(actionable, key=lambda r:(float(r.get("browse_score") or 0), float(r.get("motivation_score") or 0)), reverse=True)[:10]
     if not priority:
         st.info("No live opportunities are available yet.")
         return
-    st.markdown('<div class="section-title">Priority deal rooms</div><div class="section-note">Open the strongest live opportunities directly into underwriting, comparables, legal evidence and negotiation workspace.</div>', unsafe_allow_html=True)
-    for i in range(0,len(priority),3):
-        cols=st.columns(3)
-        for j,row in enumerate(priority[i:i+3]):
+
+    active_rooms = 0
+    bid_ready = 0
+    post_auction = 0
+    strong = 0
+    for row in actionable:
+        workspace = db.workspace_for(row["id"])
+        if workspace.get("stage") and workspace.get("stage") not in {"New", "Lost", "Archived"}:
+            active_rooms += 1
+        if deal_readiness(row).get("readiness_pct", 0) >= 80:
+            bid_ready += 1
+        if is_unsold(row):
+            post_auction += 1
+        if float(row.get("browse_score") or 0) >= 8.0:
+            strong += 1
+
+    st.markdown(
+        '<div class="deal-index-strip">'
+        f'<div class="deal-index-kpi"><div class="label">Priority opportunities</div><div class="value">{strong}</div></div>'
+        f'<div class="deal-index-kpi"><div class="label">Active deal rooms</div><div class="value">{active_rooms}</div></div>'
+        f'<div class="deal-index-kpi"><div class="label">80%+ decision ready</div><div class="value">{bid_ready}</div></div>'
+        f'<div class="deal-index-kpi"><div class="label">Post-auction leverage</div><div class="value">{post_auction}</div></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="section-title">Priority decision rooms</div><div class="section-note">Open the opportunities with the strongest combination of pricing, seller leverage and evidence. The Deal Room keeps the decision, underwriting and due diligence in one place.</div>', unsafe_allow_html=True)
+
+    for i in range(0, len(priority), 2):
+        cols = st.columns(2)
+        for j, row in enumerate(priority[i:i+2]):
+            readiness = deal_readiness(row)
+            workspace = db.workspace_for(row["id"])
             with cols[j]:
-                with st.container(border=True):
-                    st.markdown(f'<div class="card-sub">{row.get("source") or "Auction"} · {row.get("status") or "Live"}</div><div class="property-title">{clean_address(row)}</div>', unsafe_allow_html=True)
-                    st.markdown(f'<div class="lotly-score-mini"><div class="num">{float(row.get("browse_score") or 0):.1f}</div><div class="lbl">Lotly Score</div></div>', unsafe_allow_html=True)
-                    st.caption(f"Guide {guide_display(row)} · Max buy {money(row.get('max_bid'))}")
-                    if st.button("Open Deal Room",key=f"room_index_{row['id']}",type="primary",use_container_width=True):
-                        st.session_state["selected_deal_id"]=row["id"]
-                        st.rerun()
+                with st.container(border=False, key=f"deal_index_card_{row['id']}"):
+                    image_col, body_col = st.columns([1.0, 1.65], vertical_alignment="top")
+                    with image_col:
+                        render_property_image(row, featured=False)
+                    with body_col:
+                        st.markdown(f'<div class="deal-index-meta">{html.escape(str(row.get("source") or "Auction"))} · Lot {html.escape(str(row.get("lot_number") or "-"))} · {html.escape(str(row.get("status") or "Live"))}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="deal-index-title">{html.escape(clean_address(row))}</div>', unsafe_allow_html=True)
+                        render_badges(row, limit=3)
+                        st.markdown(
+                            '<div class="deal-index-metrics">'
+                            f'<div class="deal-index-metric"><span>Guide</span><strong>{html.escape(guide_display(row))}</strong></div>'
+                            f'<div class="deal-index-metric"><span>Max buy</span><strong>{html.escape(money(row.get("max_bid")))}</strong></div>'
+                            f'<div class="deal-index-metric"><span>Readiness</span><strong>{int(readiness.get("readiness_pct") or 0)}%</strong></div>'
+                            '</div>',
+                            unsafe_allow_html=True,
+                        )
+                        stage = workspace.get("stage") or "New"
+                        st.markdown(f'<div class="deal-stage-line">Stage: <strong>{html.escape(str(stage))}</strong> · Lotly Score <strong>{float(row.get("browse_score") or 0):.1f}/10</strong></div>', unsafe_allow_html=True)
+                        if st.button("Open Deal Room  →", key=f"room_index_{row['id']}", type="primary", use_container_width=True):
+                            st.session_state["selected_deal_id"] = row["id"]
+                            st.session_state["lotly_page"] = "Deal Room"
+                            st.rerun()
 
 
 def render_reports_page(feed_rows):
