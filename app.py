@@ -251,7 +251,7 @@ st.markdown(
 .side-brand-card .diamond {display:block;font-size:1.12rem;color:#078B7D;margin-bottom:7px;}
 
 /* Top-right account strip */
-.lotly-topbar {height:58px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid rgba(230,236,240,.35);margin:0 -1.7rem 0;padding:0 1.7rem;background:rgba(255,255,255,.72);}
+.lotly-topbar {height:58px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid rgba(230,236,240,.35);margin:-3.35rem -1.7rem 0;padding:0 1.7rem;background:rgba(255,255,255,.78);}
 .topbar-actions {display:flex;align-items:center;gap:19px;color:#0B1F33;}
 .tb-icon {font-size:1.22rem;line-height:1;color:#0B1F33;}
 .tb-bell {position:relative;}
@@ -337,6 +337,38 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-dashboard-card-marker
     unsafe_allow_html=True,
 )
 
+# v1.12.7 uses Streamlit's stable container key rather than relying on a :has() DOM selector.
+# Streamlit adds the CSS class .st-key-lotly_hero for this container, which makes the hero
+# artwork deterministic across Community Cloud rerenders.
+st.markdown(
+    """
+<style>
+.st-key-lotly_hero {
+  position:relative!important;
+  overflow:hidden!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  padding:0!important;
+  margin:0 0 10px!important;
+  min-height:150px!important;
+  background:linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 46%,#F7FCFB 67%,#EAF8F5 100%)!important;
+}
+.st-key-lotly_hero > div {position:relative!important;z-index:2!important;background:transparent!important;}
+.st-key-lotly_hero .hero-copy {padding:10px 8px 10px 7px!important;min-height:105px!important;}
+.st-key-lotly_hero .hero-right-space {height:17px!important;}
+.st-key-lotly_hero [data-testid="stPopover"] {position:relative!important;z-index:5!important;}
+.st-key-lotly_hero [data-testid="stPopover"] button {background:rgba(255,255,255,.97)!important;border:1px solid #D8E1E7!important;border-radius:13px!important;box-shadow:0 5px 16px rgba(11,31,51,.07)!important;color:#0B1F33!important;font-weight:760!important;min-height:44px!important;}
+.sidebar-version {font-size:.57rem;color:#93A0AE;text-align:center;letter-spacing:.06em;margin:8px 0 2px;}
+/* Slightly tighter approved first-screen rhythm */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-filter-marker) [data-testid="stVerticalBlock"] {gap:.40rem!important;}
+[data-testid="stSegmentedControl"] button {min-height:34px!important;}
+[data-testid="stTextInput"] input,[data-testid="stSelectbox"] > div > div {min-height:40px!important;}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # The hero artwork is applied to the exact Streamlit container as a CSS background.
 # This is more reliable than an absolutely positioned HTML image because Streamlit
 # wraps Markdown elements in additional positioned nodes that can collapse image height.
@@ -344,7 +376,7 @@ if HERO_HOUSES_DATA_URI:
     st.markdown(
         f"""
 <style>
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.lotly-hero-marker) {{
+.st-key-lotly_hero {{
   background-image:url('{HERO_HOUSES_DATA_URI}'),linear-gradient(90deg,#FFFFFF 0%,#FFFFFF 46%,#F7FCFB 67%,#EAF8F5 100%)!important;
   background-size:62% auto,100% 100%!important;
   background-position:right center,center center!important;
@@ -708,6 +740,7 @@ with st.sidebar:
         <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
         st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-version">Lotly v1.12.7</div>', unsafe_allow_html=True)
 
 commercial_target_psf = int(st.session_state["commercial_target_psf"])
 commercial_ceiling_psf = int(st.session_state["commercial_ceiling_psf"])
@@ -760,7 +793,7 @@ if not deal_open and lotly_page in {"Discover", "Shortlist"}:
     if runs:
         raw_ts = str(runs[0].get("completed_at") or runs[0].get("started_at") or "")
         latest_text = raw_ts[0:16].replace("T", " ") if len(raw_ts) >= 16 else raw_ts
-    with st.container(border=True):
+    with st.container(border=False, key="lotly_hero"):
         st.markdown('<span class="lotly-hero-marker"></span>', unsafe_allow_html=True)
         hleft, hright = st.columns([4.7, 1.35], vertical_alignment="top")
         with hleft:
