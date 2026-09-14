@@ -25,7 +25,7 @@ from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
-from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, auction_history_integrity, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
+from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, auction_history_integrity, location_beginner_summary, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -566,6 +566,17 @@ st.markdown(
 .deal-auction-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:7px 0 12px}.deal-auction-step{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:11px 12px}.deal-auction-step .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900;margin-bottom:7px}.deal-auction-step .title{font-size:.7rem;font-weight:880;color:#17324B;line-height:1.32}.deal-auction-step .copy{font-size:.61rem;color:#66798C;line-height:1.42;margin-top:4px}
 .deal-auction-timeline{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:4px 13px;margin:7px 0 10px}.deal-auction-event{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 0;border-top:1px solid #EEF2F3}.deal-auction-event:first-child{border-top:0}.deal-auction-event .date{font-size:.61rem;font-weight:800;color:#6B7D90}.deal-auction-event .event-title{font-size:.7rem;font-weight:850;color:#17324B}.deal-auction-event .event-copy{font-size:.61rem;color:#66798C;line-height:1.4;margin-top:2px}
 @media(max-width:1100px){.deal-auction-position{grid-template-columns:1fr}.deal-auction-position .confidence{text-align:left}.deal-auction-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.deal-auction-steps{grid-template-columns:1fr}}
+
+
+/* Beginner Location v1.13.14 */
+.deal-location-intro{background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px}.deal-location-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33;letter-spacing:-.025em}.deal-location-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;margin-top:3px;max-width:900px}
+.deal-location-position{display:grid;grid-template-columns:210px 1fr 160px;gap:14px;align-items:center;border:1px solid #D7E7E3;background:#F7FBFA;border-radius:14px;padding:13px 14px;margin:0 0 12px}.deal-location-position.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-location-position.risk{background:#FFF8F7;border-color:#F0CBC6}.deal-location-position .label{font-size:.52rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90}.deal-location-position .verdict{font-size:1.02rem;font-weight:950;color:#08786F;line-height:1.16;margin-top:2px}.deal-location-position.warn .verdict{color:#8E6100}.deal-location-position.risk .verdict{color:#B42318}.deal-location-position .headline{font-size:.9rem;font-weight:900;color:#0B1F33;line-height:1.25}.deal-location-position .copy{font-size:.64rem;color:#607489;line-height:1.42;margin-top:3px}.deal-location-position .evidence{text-align:right;font-size:.58rem;line-height:1.35;font-weight:850;text-transform:uppercase;letter-spacing:.04em;color:#6B7D90}
+.deal-location-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px}.deal-location-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:142px}.deal-location-card.good{background:#F8FCFB;border-color:#D2EAE4}.deal-location-card.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-location-card.risk{background:#FFF8F7;border-color:#F0CBC6}.deal-location-card .label{font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:#718195;font-weight:900;margin-bottom:6px}.deal-location-card .value{font-size:.86rem;line-height:1.28;font-weight:900;color:#0B1F33}.deal-location-card .detail{font-size:.61rem;line-height:1.43;color:#607489;margin-top:6px}.deal-location-card .status{display:inline-flex;border-radius:999px;padding:3px 6px;margin-top:7px;font-size:.49rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;background:#EEF3F5;color:#536A7D}.deal-location-card.good .status{background:#E9F7F1;color:#08786F}.deal-location-card.warn .status{background:#FFF2CC;color:#8E6100}.deal-location-card.risk .status{background:#FDEDEC;color:#B42318}
+.deal-location-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 12px}.deal-location-panel{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:12px 14px}.deal-location-panel.good{background:#F8FCFB;border-color:#D2EAE4}.deal-location-panel.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-location-panel .eyebrow{font-size:.53rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90}.deal-location-panel .title{font-size:.86rem;font-weight:900;color:#0B1F33;line-height:1.3;margin-top:4px}.deal-location-panel .copy{font-size:.63rem;line-height:1.45;color:#607489;margin-top:5px}
+.deal-location-proof{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:7px 0 12px}.deal-location-proof .item{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:10px 11px}.deal-location-proof .item .label{font-size:.54rem;color:#718195;font-weight:800}.deal-location-proof .item .value{font-size:.92rem;color:#0B1F33;font-weight:900;margin-top:3px}.deal-location-proof .item .sub{font-size:.58rem;color:#718195;margin-top:3px;line-height:1.35}
+.deal-location-list{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:5px 13px;margin:7px 0 12px}.deal-location-list-row{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:9px 0;border-top:1px solid #EEF2F3}.deal-location-list-row:first-child{border-top:0}.deal-location-list-row .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900}.deal-location-list-row .title{font-size:.69rem;font-weight:850;color:#17324B}.deal-location-list-row .copy{font-size:.61rem;color:#66798C;line-height:1.4;margin-top:2px}
+.deal-location-gap{background:#FFFCF5;border:1px solid #ECDDB6;border-radius:13px;padding:11px 13px;margin:8px 0 12px}.deal-location-gap .title{font-size:.72rem;font-weight:900;color:#17324B}.deal-location-gap .copy{font-size:.62rem;color:#66798C;line-height:1.45;margin-top:4px}
+@media(max-width:1100px){.deal-location-position{grid-template-columns:1fr}.deal-location-position .evidence{text-align:left}.deal-location-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.deal-location-split{grid-template-columns:1fr}.deal-location-proof{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 
 /* v1.13.6 beginner-first Legal & Planning */
@@ -3334,27 +3345,143 @@ def render_deal_room(chosen):
                 st.caption("Automated legal-pack analysis is triage only. The latest complete pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.")
 
     with tabs[6]:
-        if st.button("Retry location / motorway enrichment", key=f"geo_retry_{chosen['id']}", use_container_width=True):
-            try:
-                with st.spinner("Refreshing postcode and motorway-junction evidence..."):
-                    result = refresh_geography(db)
-                    sync_cloud("geography refresh", quiet=False)
-                if result.get("errors"):
-                    st.warning("Location refresh completed with a fallback/warning: " + " | ".join(result.get("errors") or []))
-                else:
-                    st.success(f"Location refresh complete: {result.get('motorway_enriched', 0)} junction distances updated.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Location refresh failed: {exc}")
-        l1, l2, l3, l4 = st.columns(4)
-        l1.metric("Nearest motorway", chosen.get("nearest_motorway") or "Pending")
-        l2.metric("Nearest junction", chosen.get("nearest_junction") or "Pending")
-        l3.metric("Distance", f"{chosen.get('motorway_distance_miles'):.1f} mi" if chosen.get("motorway_distance_miles") is not None else "Pending")
-        l4.metric("Distance type", chosen.get("motorway_distance_kind") or "-")
-        if chosen.get("latitude") is not None and chosen.get("longitude") is not None:
-            st.map(pd.DataFrame([{"lat": chosen.get("latitude"), "lon": chosen.get("longitude")}]), latitude="lat", longitude="lon", zoom=12)
+        location_comps = db.comparables_for(chosen["id"])
+        location_uw = db.underwriting_for(chosen["id"])
+        location_view = location_beginner_summary(chosen, location_comps, planning_items, location_uw)
+        location_tone = str(location_view.get("verdict_tone") or "warn")
+        verdict_class = "risk" if location_tone == "risk" else "warn" if location_tone == "warn" else ""
+
+        st.markdown(
+            '<div class="deal-location-intro"><div>'
+            '<div class="title">Location — plain English</div>'
+            '<div class="copy">Lotly separates what the evidence actually supports from what still needs checking. A good postcode alone is never treated as proof of rent, demand or resale speed.</div>'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        loc_conf = int(location_view.get("comp_confidence") or 0)
+        loc_count = int(location_view.get("comp_count") or 0)
+        evidence_text = f"{loc_conf}% sold-evidence confidence · {loc_count} usable comp{'s' if loc_count != 1 else ''}"
+        st.markdown(
+            f'<div class="deal-location-position {verdict_class}">'
+            f'<div><div class="label">Location view</div><div class="verdict">{html.escape(str(location_view.get("verdict") or "MORE EVIDENCE NEEDED"))}</div></div>'
+            f'<div><div class="headline">Is this a sensible place to own this type of property?</div><div class="copy">{html.escape(str(location_view.get("verdict_copy") or ""))}</div></div>'
+            f'<div class="evidence">{html.escape(evidence_text)}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        card_html = ''.join(
+            f'<div class="deal-location-card {html.escape(str(card.get("tone") or ""))}">'
+            f'<div class="label">{html.escape(str(card.get("label") or ""))}</div>'
+            f'<div class="value">{html.escape(str(card.get("value") or "-"))}</div>'
+            f'<div class="detail">{html.escape(str(card.get("detail") or ""))}</div>'
+            f'<div class="status">{html.escape(str(card.get("status") or "CHECK"))}</div>'
+            '</div>'
+            for card in location_view.get("cards") or []
+        )
+        st.markdown('<div class="deal-location-grid">' + card_html + '</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="deal-location-split">'
+            f'<div class="deal-location-panel"><div class="eyebrow">Who might rent or buy here?</div><div class="title">Audience to test — not assumed demand</div><div class="copy">{html.escape(str(location_view.get("audience") or ""))}</div></div>'
+            f'<div class="deal-location-panel {html.escape(str(location_view.get("exit_tone") or "warn"))}"><div class="eyebrow">Exitability</div><div class="title">{html.escape(str(location_view.get("exit_label") or "CHECK"))}</div><div class="copy">{html.escape(str(location_view.get("exit_copy") or ""))}</div></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        sold_low = location_view.get("sold_low")
+        sold_high = location_view.get("sold_high")
+        sold_median = location_view.get("median_sold_price")
+        spread = location_view.get("spread_pct")
+        proof = [
+            ("Usable sold comps", str(location_view.get("comp_count") or 0), f"{int(location_view.get('local_one_mile_count') or 0)} within 1 mile"),
+            ("Median sold evidence", money(sold_median), "Non-outlier comparable sales" if sold_median else "Not enough evidence"),
+            ("Observed sold range", f"{money(sold_low)} – {money(sold_high)}" if sold_low and sold_high else "-", f"Latest sale {location_view.get('latest_sale_date') or 'not captured'}"),
+            ("Valuation spread", f"{float(spread):.1f}%" if spread is not None else "-", "Lower spread generally means tighter pricing evidence"),
+        ]
+        proof_html = ''.join(
+            f'<div class="item"><div class="label">{html.escape(label)}</div><div class="value">{html.escape(str(value))}</div><div class="sub">{html.escape(str(sub))}</div></div>'
+            for label, value, sub in proof
+        )
+        st.markdown('<div class="deal-facts-title">Local sold-price evidence</div><div class="deal-location-proof">' + proof_html + '</div>', unsafe_allow_html=True)
+
+        if location_comps:
+            ordered_location_comps = sorted(location_comps, key=lambda r: float(r.get("match_score") or 0), reverse=True)
+            location_frame = pd.DataFrame([{
+                "Address": r.get("address"),
+                "Sold price": r.get("sale_price"),
+                "Sold date": r.get("sale_date"),
+                "Distance": r.get("distance_miles"),
+                "Match": r.get("match_score"),
+            } for r in ordered_location_comps[:5]])
+            st.dataframe(location_frame, hide_index=True, use_container_width=True, column_config={
+                "Sold price": st.column_config.NumberColumn(format="GBP %d"),
+                "Distance": st.column_config.NumberColumn(format="%.2f mi"),
+                "Match": st.column_config.NumberColumn(format="%.0f%%"),
+            })
+            st.caption("These sales support local pricing evidence. They do not prove rental demand, neighbourhood quality or how quickly this property would resell.")
         else:
-            st.info("Postcode coordinates not yet available.")
+            st.info("No sold comparable evidence is stored yet. Refresh Comparables before relying on the location screen.")
+
+        risks = location_view.get("risks") or []
+        if risks:
+            risk_rows = ''.join(
+                f'<div class="deal-location-list-row"><span class="num">!</span><div><div class="title">Check before relying on the location</div><div class="copy">{html.escape(str(risk))}</div></div></div>'
+                for risk in risks[:5]
+            )
+            st.markdown('<div class="deal-facts-title">What could hurt the investment?</div><div class="deal-location-list">' + risk_rows + '</div>', unsafe_allow_html=True)
+
+        next_steps = location_view.get("next_steps") or []
+        if next_steps:
+            next_rows = ''.join(
+                f'<div class="deal-location-list-row"><span class="num">{i}</span><div><div class="title">{html.escape(str(step))}</div></div></div>'
+                for i, step in enumerate(next_steps[:4], start=1)
+            )
+            st.markdown('<div class="deal-facts-title">What Lotly recommends checking next</div><div class="deal-location-list">' + next_rows + '</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="deal-location-gap"><div class="title">Evidence Lotly does not pretend to know yet</div>'
+            '<div class="copy">Crime rate, current competing supply, local amenity quality, employment demand and achieved rental demand are not currently independently measured in this location screen. Lotly keeps those as checks rather than inventing a score.</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.expander("Map & underlying location evidence", expanded=False):
+            if st.button("Retry location / motorway enrichment", key=f"geo_retry_{chosen['id']}", use_container_width=True):
+                try:
+                    with st.spinner("Refreshing postcode and motorway-junction evidence..."):
+                        result = refresh_geography(db)
+                        sync_cloud("geography refresh", quiet=False)
+                    if result.get("errors"):
+                        st.warning("Location refresh completed with a fallback/warning: " + " | ".join(result.get("errors") or []))
+                    else:
+                        st.success(f"Location refresh complete: {result.get('motorway_enriched', 0)} junction distances updated.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Location refresh failed: {exc}")
+            l1, l2, l3, l4 = st.columns(4)
+            l1.metric("Nearest motorway", chosen.get("nearest_motorway") or "Pending")
+            l2.metric("Nearest junction", chosen.get("nearest_junction") or "Pending")
+            l3.metric("Distance", f"{chosen.get('motorway_distance_miles'):.1f} mi" if chosen.get("motorway_distance_miles") is not None else "Pending")
+            l4.metric("Distance type", chosen.get("motorway_distance_kind") or "-")
+            if chosen.get("latitude") is not None and chosen.get("longitude") is not None:
+                st.map(pd.DataFrame([{"lat": chosen.get("latitude"), "lon": chosen.get("longitude")}]), latitude="lat", longitude="lon", zoom=12)
+            else:
+                st.info("Postcode coordinates not yet available.")
+
+            constraint_rows = [x for x in (planning_items or []) if str(x.get("kind") or "") == "constraint"]
+            if constraint_rows:
+                st.markdown("#### Planning / environmental records")
+                constraint_frame = pd.DataFrame([{
+                    "Constraint": x.get("label") or x.get("dataset"),
+                    "Severity": x.get("severity"),
+                    "Source": x.get("source_url"),
+                } for x in constraint_rows])
+                st.dataframe(constraint_frame, hide_index=True, use_container_width=True, column_config={
+                    "Source": st.column_config.LinkColumn("Source"),
+                })
+            else:
+                st.caption("No mapped planning/environment constraint rows are currently stored for this property. Absence of a row is not a guarantee that none exists.")
 
     with tabs[7]:
         st.markdown("### Lotly workspace")

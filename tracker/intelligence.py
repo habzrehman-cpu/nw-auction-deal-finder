@@ -275,6 +275,241 @@ def auction_history_integrity(row: dict, history: Iterable[dict] | None = None) 
 
 
 
+def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = None,
+                              planning_items: Iterable[dict] | None = None,
+                              underwriting: dict | None = None) -> dict:
+    """Translate existing location evidence into a beginner-safe investment screen.
+
+    The function deliberately avoids claiming rental demand, crime quality, amenity
+    quality or sale speed unless Lotly has evidence for those points.  Comparable sales
+    are used as pricing/liquidity evidence, planning data as environmental/designation
+    evidence, and saved ERV only when the user has entered it in underwriting.
+    """
+    comps = [dict(x) for x in (comparables or [])]
+    planning_items = [dict(x) for x in (planning_items or [])]
+    underwriting = dict(underwriting or {})
+
+    postcode = str(row.get("postcode") or "").strip().upper()
+    postcode_district = postcode.split()[0] if postcode else "Local area"
+    property_type = str(row.get("property_type") or "Property").strip()
+    property_type_low = property_type.lower()
+    tenure = str(row.get("tenure") or "").lower()
+
+    # --- Sold-market evidence -------------------------------------------------
+    usable = []
+    for comp in comps:
+        meta = comp.get("metadata") or {}
+        if meta.get("outlier_flag"):
+            continue
+        price = _num(comp.get("sale_price"))
+        if not price or price <= 0:
+            continue
+        usable.append(comp)
+    if not usable:
+        usable = [c for c in comps if (_num(c.get("sale_price")) or 0) > 0]
+
+    prices = sorted(float(c.get("sale_price")) for c in usable if _num(c.get("sale_price")))
+    if prices:
+        n = len(prices)
+        median_price = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
+        sold_low, sold_high = prices[0], prices[-1]
+    else:
+        median_price = sold_low = sold_high = None
+
+    local_one_mile = [c for c in usable if _num(c.get("distance_miles")) is not None and float(c.get("distance_miles")) <= 1.0]
+    latest_sale_date = max((str(c.get("sale_date") or "") for c in usable), default="")
+    comp_conf = int(row.get("comparable_confidence") or 0)
+    comp_count = int(row.get("comparable_count") or len(usable))
+    comp_low = _num(row.get("comparable_valuation_low"))
+    comp_mid = _num(row.get("comparable_valuation_mid"))
+    comp_high = _num(row.get("comparable_valuation_high"))
+    spread_pct = ((comp_high - comp_low) / comp_mid * 100) if comp_low and comp_high and comp_mid else None
+
+    if comp_conf >= 75 and comp_count >= 5:
+        market_status = "SUPPORTED"
+        market_tone = "good"
+        market_value = f"{comp_count} usable sold comps"
+        market_detail = f"Desktop sold-price evidence is comparatively strong ({comp_conf}% confidence)."
+    elif comp_conf >= 60 and comp_count >= 4:
+        market_status = "CHECK"
+        market_tone = "warn"
+        market_value = f"{comp_count} usable sold comps"
+        market_detail = f"There is useful sold evidence, but confidence is only {comp_conf}%."
+    else:
+        market_status = "MORE DATA"
+        market_tone = "warn"
+        market_value = f"{comp_count} usable sold comps" if comp_count else "Not enough sold evidence"
+        market_detail = f"Comparable confidence is {comp_conf}%; do not assume resale pricing is proven."
+
+    # --- Rental / yield evidence ---------------------------------------------
+    erv_annual = _num(underwriting.get("erv_annual"))
+    guide = _num(row.get("guide_price"))
+    monthly_rent = (erv_annual / 12) if erv_annual else None
+    gross_yield = (erv_annual / guide * 100) if erv_annual and guide else None
+    if erv_annual:
+        rent_status, rent_tone = "EVIDENCED", "good"
+        rent_value = f"GBP {monthly_rent:,.0f}/month"
+        rent_detail = f"User-entered ERV GBP {erv_annual:,.0f}/year" + (f"; {gross_yield:.1f}% gross yield at guide." if gross_yield is not None else ".")
+    else:
+        rent_status, rent_tone = "CHECK", "warn"
+        rent_value = "Rent not yet evidenced"
+        rent_detail = "Lotly will not guess local rent. Add comparable rental evidence in Financials before relying on yield."
+
+    # --- Access ---------------------------------------------------------------
+    road_miles = _num(row.get("motorway_road_miles"))
+    air_miles = _num(row.get("motorway_air_miles"))
+    measured_miles = road_miles if road_miles is not None else air_miles
+    nearest_junction = str(row.get("nearest_junction") or row.get("nearest_motorway") or "").strip()
+    distance_kind = str(row.get("motorway_distance_kind") or ("road" if road_miles is not None else "straight-line" if air_miles is not None else "")).strip()
+    if measured_miles is not None:
+        access_status, access_tone = "MEASURED", "good" if measured_miles <= 5 else "warn"
+        access_value = f"{measured_miles:.1f} mi to {nearest_junction or 'motorway access'}"
+        access_detail = f"{distance_kind.title() if distance_kind else 'Measured'} distance. Road access is evidence, not proof of tenant or buyer demand."
+    else:
+        access_status, access_tone = "CHECK", "warn"
+        access_value = "Access still being enriched"
+        access_detail = "Exact strategic-road distance is not yet available."
+
+    # --- Planning / flood / environmental evidence ---------------------------
+    planning_screened = str(row.get("planning_status") or "").lower() == "ok"
+    constraints = [x for x in planning_items if str(x.get("kind") or "") == "constraint"]
+    flood_items = [x for x in constraints if str(x.get("dataset") or "") == "flood-risk-zone"]
+    high_constraints = [x for x in constraints if int(x.get("severity") or 0) >= 4]
+    highest_severity = max([int(x.get("severity") or 0) for x in constraints] or [0])
+    if flood_items or high_constraints:
+        env_status, env_tone = "CHECK", "warn"
+        bits = []
+        if flood_items:
+            bits.append(f"{len(flood_items)} mapped flood-risk item{'s' if len(flood_items) != 1 else ''}")
+        if high_constraints:
+            bits.append(f"{len(high_constraints)} higher-severity designation{'s' if len(high_constraints) != 1 else ''}")
+        env_value = "; ".join(bits) or "Constraints found"
+        env_detail = "Review the official planning/environment records and insurance implications before relying on the location."
+    elif planning_screened:
+        env_status, env_tone = "SCREENED", "good"
+        env_value = "No major mapped blocker returned"
+        env_detail = "The current official planning-data screen did not return a high-severity mapped constraint. Coverage varies by authority and dataset."
+    else:
+        env_status, env_tone = "MORE DATA", "warn"
+        env_value = "Planning/environment not screened"
+        env_detail = "Run the planning check before treating flood/designation risk as understood."
+
+    # --- Audience and exit evidence ------------------------------------------
+    if any(x in property_type_low for x in ("flat", "apartment", "maisonette")):
+        audience = (
+            f"Audience to test in {postcode_district}: apartment renters, owner-occupiers and investors. "
+            "Lotly has not independently measured demand for those groups, so verify current rents and competing listings."
+        )
+    elif any(x in property_type_low for x in ("house", "terrace", "semi", "detached")):
+        audience = (
+            f"Audience to test in {postcode_district}: local owner-occupiers, families and renters seeking houses. "
+            "Verify achieved rents and current competing stock before assuming demand."
+        )
+    elif any(x in property_type_low for x in ("industrial", "commercial", "warehouse", "office", "retail")):
+        audience = (
+            f"Audience to test in {postcode_district}: occupiers and investors looking for similar {property_type.lower()} space. "
+            "Road access helps the screen, but local rents, vacancy and competing supply still need evidence."
+        )
+    else:
+        audience = f"Audience to test in {postcode_district}: buyers, renters or occupiers seeking this property type locally. Demand is not assumed without market evidence."
+
+    if comp_conf >= 75 and comp_count >= 5 and (spread_pct is None or spread_pct <= 20):
+        exit_label = "GOOD PRICING EVIDENCE"
+        exit_copy = "Recent comparable evidence gives Lotly a useful resale-pricing base. This does not prove how quickly the property would resell."
+        exit_tone = "good"
+    elif comp_conf >= 60 and comp_count >= 4:
+        exit_label = "USABLE WITH REVIEW"
+        exit_copy = "There is enough local sold evidence for screening, but sale speed and final achievable price remain unproven."
+        exit_tone = "warn"
+    else:
+        exit_label = "NOT YET PROVEN"
+        exit_copy = "Local sold evidence is not strong enough to make a confident exit-pricing assumption."
+        exit_tone = "warn"
+
+    # --- Overall beginner verdict --------------------------------------------
+    if highest_severity >= 5:
+        verdict = "CAUTION — REVIEW LOCAL CONSTRAINTS"
+        verdict_tone = "warn"
+        verdict_copy = "A serious mapped planning/environment constraint needs review before Lotly can call the location straightforward."
+    elif comp_conf >= 70 and planning_screened and erv_annual:
+        verdict = "PROMISING — CORE LOCATION EVIDENCE IN PLACE"
+        verdict_tone = "good"
+        verdict_copy = "Sold-price, planning/environment and rent evidence are present. Still verify competing supply and the area on the ground."
+    elif comp_conf >= 70 and planning_screened:
+        verdict = "PROMISING — VERIFY RENTAL DEMAND"
+        verdict_tone = "good"
+        verdict_copy = "Sold-price evidence is strong and the planning/environment screen has run, but rent and active local supply are not yet independently evidenced."
+    elif comp_conf >= 60:
+        verdict = "MIXED — MORE LOCAL EVIDENCE NEEDED"
+        verdict_tone = "warn"
+        verdict_copy = "There is useful local evidence, but Lotly would not yet call the location fully underwritten."
+    else:
+        verdict = "MORE EVIDENCE NEEDED"
+        verdict_tone = "warn"
+        verdict_copy = "The location screen is incomplete. Add stronger sold, rent and local-market evidence before relying on it."
+
+    risks = []
+    if not erv_annual:
+        risks.append("Rental demand and achievable rent are not yet independently evidenced.")
+    if spread_pct is not None and spread_pct > 25:
+        risks.append(f"Comparable valuation spread is {spread_pct:.1f}%, so local pricing is still dispersed.")
+    if flood_items:
+        risks.append("A mapped flood-risk item is present; confirm insurance availability, lender impact and exact zone before purchase.")
+    if high_constraints:
+        labels = [str(x.get("label") or x.get("dataset") or "constraint") for x in high_constraints[:2]]
+        risks.append("Higher-severity planning/designation evidence needs review: " + "; ".join(labels) + ".")
+    if "lease" in tenure:
+        risks.append("For a leasehold property, service charge and major-works exposure can materially change the economics even when the location is attractive.")
+    risks.append("Current competing listings / active supply are not yet measured by Lotly, so do not infer scarcity from sold comparables alone.")
+
+    next_steps = []
+    if not erv_annual:
+        next_steps.append("Collect at least 3 current rental comparables for the same property type and enter a conservative ERV in Financials.")
+    next_steps.append("Check 5-10 current competing sale/rental listings nearby so you understand active supply, not just historic sold prices.")
+    next_steps.append("Visit the immediate area in daytime and evening and test the actual route to transport, employment and everyday amenities.")
+    if flood_items:
+        next_steps.append("Confirm the exact flood zone and obtain an insurance indication before relying on the deal economics.")
+    elif not planning_screened:
+        next_steps.append("Run the planning/environment screen before treating local constraints as understood.")
+
+    cards = [
+        {"label": "Local sold market", "value": market_value, "detail": market_detail, "status": market_status, "tone": market_tone},
+        {"label": "Rent & gross yield", "value": rent_value, "detail": rent_detail, "status": rent_status, "tone": rent_tone},
+        {"label": "Road access", "value": access_value, "detail": access_detail, "status": access_status, "tone": access_tone},
+        {"label": "Flood / environment", "value": env_value, "detail": env_detail, "status": env_status, "tone": env_tone},
+    ]
+
+    return {
+        "verdict": verdict,
+        "verdict_tone": verdict_tone,
+        "verdict_copy": verdict_copy,
+        "cards": cards,
+        "audience": audience,
+        "exit_label": exit_label,
+        "exit_copy": exit_copy,
+        "exit_tone": exit_tone,
+        "comp_count": comp_count,
+        "comp_confidence": comp_conf,
+        "local_one_mile_count": len(local_one_mile),
+        "median_sold_price": median_price,
+        "sold_low": sold_low,
+        "sold_high": sold_high,
+        "latest_sale_date": latest_sale_date,
+        "spread_pct": spread_pct,
+        "erv_annual": erv_annual,
+        "monthly_rent": monthly_rent,
+        "gross_yield_pct": gross_yield,
+        "planning_screened": planning_screened,
+        "flood_items": flood_items,
+        "high_constraints": high_constraints,
+        "constraints": constraints,
+        "risks": risks,
+        "next_steps": next_steps,
+        "postcode_district": postcode_district,
+    }
+
+
+
 def _planning_timeline(planning_items: Iterable[dict]) -> list[dict]:
     out = []
     for item in planning_items or []:
