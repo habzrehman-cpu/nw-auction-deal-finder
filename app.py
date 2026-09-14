@@ -554,6 +554,11 @@ st.markdown(
 .deal-plain-gate.stop{background:#FFF4F3;border-color:#F2C9C4}.deal-plain-gate.check{background:#FFF9EC;border-color:#EED8A5}.deal-plain-gate.clear{background:#F1FAF7;border-color:#C7E8DE}
 .deal-plain-gate .gate-word{font-size:1.02rem;font-weight:950;letter-spacing:.04em}.deal-plain-gate.stop .gate-word{color:#B42318}.deal-plain-gate.check .gate-word{color:#8E6100}.deal-plain-gate.clear .gate-word{color:#08786F}
 .deal-plain-gate .gate-title{font-size:.88rem;font-weight:880;color:#0B1F33;line-height:1.25}.deal-plain-gate .gate-copy{font-size:.65rem;color:#607489;line-height:1.42;margin-top:3px}
+.deal-legal-readiness{display:grid;grid-template-columns:145px 1fr;gap:16px;align-items:center;border-radius:14px;padding:13px 14px;margin:-2px 0 12px;border:1px solid #E1E8EB;background:#fff;}
+.deal-legal-readiness.stop{background:#FFF8F7;border-color:#F0CBC6}.deal-legal-readiness.check{background:#FFFCF5;border-color:#ECDDB6}.deal-legal-readiness.clear{background:#F8FCFB;border-color:#D2EAE4}
+.deal-legal-readiness .score{font-size:1.45rem;font-weight:950;letter-spacing:-.04em;color:#0B1F33}.deal-legal-readiness .score-label{font-size:.52rem;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#6B7D90}
+.deal-legal-readiness .ready-title{font-size:.82rem;font-weight:900;color:#0B1F33}.deal-legal-readiness .ready-copy{font-size:.62rem;line-height:1.4;color:#607489;margin-top:3px}.deal-legal-readiness .bar{height:7px;background:#E9EEF1;border-radius:999px;overflow:hidden;margin-top:7px}.deal-legal-readiness .fill{height:100%;border-radius:999px}.deal-legal-readiness.stop .fill{background:#D92D20}.deal-legal-readiness.check .fill{background:#D9A514}.deal-legal-readiness.clear .fill{background:#10A38F}
+.deal-hard-rule{font-size:.68rem;font-weight:850;color:#8F1D16;margin:6px 0 0}.deal-term-help{font-size:.62rem;line-height:1.5;color:#5F7387}
 .deal-plain-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px;}
 .deal-plain-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:142px;}
 .deal-plain-card.stop{background:#FFF8F7;border-color:#F0CBC6}.deal-plain-card.check{background:#FFFCF5;border-color:#ECDDB6}.deal-plain-card.clear{background:#F8FCFB;border-color:#D2EAE4}
@@ -2402,6 +2407,11 @@ def render_deal_room(chosen):
             if int(i.get("severity") or 0) >= 3 and (i.get("likely_subject") or i.get("kind") == "constraint")
         ]
         _simple_planning_risk = float(chosen.get("planning_risk_score") or 0)
+        _simple_available_lower = {str(x).lower() for x in _simple_available}
+        _simple_missing_lower = {str(x).lower() for x in _simple_missing}
+        _simple_has_title_register = "title register" in _simple_available_lower
+        _simple_has_lease_doc = "lease" in _simple_available_lower
+        _simple_lease_field_verified = _simple_sources.get("lease_years_remaining") == "verified legal document"
 
         def _simple_card(status, title, answer, why, next_step):
             status = status.upper()
@@ -2422,39 +2432,49 @@ def render_deal_room(chosen):
             _pack_next = "Get the latest title, special conditions and any missing documents before bidding."
         _pack_why = "These documents set the legal terms you will be buying under. Missing or stale documents can change the deal after you have committed."
 
-        # 2) Ownership/title identity
+        # 2) Ownership/title identity. CLEAR requires the authoritative title register itself,
+        # not merely title/owner wording repeated in another pack document.
         _title_verified = _simple_sources.get("title_number") == "verified legal document"
         _owner_verified = any(_simple_sources.get(k) == "verified legal document" for k in ("seller_name", "proprietor_name"))
-        if _title_verified and _owner_verified:
-            _title_status, _title_answer = "CLEAR", "Title and owner are evidenced"
-        elif _title_verified:
-            _title_status, _title_answer = "CHECK", "Title is evidenced; owner still needs confirmation"
+        if _simple_has_title_register and _title_verified and _owner_verified:
+            _title_status, _title_answer = "CLEAR", "Official title register evidence confirms the title and owner"
+        elif _simple_has_title_register and _title_verified:
+            _title_status, _title_answer = "CHECK", "Title register found; registered owner still needs confirmation"
+        elif _simple_has_title_register:
+            _title_status, _title_answer = "CHECK", "Title register found, but ownership details still need checking"
+        elif _title_verified or _owner_verified:
+            _title_status, _title_answer = "STOP", "Ownership details appear elsewhere in the pack, but the official title register is missing"
         else:
-            _title_status, _title_answer = "STOP" if not _simple_legal_complete else "CHECK", "Title ownership is not fully evidenced"
-        _title_why = "You need to know exactly what interest is being sold and who has the right to sell it."
-        _title_next = "Ask the solicitor to confirm the title number, registered owner and any charges/restrictions."
+            _title_status, _title_answer = "STOP", "We have not yet confirmed exactly who owns the property and what is registered against it"
+        _title_why = "The title register is the official Land Registry ownership record. It shows the legal owner and can reveal charges or restrictions."
+        _title_next = "Obtain the official title register and ask the solicitor to confirm the registered owner, title number, charges and restrictions."
 
-        # 3) Tenure / lease
+        # 3) Tenure / lease. A long term shown in the listing is useful, but it is not
+        # authoritative enough for CLEAR until the lease document itself is verified.
         if _simple_is_leasehold:
             if _simple_lease is None:
                 _lease_status, _lease_answer = "STOP", "Lease term is not confirmed"
-                _lease_next = "Confirm the exact unexpired lease term before setting a final bid."
+                _lease_next = "Obtain the lease and confirm the exact unexpired term before setting a final bid."
             elif _simple_lease < 80:
-                _lease_status, _lease_answer = "STOP", f"Short lease: about {_simple_lease:.0f} years remaining"
-                _lease_next = "Price the lease extension and lender impact before bidding."
+                _lease_status, _lease_answer = "STOP", f"Short-lease warning: about {_simple_lease:.0f} years remaining"
+                _lease_next = "Obtain the lease, then price the extension cost and lender impact before bidding."
+            elif not (_simple_has_lease_doc and _simple_lease_field_verified):
+                _lease_status = "CHECK"
+                _lease_answer = f"Available evidence indicates about {_simple_lease:.0f} years remaining, but the lease document is not verified"
+                _lease_next = "Obtain the lease and ask the solicitor to confirm the exact term, ground-rent clauses and restrictions."
             elif _simple_lease < 85:
-                _lease_status, _lease_answer = "CHECK", f"Lease is about {_simple_lease:.0f} years"
+                _lease_status, _lease_answer = "CHECK", f"Verified lease is about {_simple_lease:.0f} years"
                 _lease_next = "Ask about extension cost, lender policy and resale impact."
             else:
-                _lease_status, _lease_answer = "CLEAR", f"Lease term looks acceptable: about {_simple_lease:.0f} years"
-                _lease_next = "Solicitor should still confirm the exact term and review clauses."
+                _lease_status, _lease_answer = "CLEAR", f"Verified lease term looks acceptable: about {_simple_lease:.0f} years remaining"
+                _lease_next = "Solicitor should still review the lease clauses, ground rent, service charge and restrictions."
         elif _simple_tenure.lower() == "freehold":
-            _lease_status, _lease_answer = ("CLEAR", "Freehold shown") if _simple_legal_complete else ("CHECK", "Freehold shown but not fully verified")
+            _lease_status, _lease_answer = ("CLEAR", "Freehold confirmed by the verified title evidence") if (_simple_has_title_register and _title_verified) else ("CHECK", "Freehold is indicated but the official title evidence is not yet complete")
             _lease_next = "Confirm the freehold title and any estate/rentcharge obligations."
         else:
             _lease_status, _lease_answer = "CHECK", "Tenure is not fully confirmed"
             _lease_next = "Confirm whether the property is freehold or leasehold."
-        _lease_why = "Lease length and tenure can affect mortgageability, resale value and future costs."
+        _lease_why = "For leasehold property, the lease is the contract that sets the term, ground rent, service-charge rules and restrictions. These can affect mortgages, resale and future costs."
 
         # 4) Charges / major works / buyer costs
         _has_arrears = bool(_simple_extracted.get("arrears_flag"))
@@ -2488,15 +2508,15 @@ def render_deal_room(chosen):
         # 6) Building safety
         _building_flag = bool(_simple_extracted.get("ews1_or_cladding_flag") or _simple_extracted.get("fire_safety_flag"))
         if _building_flag:
-            _build_status, _build_answer = "STOP", "Building-safety wording needs professional review"
-            _build_next = "Confirm EWS1/cladding/fire-safety position and lender acceptability before bidding."
+            _build_status, _build_answer = "STOP", "External-wall, cladding or fire-safety wording needs professional review"
+            _build_next = "Ask the solicitor/lender whether the block needs an EWS1 external-wall safety form and whether any remediation costs or liabilities remain."
         elif _simple_is_flat:
-            _build_status, _build_answer = "CHECK", "No major building-safety issue detected, but this is a flat"
-            _build_next = "Confirm EWS1/cladding/fire-safety position if relevant to the block."
+            _build_status, _build_answer = "CHECK", "No major building-safety issue detected, but a flat still needs a block-safety check"
+            _build_next = "Ask whether an EWS1 (external-wall safety form) is needed and whether there are cladding, fire-safety or Building Safety Act liabilities."
         else:
             _build_status, _build_answer = ("CLEAR", "No building-safety warning detected") if _simple_legal_complete else ("CHECK", "Building-safety evidence is incomplete")
             _build_next = "Review survey and legal evidence for material safety liabilities."
-        _build_why = "Building-safety liabilities can affect lending, insurance, service charges and resale."
+        _build_why = "For some flats, lenders want an EWS1 form confirming a professional external-wall review. Cladding, fire-safety or remediation liabilities can affect mortgages, insurance, service charges and resale."
 
         # 7) Planning
         if _simple_pstate != "SCREENED":
@@ -2506,9 +2526,9 @@ def render_deal_room(chosen):
             _plan_status, _plan_answer = "CHECK", "Planning/designation issues need review"
             _plan_next = "Open the planning evidence and confirm any constraint or refusal affecting your intended use."
         else:
-            _plan_status, _plan_answer = "CLEAR", "No material planning issue detected by the screen"
-            _plan_next = "Still confirm the local authority record if your strategy depends on conversion or development."
-        _plan_why = "Planning constraints can stop extensions, conversions, change of use or development plans."
+            _plan_status, _plan_answer = "CLEAR", "No obvious planning blocker found in Lotly's screen"
+            _plan_next = "Check the local authority record again if you plan to extend, convert, redevelop or change the property's use."
+        _plan_why = "Planning rules matter most if you want to extend, convert, redevelop or change how the property is used."
 
         # 8) Completion and deposit terms
         _completion_days = legal_summary.get("completion_days") or chosen.get("legal_completion_days")
@@ -2545,6 +2565,26 @@ def render_deal_room(chosen):
             _gate_tone, _gate_word, _gate_title = "clear", "CLEAR", "No blocker found in the evidence Lotly has"
             _gate_copy = "This means Lotly has not found an unresolved blocker. It does not replace your solicitor's final legal advice."
 
+        # Beginner legal-readiness score: progress toward a reviewable legal position,
+        # not a legal opinion. Critical/STOP items always keep the bid gate closed.
+        _status_credit = {"STOP": 0.0, "CHECK": 0.5, "CLEAR": 1.0}
+        _legal_ready_points = 20.0 * max(0.0, min(1.0, _simple_complete / 100.0))
+        for _status, _weight in [
+            (_title_status, 20), (_lease_status, 15), (_cost_status, 10), (_occ_status, 10),
+            (_build_status, 10), (_plan_status, 5), (_terms_status, 10),
+        ]:
+            _legal_ready_points += _weight * _status_credit.get(_status, 0.0)
+        _legal_readiness_pct = int(round(max(0.0, min(100.0, _legal_ready_points))))
+        if _simple_critical_flags or "STOP" in _simple_statuses:
+            _legal_readiness_label = "NOT READY TO BID"
+            _legal_readiness_copy = "A red STOP item is unresolved. Never bid while a red STOP item remains."
+        elif "CHECK" in _simple_statuses:
+            _legal_readiness_label = "READY FOR PROFESSIONAL CHECK"
+            _legal_readiness_copy = "No red STOP remains, but the amber points still need confirmation before you commit money."
+        else:
+            _legal_readiness_label = "READY FOR SOLICITOR SIGN-OFF"
+            _legal_readiness_copy = "Lotly's screening is complete. Your solicitor should still confirm the final legal position before you bid."
+
         st.markdown(
             '<div class="deal-plain-intro"><div><div class="title">Legal & planning — plain English</div>'
             '<div class="copy">You do not need to understand auction conveyancing. Lotly translates the evidence into three simple states. '
@@ -2554,13 +2594,35 @@ def render_deal_room(chosen):
         )
         st.markdown(
             f'<div class="deal-plain-gate {_gate_tone}"><div class="gate-word">{html.escape(_gate_word)}</div>'
-            f'<div><div class="gate-title">{html.escape(_gate_title)}</div><div class="gate-copy">{html.escape(_gate_copy)}</div></div></div>',
+            f'<div><div class="gate-title">{html.escape(_gate_title)}</div><div class="gate-copy">{html.escape(_gate_copy)}</div>'
+            f'<div class="deal-hard-rule">Never bid while a red STOP item remains.</div></div></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="deal-legal-readiness {_gate_tone}"><div><div class="score-label">Legal readiness</div><div class="score">{_legal_readiness_pct}%</div></div>'
+            f'<div><div class="ready-title">{html.escape(_legal_readiness_label)}</div><div class="ready-copy">{html.escape(_legal_readiness_copy)}</div>'
+            f'<div class="bar"><div class="fill" style="width:{_legal_readiness_pct}%"></div></div></div></div>',
             unsafe_allow_html=True,
         )
         st.markdown('<div class="deal-plain-grid">' + ''.join(_simple_card(*x) for x in _simple_cards) + '</div>', unsafe_allow_html=True)
+        def _plain_legal_issue(label):
+            _label = str(label or "Critical legal issue")
+            _low = _label.lower()
+            if "rentcharge" in _low:
+                return "There may be money owed under an estate rentcharge. You could become responsible for dealing with it after purchase. Ask your solicitor to confirm the amount, any arrears and how they will be cleared."
+            if "arrears" in _low:
+                return "Money may already be owed on the property. Ask your solicitor to confirm the amount, who must pay it and whether it will be cleared on completion."
+            if "title" in _low or "unregistered" in _low:
+                return "There is a title/ownership issue that could affect what you legally buy. Ask your solicitor to verify the official Land Registry title before bidding."
+            if "lease" in _low:
+                return "There is a lease issue that could affect mortgageability, future costs or resale. Ask your solicitor to review the lease before bidding."
+            if "cladding" in _low or "ews1" in _low or "fire" in _low:
+                return "There is a building-safety issue that could affect lending or future costs. Ask your solicitor/lender to confirm the EWS1, cladding and remediation position."
+            return _label
+
         if _simple_critical_flags:
-            _critical_labels = "; ".join(str(f.get("label") or "Critical legal issue") for f in _simple_critical_flags[:4])
-            st.error("Important legal issue detected — do not bid until reviewed: " + _critical_labels)
+            _critical_explanations = [_plain_legal_issue(f.get("label")) for f in _simple_critical_flags[:4]]
+            st.error("Important legal issue detected — do not bid until reviewed.\n\n" + "\n\n".join(f"• {x}" for x in _critical_explanations))
         elif _simple_review_flags:
             _review_labels = "; ".join(str(f.get("label") or "Legal point to review") for f in _simple_review_flags[:4])
             st.warning("Legal points to check before bidding: " + _review_labels)
@@ -2569,8 +2631,8 @@ def render_deal_room(chosen):
         _core_docs = ["Title register", "Title plan", "Special conditions"]
         if _simple_is_leasehold:
             _core_docs.append("Lease")
-        _available_lower = {str(x).lower() for x in _simple_available}
-        _missing_lower = {str(x).lower() for x in _simple_missing}
+        _available_lower = _simple_available_lower
+        _missing_lower = _simple_missing_lower
         _doc_html = []
         for _doc in _core_docs:
             if _doc.lower() in _available_lower:
@@ -2583,6 +2645,15 @@ def render_deal_room(chosen):
         _addendum_class = "ok" if _addendum_text == "FOUND" else "review"
         _doc_html.append(f'<div class="deal-doc-item"><strong>Latest addendum</strong><span class="{_addendum_class}">{_addendum_text}</span></div>')
         st.markdown('<div class="deal-facts-title">Documents Lotly is looking for</div><div class="deal-doc-grid">' + ''.join(_doc_html) + '</div>', unsafe_allow_html=True)
+        with st.expander("What do these legal terms mean?", expanded=False):
+            st.markdown(
+                "- **Title register:** the official Land Registry record showing the legal owner, title number and registered charges/restrictions.\n"
+                "- **Title plan:** the Land Registry plan showing the general extent of the registered property.\n"
+                "- **Special conditions:** the auction contract terms that can change completion deadlines, buyer costs and other obligations.\n"
+                "- **Lease:** the contract for a leasehold property; it sets the lease term, ground rent, service-charge rules and restrictions.\n"
+                "- **Addendum:** a late change or correction to the auction information. Always check the latest version before bidding.\n"
+                "- **EWS1:** an external-wall safety form sometimes requested by lenders for flats; it records a professional assessment of the building's external wall system."
+            )
 
         # Simple next action and two obvious refresh controls.
         if not _simple_legal_complete:
@@ -2741,15 +2812,33 @@ def render_deal_room(chosen):
                         st.error(f"The uploaded legal pack could not be analysed: {exc}")
 
         _simple_questions = solicitor_questions(chosen, legal_summary)
+        # Ensure the solicitor checklist mirrors the red/amber beginner cards, even where
+        # the underlying extractor has only partial data.
+        _status_questions = []
+        if _title_status != "CLEAR":
+            _status_questions.append("Please obtain and review the official Land Registry title register. Confirm the registered owner, title number, charges, restrictions and anything that could prevent or delay registration to me.")
+        if _lease_status != "CLEAR" and _simple_is_leasehold:
+            _status_questions.append("Please obtain and review the lease. Confirm the exact unexpired term, ground-rent review clauses, service-charge obligations and any restrictions on letting, alterations or assignment.")
+        if _cost_status != "CLEAR":
+            _status_questions.append("Please confirm current service charge, ground rent, reserve/sinking fund, arrears, planned major works and every additional cost that could pass to me as buyer.")
+        if _occ_status != "CLEAR":
+            _status_questions.append("Please confirm whether anyone occupies the property or has tenancy/occupation rights, and whether I will receive vacant possession on completion.")
+        if _build_status != "CLEAR" and _simple_is_flat:
+            _status_questions.append("Please confirm whether the block requires an EWS1/external-wall safety assessment and whether any cladding, fire-safety, remediation or Building Safety Act liabilities could affect lending or future service charges.")
+        if _plan_status != "CLEAR":
+            _status_questions.append("Please flag any planning, conservation, Article 4 or other restriction that could affect the intended use, extension, conversion or redevelopment of the property.")
+        if _terms_status != "CLEAR":
+            _status_questions.append("Please confirm the deposit, contractual completion deadline, default interest/remedies and every auction/admin/search/legal fee payable by me in addition to the purchase price.")
+        _simple_questions = list(dict.fromkeys(_simple_questions + _status_questions))
         if _simple_questions:
-            with st.expander("Questions to send your solicitor", expanded=False):
-                st.caption("You can copy these directly into an email. They are prompts for your solicitor, not legal advice from Lotly.")
-                for _q in _simple_questions[:8]:
-                    st.write(f"- {_q}")
+            with st.expander("Questions to send your solicitor", expanded=("STOP" in _simple_statuses)):
+                st.caption(f"Lotly generated {len(_simple_questions)} questions from this property's STOP/CHECK evidence. These are prompts for your solicitor, not legal advice from Lotly.")
                 _questions_text = "Questions for solicitor — " + clean_address(chosen) + "\n\n" + "\n".join(f"{i+1}. {q}" for i, q in enumerate(_simple_questions))
-                st.download_button("Download solicitor questions", _questions_text, file_name=f"solicitor-questions-{chosen.get('postcode') or chosen.get('id')}.txt".replace(" ", "-"), mime="text/plain", key=f"solicitor_q_{chosen['id']}")
+                st.markdown("**Copy questions** — use the copy icon in the box below, or download the checklist.")
+                st.code(_questions_text, language=None)
+                st.download_button("Download solicitor checklist", _questions_text, file_name=f"solicitor-checklist-{chosen.get('postcode') or chosen.get('id')}.txt".replace(" ", "-"), mime="text/plain", key=f"solicitor_q_{chosen['id']}")
 
-        st.caption("Beginner view: Lotly simplifies the evidence so you can see what stops a bid and what simply needs checking. CLEAR means no blocker was found in the evidence Lotly has; it is not a legal opinion.")
+        st.caption("Beginner view: Lotly simplifies the evidence so you can see what stops a bid and what simply needs checking. CLEAR means no blocker was found in authoritative evidence Lotly has; it is not a legal opinion. Never bid while a red STOP item remains.")
 
         with st.expander("Advanced evidence & source records", expanded=False):
             pcol, lcol = st.columns(2)

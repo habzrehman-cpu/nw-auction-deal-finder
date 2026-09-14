@@ -553,12 +553,20 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
     extracted = legal_summary.get("extracted_fields") or row.get("legal_extracted_fields") or {}
     questions = []
     status = str(legal_summary.get("status") or row.get("legal_status") or "").lower()
+    missing_components = {str(x).lower() for x in (legal_summary.get("missing_components") or row.get("legal_missing_components") or [])}
+    risk_flags = legal_summary.get("risk_flags") or row.get("legal_risk_flags") or []
     if row.get("legal_pack_changed") or legal_summary.get("pack_changed"):
         questions.append("The tracker detected a legal-pack change since the previous snapshot. Please identify exactly what was added, removed or amended and confirm whether any prior advice must change.")
-    if status != "verified":
+    if status != "verified" or missing_components:
         questions.append("Please confirm we have the latest complete legal pack and every addendum, and identify any missing or unverified documents before exchange/bidding.")
+    if "title register" in missing_components:
+        questions.append("Please obtain the official Land Registry title register and confirm the registered owner, title number, charges, restrictions and anything that could prevent or delay registration to the buyer.")
+    if "special conditions" in missing_components:
+        questions.append("Please obtain and review the auction special conditions and confirm every buyer cost, completion obligation, default remedy and unusual term before bidding.")
     lease = _num(extracted.get("lease_years_remaining") or row.get("legal_lease_years") or row.get("listing_lease_years"))
     tenure = str(row.get("tenure") or "").lower()
+    if "lease" in missing_components and ("leasehold" in tenure or lease is not None):
+        questions.append("Please obtain and review the lease itself. Confirm the exact unexpired term, ground-rent review pattern, service-charge obligations and any restrictions affecting letting, alterations or assignment.")
     if lease is not None and lease < 85:
         questions.append(f"The lease appears to have approximately {lease:.1f} years remaining. Please confirm the exact unexpired term, statutory/informal extension options, likely premium/costs and lender implications.")
     elif "leasehold" in tenure:
@@ -571,6 +579,15 @@ def solicitor_questions(row: dict, legal_summary: dict | None = None) -> list[st
         questions.append("Registered charges are referenced. Please confirm which charges will be discharged on completion and whether any restriction could delay registration.")
     if extracted.get("arrears_flag"):
         questions.append("Arrears/outstanding sums are mentioned. Please confirm the amount, who is liable, the apportionment mechanism and whether completion monies must discharge them.")
+    for flag in risk_flags:
+        label = str((flag or {}).get("label") or "")
+        low = label.lower()
+        if "rentcharge" in low:
+            questions.append("A rentcharge/estate-rentcharge issue has been flagged. Please confirm the annual amount, any arrears, enforcement rights, whether the buyer inherits any liability and exactly how any outstanding sum will be discharged or protected on completion.")
+        elif "title" in low or "unregistered" in low:
+            questions.append("A title-quality issue has been flagged. Please explain the defect, whether good and marketable title can be registered, and any effect on mortgageability or resale.")
+        elif "arrears" in low:
+            questions.append("Possible arrears have been flagged. Please confirm the exact sum, who is liable, and whether the seller must clear it before or on completion.")
     if extracted.get("ews1_or_cladding_flag") or extracted.get("fire_safety_flag"):
         questions.append("Please confirm the EWS1/cladding/fire-safety/building-safety position, any remediation liability, landlord certificates and likely mortgageability implications.")
     elif str(row.get("property_type") or "").lower() in {"flat", "apartment"}:
