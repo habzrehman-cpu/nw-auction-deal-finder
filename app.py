@@ -1295,6 +1295,7 @@ def render_featured_property(row):
             with a1:
                 if st.button("Open Deal Room", key=f"feature_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["selected_deal_source_key"] = row.get("source_key")
                     st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
             with a2:
@@ -1354,6 +1355,7 @@ def render_dashboard_card(row, top_opportunity=False):
             with b1:
                 if st.button("Open Deal Room  →", key=f"dash_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["selected_deal_source_key"] = row.get("source_key")
                     st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
             with b2:
@@ -1392,6 +1394,7 @@ def render_compact_card(row):
         with b1:
             if st.button("Open Deal Room", key=f"grid_open_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
+                st.session_state["selected_deal_source_key"] = row.get("source_key")
                 st.session_state["_lotly_pending_page"] = "Deal Room"
                 st.rerun()
         with b2:
@@ -1510,6 +1513,7 @@ def render_property_card(row):
             st.write("")
             if st.button("Open deal room", key=f"view_{row['id']}", type="primary", use_container_width=True):
                 st.session_state["selected_deal_id"] = row["id"]
+                st.session_state["selected_deal_source_key"] = row.get("source_key")
                 st.session_state["_lotly_pending_page"] = "Deal Room"
                 st.rerun()
             star = "Remove" if row.get("shortlisted") else "Shortlist"
@@ -2203,12 +2207,32 @@ def render_deal_room(chosen):
         st.dataframe(costs, hide_index=True, use_container_width=True, column_config={"GBP": st.column_config.NumberColumn(format="GBP %d")})
 
     with tabs[3]:
+        _refresh_notice = st.session_state.pop("_comparable_refresh_notice", None)
+        _refresh_error = st.session_state.pop("_comparable_refresh_error", None)
+        if _refresh_notice:
+            st.success(_refresh_notice)
+        if _refresh_error:
+            st.error(f"Comparable refresh could not complete: {_refresh_error}. The property remains open and the previous evidence has been retained where available.")
         c1, c2 = st.columns([1, 3])
         with c1:
             if st.button("Refresh this property's comparables", key=f"comp_{chosen['id']}", use_container_width=True):
+                # Preserve the open Deal Room identity across the network refresh and rerun.
+                # Comparable evidence can legitimately change the property's score/readiness,
+                # but refreshing evidence must never eject the user from the property they are reviewing.
+                _refresh_deal_id = chosen.get("id")
+                _refresh_source_key = chosen.get("source_key")
                 with st.spinner("Refreshing comparable evidence..."):
-                    refresh_property_comparables(db, chosen)
-                    sync_cloud("property comparable refresh")
+                    _refresh_result = refresh_property_comparables(db, chosen)
+                    if _refresh_result.get("status") == "ok":
+                        sync_cloud("property comparable refresh")
+                        st.session_state["_comparable_refresh_notice"] = "Comparable evidence refreshed. This Deal Room has remained open while Lotly recalculated the evidence."
+                    else:
+                        st.session_state["_comparable_refresh_error"] = str(_refresh_result.get("error") or "Comparable refresh failed")[:500]
+                if _refresh_deal_id is not None:
+                    st.session_state["selected_deal_id"] = _refresh_deal_id
+                if _refresh_source_key:
+                    st.session_state["selected_deal_source_key"] = _refresh_source_key
+                st.session_state["_lotly_pending_page"] = "Deal Room"
                 st.rerun()
         with c2:
             st.caption(f"Provider: {chosen.get('comparable_provider') or 'Not run'} | Confidence: {int(chosen.get('comparable_confidence') or 0)}% | Usable comps: {int(chosen.get('comparable_count') or 0)}")
@@ -2693,7 +2717,14 @@ def render_deal_room(chosen):
 
 
 selected_id = st.session_state.get("selected_deal_id")
+selected_source_key = st.session_state.get("selected_deal_source_key")
 selected = next((r for r in rows if r.get("id") == selected_id), None) if selected_id else None
+# Stable identity fallback: if a database restore/rebuild changes a local numeric id,
+# keep the Deal Room attached to the same auction listing by source_key.
+if selected is None and selected_source_key:
+    selected = next((r for r in rows if r.get("source_key") == selected_source_key), None)
+    if selected is not None:
+        st.session_state["selected_deal_id"] = selected.get("id")
 
 
 def analyst_frame(items):
@@ -2939,6 +2970,7 @@ def render_pipeline_page(feed_rows):
             with c3:
                 if st.button("Open", key=f"pipeline_open_{row['id']}", type="primary", use_container_width=True):
                     st.session_state["selected_deal_id"] = row["id"]
+                    st.session_state["selected_deal_source_key"] = row.get("source_key")
                     st.session_state["_lotly_pending_page"] = "Deal Room"
                     st.rerun()
 
@@ -3002,6 +3034,7 @@ def render_deal_room_index(feed_rows):
                         st.markdown(f'<div class="deal-stage-line">Stage: <strong>{html.escape(str(stage))}</strong> · Lotly Score <strong>{float(row.get("browse_score") or 0):.1f}/10</strong></div>', unsafe_allow_html=True)
                         if st.button("Open Deal Room  →", key=f"room_index_{row['id']}", type="primary", use_container_width=True):
                             st.session_state["selected_deal_id"] = row["id"]
+                            st.session_state["selected_deal_source_key"] = row.get("source_key")
                             st.session_state["_lotly_pending_page"] = "Deal Room"
                             st.rerun()
 
