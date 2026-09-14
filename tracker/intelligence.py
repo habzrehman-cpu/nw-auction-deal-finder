@@ -39,6 +39,241 @@ def _date_key(value):
 def _clean(value, limit=180):
     return " ".join(str(value or "").split())[:limit]
 
+def _looks_like_date(value) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return bool(
+        re.search(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", text)
+        or re.search(r"\b\d{1,2}[-/]\d{1,2}[-/]20\d{2}\b", text)
+    )
+
+
+def _event_timestamp(event: dict):
+    """Best-effort observation timestamp used only to order evidence."""
+    for raw in (event.get("captured_at"), event.get("auction_date")):
+        if not raw:
+            continue
+        text = str(raw).strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except (ValueError, TypeError):
+            pass
+        for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text[:16] if "%H:%M" in fmt else text[:10], fmt).replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def auction_history_integrity(row: dict, history: Iterable[dict] | None = None) -> dict:
+    """Normalise auction observations without rewriting the raw audit trail.
+
+    Auction websites can temporarily report ``Sold`` / ``Sold Prior`` / ``Sold After``
+    before a transaction later falls through or the lot returns to market.  For a
+    novice investor we must not present those observations as a completed legal sale.
+    This helper de-duplicates identical observations, separates concrete failed-auction
+    results from sold *signals*, and treats the current listing status as the best
+    evidence of where the opportunity sits now.
+    """
+    raw_rows = [dict(x) for x in (history or [])]
+    current_status = str(row.get("status") or "Unknown").strip()
+    current_status_low = current_status.lower()
+
+    # Add the current listing snapshot to the evidence set so the timeline always
+    # explains where the property is now.  This is display-only; the DB audit trail
+    # remains unchanged.
+    if current_status and current_status_low != "unknown":
+        raw_rows.append({
+            "captured_at": row.get("last_seen") or row.get("updated_at") or "",
+            "auction_date": row.get("auction_date") or "",
+            "guide_text": row.get("guide_text") or "",
+            "guide_price": row.get("guide_price"),
+            "guide_price_high": row.get("guide_price_high"),
+            "result_text": row.get("result_text") or "",
+            "result_price": row.get("result_price"),
+            "status": current_status,
+            "_current": True,
+        })
+
+    sold_statuses = {"sold", "sold prior", "sold after"}
+    concrete_failure_statuses = {"no bids", "last bid", "unsold"}
+
+    # Keep the latest copy of an identical observation.  Ignore captured_at in the
+    # identity key so repeated crawler snapshots do not create duplicate timeline rows.
+    dedup = {}
+    for event in raw_rows:
+        status = str(event.get("status") or "Observed").strip()
+        status_low = status.lower()
+        auction_date = str(event.get("auction_date") or "").strip()
+        date_key = _date_key(auction_date) if _looks_like_date(auction_date) else ""
+        guide = int(_num(event.get("guide_price"), 0) or 0)
+        result = int(_num(event.get("result_price"), 0) or 0)
+        key = (status_low, date_key, guide, result)
+        existing = dedup.get(key)
+        if existing is None or _event_timestamp(event) >= _event_timestamp(existing) or event.get("_current"):
+            dedup[key] = event
+
+    events = sorted(dedup.values(), key=_event_timestamp)
+    sold_events = [e for e in events if str(e.get("status") or "").strip().lower() in sold_statuses]
+    failure_events = [e for e in events if str(e.get("status") or "").strip().lower() in concrete_failure_statuses]
+
+    # De-duplicate concrete failed attempts conservatively: same auction date, or the
+    # same guide when one representation has no valid auction date.
+    verified_failures = []
+    for event in failure_events:
+        auction_date = str(event.get("auction_date") or "").strip()
+        date_key = _date_key(auction_date) if _looks_like_date(auction_date) else ""
+        guide = int(_num(event.get("guide_price"), 0) or 0)
+        duplicate = False
+        for prior in verified_failures:
+            p_date_raw = str(prior.get("auction_date") or "").strip()
+            p_date = _date_key(p_date_raw) if _looks_like_date(p_date_raw) else ""
+            p_guide = int(_num(prior.get("guide_price"), 0) or 0)
+            if date_key and p_date and date_key == p_date:
+                duplicate = True
+                break
+            if guide and p_guide == guide and (not date_key or not p_date):
+                duplicate = True
+                break
+        if not duplicate:
+            verified_failures.append(event)
+
+    current_available = current_status_low in {"available post-auction", "relisted"}
+    sale_status_conflict = bool(current_available and sold_events)
+    returned_to_market = bool(sale_status_conflict)
+
+    # Beginner-facing timeline: sold observations are explicitly labelled as signals,
+    # not completed transfers.  When the property is now available again, say so.
+    timeline = []
+    for event in events:
+        status = str(event.get("status") or "Observed").strip()
+        status_low = status.lower()
+        captured = str(event.get("captured_at") or "").strip()
+        auction_date = str(event.get("auction_date") or "").strip()
+        when = auction_date if _looks_like_date(auction_date) else captured[:10]
+        when = when or "Date not captured"
+        if status_low in sold_statuses:
+            label = "Sale status reported — completion not confirmed"
+            note = "Auctioneer status only; not proof of completed purchase or Land Registry transfer."
+            if sale_status_conflict:
+                note += " The property is currently available again, so the earlier sale may not have completed."
+        elif status_low == "available post-auction":
+            label = "Returned to market / available post-auction" if sale_status_conflict else "Available post-auction"
+            note = "Current listing status." if event.get("_current") else "Observed post-auction availability."
+        elif status_low == "relisted":
+            label = "Relisted / returned to market"
+            note = "The lot is being marketed again."
+        elif status_low in concrete_failure_statuses:
+            label = f"Failed-auction result: {status}"
+            note = "Concrete auction-result signal."
+        else:
+            label = status or "Observed"
+            note = "Observed auction status."
+        detail_bits = []
+        if event.get("guide_text"):
+            detail_bits.append(f"Guide {_clean(event.get('guide_text'), 90)}")
+        elif _num(event.get("guide_price")):
+            detail_bits.append(f"Guide GBP {float(event['guide_price']):,.0f}")
+        if event.get("result_text"):
+            detail_bits.append(_clean(event.get("result_text"), 110))
+        elif _num(event.get("result_price")):
+            detail_bits.append(f"Reported result GBP {float(event['result_price']):,.0f}")
+        if note:
+            detail_bits.append(note)
+        timeline.append({
+            "when": when,
+            "status": status,
+            "status_low": status_low,
+            "label": label,
+            "detail": " · ".join(detail_bits),
+            "is_current": bool(event.get("_current")),
+            "is_sold_signal": status_low in sold_statuses,
+        })
+
+    verified_failure_count = len(verified_failures)
+    # Backward-compatible fallback for callers that only have a previously scored
+    # row and no raw history. The live Deal Room always supplies raw history, so
+    # contradictory sold observations are still resolved by the stricter path above.
+    if not history and not raw_rows[:-1] and int(row.get("failure_count") or 0) > 0:
+        verified_failure_count = int(row.get("failure_count") or 0)
+    returned_to_market_count = 1 if returned_to_market else 0
+    negotiation_signal_count = verified_failure_count + returned_to_market_count
+
+    if sale_status_conflict:
+        stage = "POST-AUCTION / CHECK"
+        headline = "Available post-auction — a previous sale status needs clarification"
+        stage_copy = (
+            "Lotly has seen an earlier sold-status signal, but the current auction listing shows the property available again. "
+            "The earlier sale may have fallen through or the status may have changed. Confirm the sequence with the auctioneer."
+        )
+        happened = "A previous sale status was reported; the property is now back/available on the market"
+        meaning = "A return to market can strengthen your negotiating position, but it does not prove seller distress or guarantee a discount."
+        confidence_label = "Conflicting auction-history evidence — confirm with auctioneer"
+    elif current_status_low == "available post-auction" and verified_failure_count:
+        stage = "POST-AUCTION"
+        headline = "A failed auction result was observed — it did not sell at that attempt and the property is still available"
+        stage_copy = "The auction has ended without a confirmed completed sale, so the next conversation is about the seller's current price and certainty requirements."
+        happened = f"{verified_failure_count} concrete failed-auction result{'s' if verified_failure_count != 1 else ''} observed"
+        meaning = "Post-auction availability can create room to negotiate, but a discount is not guaranteed."
+        confidence_label = "High confidence in auction-history signals"
+    elif current_status_low == "available post-auction":
+        stage = "POST-AUCTION / CHECK"
+        headline = "Available post-auction — confirm what happened at the auction"
+        stage_copy = "The current listing is available after the auction, but Lotly does not have a concrete failed-auction result to explain why."
+        happened = "Post-auction availability observed; auction result not independently confirmed"
+        meaning = "Availability is a useful negotiation signal, but do not call it a failed auction until the auctioneer confirms the result."
+        confidence_label = "Medium confidence — current availability is clear, result history needs confirmation"
+    elif current_status_low in sold_statuses:
+        stage = "SOLD SIGNAL"
+        headline = "The auctioneer currently records a sold status"
+        stage_copy = "Treat this as an auctioneer result signal, not proof that legal completion or Land Registry transfer has occurred."
+        happened = "Current sold-status signal observed"
+        meaning = "This is not an active acquisition opportunity unless the auctioneer confirms the transaction has fallen through."
+        confidence_label = "Auctioneer sold-status signal — completion not independently verified"
+    elif current_status_low in concrete_failure_statuses:
+        stage = "UNSOLD"
+        headline = "The latest auction attempt did not produce a confirmed sale"
+        stage_copy = "This is a concrete auction-result signal. Confirm whether the property remains available and what the seller expects now."
+        happened = f"{max(1, verified_failure_count)} concrete failed-auction result{'s' if max(1, verified_failure_count) != 1 else ''} observed"
+        meaning = "A failed auction can create leverage, but only the auctioneer can confirm the seller's current position."
+        confidence_label = "High confidence in auction-history signals"
+    elif current_status_low == "relisted":
+        stage = "RELISTED"
+        headline = "The property has returned to market"
+        stage_copy = "The current listing is a relist. Confirm what happened previously and whether the guide or seller expectation has changed."
+        happened = "Relisted / returned-to-market signal observed"
+        meaning = "A relist can create a negotiation window, but it does not prove the seller will accept below the current guide."
+        confidence_label = "High confidence in current returned-to-market signal"
+    else:
+        stage = "LIVE / CHECK"
+        headline = "The property is still in the auction process"
+        stage_copy = "Understand the guide, auction date and legal position before deciding whether to bid or wait."
+        happened = "No failed or returned-to-market signal confirmed"
+        meaning = "Live bidding can reduce your ability to negotiate, so set your ceiling before the auction starts."
+        confidence_label = "Medium confidence in auction-history signals" if events else "Low confidence — little auction history captured"
+
+    return {
+        "stage": stage,
+        "headline": headline,
+        "stage_copy": stage_copy,
+        "what_happened": happened,
+        "meaning": meaning,
+        "confidence_label": confidence_label,
+        "current_status": current_status or "Unknown",
+        "timeline": timeline,
+        "sale_status_conflict": sale_status_conflict,
+        "verified_failure_count": verified_failure_count,
+        "returned_to_market_count": returned_to_market_count,
+        "negotiation_signal_count": negotiation_signal_count,
+        "sold_signal_count": len(sold_events),
+    }
+
+
 
 def _planning_timeline(planning_items: Iterable[dict]) -> list[dict]:
     out = []
@@ -205,10 +440,16 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
     if status in FAILURE_STATUSES:
         reasons.append(f"Current status is {lot.get('status')}")
 
-    failures = int(deal_analysis.get("failure_count") or 0)
+    # v1.13.13: only verified failed-auction results and a verified return-to-market
+    # transition may add history leverage. Contradictory raw sold statuses do not.
+    failures = int(deal_analysis.get("verified_failure_count") if deal_analysis.get("verified_failure_count") is not None else (deal_analysis.get("failure_count") or 0))
+    returned_to_market = int(deal_analysis.get("returned_to_market_count") or 0)
     if failures:
         points += min(22, failures * 8)
-        reasons.append(f"{failures} distinct failed-auction attempt(s) observed")
+        reasons.append(f"{failures} concrete failed-auction result(s) observed")
+    if returned_to_market:
+        points += min(12, returned_to_market * 8)
+        reasons.append("Returned to market after an earlier sale-status signal")
 
     reduction = _num(deal_analysis.get("price_reduction_pct"), 0) or 0
     if reduction >= 20:
@@ -405,64 +646,16 @@ def seller_negotiation_plan(row: dict, story: dict | None = None, readiness: dic
 
 
 def auction_beginner_summary(row: dict, history: Iterable[dict] | None = None, readiness: dict | None = None) -> dict:
-    """Explain the auction journey in beginner-safe language.
-
-    This deliberately separates observed auction facts from negotiation meaning.
-    An unsold/post-auction status can justify a price test, but never proves that
-    the seller is distressed or that a lower offer will be accepted.
-    """
+    """Explain the auction journey in beginner-safe language using normalised evidence."""
     history = list(history or [])
     readiness = readiness or {}
-    status = str(row.get("status") or "Unknown").strip()
-    status_low = status.lower()
-    failures = int(row.get("failure_count") or 0)
+    integrity = auction_history_integrity(row, history)
     reductions = int(row.get("price_reduction_events") or 0)
     reduction_pct = float(row.get("price_reduction_pct") or 0)
     days_since_failure = row.get("days_since_failure")
     guide = _num(row.get("guide_price"))
     opener = _num(row.get("opening_offer"))
-    history_points = int(row.get("history_points") or len(history) or 0)
     bid_blocked = str(readiness.get("readiness_status") or "").upper() == "BID BLOCKED" or bool(readiness.get("readiness_blockers"))
-
-    if status_low == "available post-auction":
-        stage = "POST-AUCTION"
-        headline = "It did not sell at auction and is still available"
-        stage_copy = "The competitive auction has ended, so the next conversation is directly about what price and certainty the seller will accept."
-        current_answer = "Available to negotiate now"
-        meaning = "You may have more room to test the seller's position than you had during a live auction, but a discount is not guaranteed."
-    elif status_low in {"no bids", "last bid", "unsold"}:
-        stage = "UNSOLD"
-        headline = "The latest auction attempt did not complete a sale"
-        stage_copy = "This is a useful negotiation signal. Confirm with the auctioneer whether the property is still available and what the seller expects now."
-        current_answer = status or "Unsold"
-        meaning = "A failed auction can create leverage, but only the auctioneer can confirm the seller's current position."
-    elif status_low == "relisted":
-        stage = "RELISTED"
-        headline = "The property has returned to market after an earlier attempt"
-        stage_copy = "A relist can indicate that the previous route did not produce an acceptable sale. Check whether the guide or seller expectation has changed."
-        current_answer = "Back on the market"
-        meaning = "There may be a negotiation window, but do not assume the seller will accept below the current guide."
-    elif status_low in {"sold", "sold prior", "sold after"}:
-        stage = "SOLD SIGNAL"
-        headline = "The auctioneer records a sold status"
-        stage_copy = "Treat this as an auctioneer result signal rather than proof that the Land Registry transfer has completed."
-        current_answer = status
-        meaning = "This is not currently an acquisition opportunity unless the auctioneer confirms the sale has fallen through."
-    else:
-        stage = "LIVE / CHECK"
-        headline = "The property is still in the auction process"
-        stage_copy = "Understand the guide, auction date and legal position before deciding whether to bid or wait."
-        current_answer = status or "Live"
-        meaning = "Live bidding can reduce your ability to negotiate, so set your ceiling before the auction starts."
-
-    if failures >= 2:
-        happened = f"{failures} separate failed auction attempts observed"
-    elif failures == 1:
-        happened = "1 failed auction attempt observed"
-    elif status_low == "available post-auction":
-        happened = "Post-auction availability confirms at least one unsuccessful sale attempt"
-    else:
-        happened = "No failed auction attempt confirmed yet"
 
     if reduction_pct > 0:
         price_move = f"Guide down {reduction_pct:.1f}%"
@@ -478,9 +671,13 @@ def auction_beginner_summary(row: dict, history: Iterable[dict] | None = None, r
     if days_since_failure is not None:
         try:
             d = int(days_since_failure)
-            age_text = "Failed/post-auction signal is today" if d == 0 else f"About {d} day{'s' if d != 1 else ''} since the latest failed/post-auction signal"
+            age_text = "Latest failed/post-auction signal is today" if d == 0 else f"About {d} day{'s' if d != 1 else ''} since the latest failed/post-auction signal"
         except Exception:
             pass
+
+    # If the evidence conflicts, never call the earlier sold observation a failed auction.
+    if integrity.get("sale_status_conflict"):
+        age_text = "Current availability conflicts with an earlier sold-status signal"
 
     if bid_blocked:
         if opener:
@@ -493,23 +690,26 @@ def auction_beginner_summary(row: dict, history: Iterable[dict] | None = None, r
         else:
             action = "Ask the auctioneer for the seller's current expectation before discussing a binding offer."
 
-    confidence = "High" if history_points >= 3 or failures or reduction_pct > 0 else "Medium" if history_points >= 1 else "Low"
     guide_text = f"GBP {guide:,.0f}" if guide else "Not captured"
     return {
-        "stage": stage,
-        "headline": headline,
-        "stage_copy": stage_copy,
-        "what_happened": happened,
-        "current_status": current_answer,
+        "stage": integrity.get("stage"),
+        "headline": integrity.get("headline"),
+        "stage_copy": integrity.get("stage_copy"),
+        "what_happened": integrity.get("what_happened"),
+        "current_status": integrity.get("current_status"),
         "price_movement": price_move,
         "price_copy": price_copy,
-        "meaning": meaning,
+        "meaning": integrity.get("meaning"),
         "timing": age_text,
         "guide_text": guide_text,
         "action": action,
         "bid_blocked": bid_blocked,
-        "confidence_label": f"{confidence} confidence in auction-history signals",
-        "failure_count": failures,
+        "confidence_label": integrity.get("confidence_label"),
+        "failure_count": int(integrity.get("verified_failure_count") or 0),
+        "verified_failure_count": int(integrity.get("verified_failure_count") or 0),
+        "returned_to_market_count": int(integrity.get("returned_to_market_count") or 0),
+        "sale_status_conflict": bool(integrity.get("sale_status_conflict")),
+        "timeline": integrity.get("timeline") or [],
         "reduction_pct": reduction_pct,
     }
 
@@ -588,9 +788,12 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
     if profile.get("title_price_paid"):
         when = f" on {profile.get('title_price_paid_date')}" if profile.get("title_price_paid_date") else ""
         facts.append(f"Title evidence records a prior price paid of GBP {float(profile['title_price_paid']):,.0f}{when}")
-    failures = int(deal_analysis.get("failure_count") or 0)
+    failures = int(deal_analysis.get("verified_failure_count") if deal_analysis.get("verified_failure_count") is not None else (deal_analysis.get("failure_count") or 0))
+    returned_to_market = int(deal_analysis.get("returned_to_market_count") or 0)
     if failures:
-        facts.append(f"{failures} distinct failed-auction attempt(s) are recorded")
+        facts.append(f"{failures} distinct failed-auction result(s) are recorded (concrete result signals)")
+    if returned_to_market:
+        facts.append("The property is currently back/available after an earlier sale-status signal")
     reduction = _num(deal_analysis.get("price_reduction_pct"), 0) or 0
     if reduction > 0:
         facts.append(f"Observed guide has reduced by {reduction:.1f}%")
@@ -627,9 +830,11 @@ def build_vendor_story(lot: dict, history: Iterable[dict] | None = None, deal_an
 
     inferences = []
     if failures >= 2:
-        inferences.append("Repeated failed auction exposure suggests the seller may be increasingly receptive to a credible post-auction offer.")
+        inferences.append("Repeated concrete failed-auction results suggest the seller may be increasingly receptive to a credible post-auction offer.")
     elif failures == 1 and str(lot.get("status") or "").lower() == "available post-auction":
-        inferences.append("The lot is in an active post-auction negotiation window, which can create more flexibility than a competitive live sale.")
+        inferences.append("A concrete failed-auction result plus current post-auction availability can create more flexibility than a competitive live sale.")
+    elif returned_to_market:
+        inferences.append("The property has returned to market after an earlier sale-status signal. That can justify a cautious price test, but the auctioneer should confirm whether the earlier transaction fell through.")
     if reduction >= 10:
         inferences.append("A material guide reduction is consistent with increased price flexibility, although the seller's reserve remains unconfirmed.")
     if subject_refusals:

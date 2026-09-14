@@ -25,7 +25,7 @@ from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
-from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
+from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, auction_history_integrity, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -557,7 +557,7 @@ st.markdown(
 @media(max-width:1100px){.deal-seller-position{grid-template-columns:1fr 130px}.deal-seller-position>div:first-child{grid-column:1/-1}.deal-seller-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-seller-steps{grid-template-columns:1fr}.deal-evidence-split{grid-template-columns:1fr}}
 
 
-/* v1.13.12 beginner-first Seller accuracy + Auction story */
+/* v1.13.13 auction-history integrity + incomplete legal-pack labelling */
 .deal-call-script{background:#F8FAFA;border:1px solid #E1E8EB;border-left:4px solid #0F8F83;border-radius:12px;padding:13px 14px;margin:7px 0 10px;font-size:.76rem;line-height:1.5;color:#17324B;}
 .deal-auction-intro{background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px}.deal-auction-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33;letter-spacing:-.025em}.deal-auction-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;margin-top:3px;max-width:850px}
 .deal-auction-position{display:grid;grid-template-columns:160px 1fr 240px;gap:14px;align-items:center;border:1px solid #D7E7E3;background:#F7FBFA;border-radius:14px;padding:13px 14px;margin:0 0 12px}.deal-auction-position.blocked{background:#FFF8F7;border-color:#F0CBC6}.deal-auction-position.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-auction-position .stage-label{font-size:.52rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90}.deal-auction-position .stage-word{font-size:1.05rem;font-weight:950;color:#08786F;margin-top:2px}.deal-auction-position.blocked .stage-word{color:#B42318}.deal-auction-position.warn .stage-word{color:#8E6100}.deal-auction-position .headline{font-size:.9rem;font-weight:900;color:#0B1F33;line-height:1.25}.deal-auction-position .copy{font-size:.64rem;color:#607489;line-height:1.42;margin-top:3px}.deal-auction-position .confidence{text-align:right;font-size:.58rem;line-height:1.35;font-weight:850;text-transform:uppercase;letter-spacing:.04em;color:#6B7D90}
@@ -1768,7 +1768,15 @@ def render_deal_room(chosen):
     chosen["legal_pack_completeness_pct"] = int(legal_summary.get("pack_completeness_pct") or 0)
     chosen["legal_missing_components"] = legal_summary.get("missing_components") or []
     chosen["legal_available_components"] = legal_summary.get("available_components") or []
-    story = build_vendor_story(chosen, hist, chosen, legal_summary, planning_items, effective_company_summary)
+
+    # v1.13.13 — normalise contradictory auction observations before they influence
+    # seller leverage. Raw history remains untouched for audit/debug purposes.
+    auction_integrity = auction_history_integrity(chosen, hist)
+    deal_analysis = dict(chosen)
+    deal_analysis["verified_failure_count"] = int(auction_integrity.get("verified_failure_count") or 0)
+    deal_analysis["returned_to_market_count"] = int(auction_integrity.get("returned_to_market_count") or 0)
+    deal_analysis["auction_history_conflict"] = bool(auction_integrity.get("sale_status_conflict"))
+    story = build_vendor_story(chosen, hist, deal_analysis, legal_summary, planning_items, effective_company_summary)
     readiness = deal_readiness(chosen)
     actions = next_actions(chosen, story)
     profile = story.get("seller_profile") or {}
@@ -1836,13 +1844,24 @@ def render_deal_room(chosen):
                 unsafe_allow_html=True,
             )
 
-            legal_ok = legal_state(chosen) == "VERIFIED"
+            legal_pct = int(chosen.get("legal_pack_completeness_pct") or 0)
+            legal_state_value = legal_state(chosen)
+            legal_pack_changed = bool(legal_summary.get("pack_changed") or chosen.get("legal_pack_changed"))
+            legal_ok = legal_state_value == "VERIFIED" and legal_pct >= 100 and not legal_pack_changed
+            if legal_ok:
+                legal_display = "100% verified"
+            elif legal_state_value == "VERIFIED" and legal_pct > 0:
+                legal_display = f"{legal_pct}% verified — incomplete"
+            elif legal_pct > 0:
+                legal_display = f"{legal_pct}% checked — review"
+            else:
+                legal_display = legal_state_value.title()
             planning_ok = planning_state(chosen) == "SCREENED"
             comp_conf = int(chosen.get("comparable_confidence") or 0)
             uw_conf = int(chosen.get("underwriting_confidence") or 0)
             evidence_html = [
                 f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if comp_conf >= 70 else "warn"}"></i>Comparables</span><strong>{comp_conf}%</strong></div>',
-                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if legal_ok else "warn"}"></i>Legal pack</span><strong>{_safe(legal_state(chosen).title())}</strong></div>',
+                f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if legal_ok else "warn"}"></i>Legal pack</span><strong>{_safe(legal_display)}</strong></div>',
                 f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if planning_ok else "warn"}"></i>Planning</span><strong>{_safe(planning_state(chosen).title())}</strong></div>',
                 f'<div class="deal-evidence-item"><span><i class="deal-evidence-dot {"" if uw_conf >= 70 else "warn"}"></i>Underwriting</span><strong>{uw_conf}%</strong></div>',
             ]
@@ -2508,9 +2527,10 @@ def render_deal_room(chosen):
             unsafe_allow_html=True,
         )
 
+        history_signal_good = bool(int(auction_summary.get("verified_failure_count") or 0) or int(auction_summary.get("returned_to_market_count") or 0))
         auction_cards = [
-            ("What happened?", auction_summary.get("what_happened") or "No result confirmed", "Observed auction/result history", "good" if int(chosen.get("failure_count") or 0) else "warn"),
-            ("Where is it now?", auction_summary.get("current_status") or chosen.get("status") or "Unknown", auction_summary.get("timing") or "Timing not established", "good" if str(chosen.get("status") or "").lower() == "available post-auction" else "warn"),
+            ("What happened?", auction_summary.get("what_happened") or "No result confirmed", "Normalised auction/result evidence", "good" if history_signal_good and not auction_summary.get("sale_status_conflict") else "warn"),
+            ("Where is it now?", auction_summary.get("current_status") or chosen.get("status") or "Unknown", auction_summary.get("timing") or "Timing not established", "good" if str(chosen.get("status") or "").lower() == "available post-auction" and not auction_summary.get("sale_status_conflict") else "warn"),
             ("Has the price moved?", auction_summary.get("price_movement") or "No movement captured", auction_summary.get("price_copy") or "", "good" if float(chosen.get("price_reduction_pct") or 0) > 0 else "warn"),
             ("What does it mean?", "Negotiation signal — not a guarantee", auction_summary.get("meaning") or "", "warn"),
         ]
@@ -2540,27 +2560,26 @@ def render_deal_room(chosen):
         st.markdown('<div class="deal-facts-title">Three simple auction steps</div><div class="deal-auction-steps">' + auction_steps_html + '</div>', unsafe_allow_html=True)
 
         st.markdown("#### Auction history")
-        st.caption("This is Lotly's record of observed auction events and guide changes. It is not proof of legal completion or Land Registry ownership transfer.")
-        if hist:
-            chronological = list(reversed(hist))
+        st.caption("Lotly groups duplicate observations and separates auctioneer status signals from confirmed legal completion. Raw observations remain available underneath.")
+        normalised_timeline = auction_summary.get("timeline") or []
+        if normalised_timeline:
             timeline_rows = []
-            for event in chronological:
-                when = event.get("auction_date") or str(event.get("captured_at") or "")[:10] or "Date not captured"
-                status_text = event.get("status") or "Observed"
-                detail_bits = []
-                if event.get("guide_text"):
-                    detail_bits.append(f"Guide {event.get('guide_text')}")
-                elif event.get("guide_price"):
-                    detail_bits.append(f"Guide {money(event.get('guide_price'))}")
-                if event.get("result_price"):
-                    detail_bits.append(f"Result {money(event.get('result_price'))}")
-                detail = " · ".join(detail_bits) if detail_bits else "No price detail captured"
+            for event in normalised_timeline:
+                when = event.get("when") or "Date not captured"
+                status_text = event.get("label") or event.get("status") or "Observed"
+                detail = event.get("detail") or "No price detail captured"
                 timeline_rows.append(
-                    f'<div class="deal-auction-event"><div class="date">{html.escape(str(when))}</div><div><div class="event-title">{html.escape(str(status_text))}</div><div class="event-copy">{html.escape(detail)}</div></div></div>'
+                    f'<div class="deal-auction-event"><div class="date">{html.escape(str(when))}</div><div><div class="event-title">{html.escape(str(status_text))}</div><div class="event-copy">{html.escape(str(detail))}</div></div></div>'
                 )
             st.markdown('<div class="deal-auction-timeline">' + ''.join(timeline_rows) + '</div>', unsafe_allow_html=True)
+            if auction_summary.get("sale_status_conflict"):
+                st.warning("A previous sold-status signal conflicts with the current available listing. Lotly has not treated that earlier status as a completed sale or a failed auction. Confirm the sequence with the auctioneer.")
             with st.expander("Raw auction-history evidence"):
-                st.dataframe(pd.DataFrame(chronological), hide_index=True, use_container_width=True)
+                chronological = list(reversed(hist)) if hist else []
+                if chronological:
+                    st.dataframe(pd.DataFrame(chronological), hide_index=True, use_container_width=True)
+                else:
+                    st.caption("No stored raw history rows yet; the current listing status is shown above.")
         else:
             st.info("No auction-history observations are stored yet. Future refreshes will build the timeline automatically.")
 

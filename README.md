@@ -2,10 +2,48 @@
 
 **Property Auction Intelligence** — Find your next opportunity.
 
-## Lotly v1.12.1
+## Lotly v1.13.0
+
+Deal Room becomes the investment decision cockpit while the approved Discover design is locked. The new Deal Room brings price, valuation, opening offer, maximum buy, profit/equity, seller leverage, readiness and evidence status together at the top of each property. The Snapshot is reorganised around investment case, risks, decision readiness and next actions, while the existing Seller, Financials, Comparables, Auction, Legal & Planning, Location and Workspace tools are retained.
+
+## Lotly v1.12.6
+
+- Fixes reliable rendering of the approved terraced-house hero on Streamlit deployments.
+- Prevents hero background styling from leaking into the rest of the Discover page.
+- Tightens top-of-page and opportunity-card spacing to better match the approved UI.
+- All existing product logic remains intact.
+
+## Lotly v1.12.5
+
+### Approved Discover UI alignment patch
+
+- Fixes the remaining deployment mismatch against the approved Discover reference.
+- Hero property artwork now renders as an explicit image layer for reliable Streamlit/GitHub deployment.
+- Sidebar starts at the top at the approved 252 px width; hero/filter spacing is tightened to match the first-screen composition.
+- KPI icons are consistent outline SVGs.
+- All v1.12.4 product logic remains intact.
+
+## Lotly v1.12.4
+
+### Approved Discover dashboard design
+
+- Matches the approved Lotly visual direction: white sidebar, account strip, full-width mint/teal property hero, KPI icon cards, compact filters and two-column opportunity cards.
+- Adds `assets/hero_houses.png` for the faded terraced-house hero backdrop.
+- Retains the v1.12.3 data, scoring, underwriting, legal, shortlist, compare, pipeline and refresh workflows.
+
+## Lotly v1.12.3
+Production UI refinement release. The left navigation now restores the approved teal/navy brand hero with the subtle property roofline artwork, improving first-impression brand presence without changing the working discovery flow.
+
+### v1.12.3 visual refinement
+- Restored the premium teal/navy Lotly brand panel at the top-left.
+- Added subtle house/roofline artwork behind the brand mark for depth without reducing legibility.
+- Kept the existing navigation, Today summary, buy box and discovery experience unchanged.
+- Retained all v1.12.2 scoring, underwriting, legal-evidence and persistence behaviour.
+
+## Lotly v1.12.2
 Finished-product polish release. The discovery experience is now tuned for professional buyers who need to identify the strongest opportunities in seconds: one compact Lotly brand in navigation, fixed-ratio imagery and branded placeholders, consistent Lotly Score treatment, estimated-value framing, visible guide-to-value discount, compact badge prioritisation, sticky market/search/sort controls, a persistent "since your last visit" market brief, and a clearer Today summary. The v1.10.3 evidence firewall/revalidation rules remain intact underneath the customer experience.
 
-### v1.12.1 experience principles
+### v1.12.2 experience principles
 - The property is the hero: no duplicate masthead branding above the feed.
 - Guide, estimated value, max buy and potential profit are visible without opening diligence.
 - Only the three most decision-relevant badges are shown on browse cards; extra signals are disclosed on demand.
@@ -771,3 +809,55 @@ Always confirm the actual buyer/entity, VAT position, linked transactions, lease
 ## v1.8.2 Supabase S3 compatibility
 
 The S3 client now forces SigV4 path-style requests and disables optional flexible-checksum headers unless they are required. This avoids an interoperability problem seen with newer botocore releases and S3-compatible storage providers. The Persistence panel now distinguishes credentials being loaded from a real Supabase connection and from a verified read/write sync.
+
+### v1.12.2 investment credibility polish
+
+- Fixed the top-of-page spacing so the main heading is never clipped beneath Streamlit chrome.
+- Expanded the sidebar into a useful investor workspace with Today, Your buy box, Deal Room and Reports.
+- Added exact **Profit at guide** calculations alongside Estimated value and Max buy.
+- Added valuation confidence + comparable counts to opportunity cards.
+- Added auction timing / post-auction age cues and commercial GBP/sq ft context.
+- Added buy-box criteria chips, functional Deal Room index and live market Reports.
+
+### v1.13.2 Deal Room decision workspace
+
+- Deal Room remains visibly active in the sidebar while a property is open.
+- Snapshot now leads with investment signals, an evidence-based RAG risk register, decision readiness and recommended action.
+- Bid-blocked properties display **DO NOT BID** prominently.
+- Maximum buy is explained with a backwards calculation from value/GDV, target return and acquisition/works/finance costs.
+- Comparable valuation now shows a concise valuation-proof statement with usable comp count and confidence.
+- The Discover page remains design-locked.
+
+## v1.13.3
+Deal Room Financials and Comparables are now evidence-led decision tabs. Profit is labelled by purchase-price basis, purchase scenarios are compared through to the maximum bid, and the Comparable tab states whether the current modelled value is defensible for desktop acquisition screening.
+
+## v1.13.4 - Financial & Comparable Data Integrity
+
+This release protects automated evidence from accidental zero/manual overwrites, adds explicit valuation and fee provenance, and introduces the residential comparable v2 matching model. Comparable scoring now considers subtype, distance, recency, tenure, locality and price coherence, with outlier and subject-prior-sale down-weighting. Discover and the Deal Room Snapshot visual layouts remain locked.
+
+## v1.13.6 - Beginner-first Legal & Planning
+
+The Deal Room now translates legal and planning evidence into plain-English **STOP / CHECK / CLEAR** decisions for buyers without professional property-investment experience. Core documents, tenure, costs, occupation, building safety, planning and auction terms each explain why they matter and what to do next. Technical source evidence remains available in a collapsed advanced section, and verified severity-4/5 legal findings keep the bid gate closed until professional review.
+
+## v1.13.7 - Clear legal-refresh outcomes and manual fallback
+
+Legal & Planning now tells a beginner investor what actually happened after a legal-pack refresh. If no verified documents were acquired, Lotly explains whether candidate links were found, whether provider access is gated, and what the user should do next. A simple upload route is now exposed directly in the beginner view so a user can download the pack from the auctioneer and upload it to Lotly without entering the advanced evidence area.
+
+## v1.13.8 - Authoritative legal evidence + beginner readiness
+
+Legal & Planning now reserves **CLEAR** for evidence that is authoritative enough to support it. Ownership/title requires the official title register; a leasehold term cannot become CLEAR solely because a listing or another document mentions a long lease. The beginner view now includes a Legal readiness percentage, the permanent rule **Never bid while a red STOP item remains**, plain-English explanations of critical legal risks and EWS1, a short legal-document glossary, and a property-specific solicitor checklist generated from each STOP/CHECK item.
+
+## v1.13.10 - Legal-pack recognition and lot-specific term precedence
+
+Lotly now recognises compressed auction-pack filenames, matches core legal documents to the title actually being sold, and gives the lot's Special Conditions priority over generic auction-information sheets. Supporting freehold/headlease registers no longer satisfy a missing subject Title Register. Existing user uploads can be reclassified during legal refresh without requiring the pack to be uploaded again.
+
+## v1.13.11 - Beginner-first Seller & Negotiation
+
+The Seller tab now answers four simple questions for a novice investor: **Who is selling? Why might they negotiate? What should I test first? When should I stop?** Lotly deliberately scores observable negotiation signals rather than claiming to know a seller's private motivation. If the acquisition gate is blocked, the opening position is labelled **PRICE TEST ONLY - NOT A BID**, the modelled ceiling is not treated as permission to proceed, and the user is given a plain-English auctioneer script plus simple questions to ask before moving on price. Confirmed evidence and negotiation interpretation are shown separately, while Companies House and detailed seller evidence remain available in advanced sections.
+
+## v1.13.12 — Beginner Auction Story and Seller accuracy
+The Seller tab now distinguishes verified disposal evidence from listing-only signals and uses a natural auctioneer call script. The Auction tab translates auction history into plain-English stages, price movement, negotiation meaning and a beginner-safe next action while preserving legal bid blockers.
+
+## v1.13.13 — Auction History Integrity
+
+Lotly now reconciles contradictory auction statuses before presenting them to a beginner investor. Repeated observations are grouped, auctioneer `Sold` statuses are not treated as completed legal sales, and a property that is currently available after an earlier sold signal is described as **returned/available with the previous sale status needing clarification**. Negotiation leverage only uses concrete failed-auction or verified return-to-market signals. The Deal Room evidence strip also shows incomplete legal packs by percentage instead of labelling them simply `Verified`.
