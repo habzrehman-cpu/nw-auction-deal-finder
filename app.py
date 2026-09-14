@@ -23,7 +23,7 @@ from tracker.diligence import (
 )
 from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
-from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status
+from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
 from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
@@ -2605,21 +2605,64 @@ def render_deal_room(chosen):
             f'<div class="sub">{html.escape(_simple_next_reason)}</div></div>', unsafe_allow_html=True,
         )
 
+        _legal_refresh_notice_key = f"legal_refresh_notice_{chosen['id']}"
         _refresh_legal_col, _refresh_plan_col = st.columns(2)
         with _refresh_legal_col:
             if st.button("Refresh legal pack", key=f"legal_simple_{chosen['id']}", use_container_width=True):
                 try:
+                    _before_verified = int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0)
+                    _before_complete = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
                     with st.spinner("Checking the latest legal-pack evidence..."):
-                        refresh_property_legal(db, chosen, legal_access=legal_access, cloud_store=cloud_store)
+                        _refreshed_legal = refresh_property_legal(db, chosen, legal_access=legal_access, cloud_store=cloud_store)
                         if companies_house_api_key:
                             try:
                                 refresh_property_company(db, chosen, companies_house_api_key)
                             except Exception:
                                 pass
                         sync_cloud("property legal/company refresh")
-                    st.success("Legal evidence refreshed.")
+                    _after_verified = int(_refreshed_legal.get("verified_document_count") or 0)
+                    _after_candidates = int(_refreshed_legal.get("candidate_document_count") or 0)
+                    _after_complete = int(_refreshed_legal.get("pack_completeness_pct") or 0)
+                    _provider = provider_for_lot(chosen, str(chosen.get("url") or ""))
+                    _access = provider_access_status(legal_access, _provider)
+                    _access_status = str(_access.get("status") or "")
+                    _warnings = " ".join(str(x) for x in (_refreshed_legal.get("warnings") or []))
+
+                    if _after_verified > _before_verified or _after_complete > _before_complete:
+                        _notice = (
+                            "success",
+                            f"Legal evidence improved: {_after_verified} verified document(s), {_after_complete}% of the core pack evidenced."
+                        )
+                    elif _after_verified == 0 and _after_candidates > 0:
+                        _reason = "Lotly found possible legal-pack links, but none passed the property-identity and verification checks."
+                        if "permission" in _access_status.lower():
+                            _reason += " This auction provider requires permission for automated access."
+                        elif "login" in _access_status.lower():
+                            _reason += " The legal documents appear to require an account/login."
+                        _notice = (
+                            "warning",
+                            _reason + " Open the auction listing, download the latest legal pack/addendum, then upload it to Lotly below."
+                        )
+                    elif _after_verified == 0:
+                        _reason = "No verified legal pack was found automatically."
+                        if "permission" in _access_status.lower():
+                            _reason += " Automated access is permission-gated for this provider."
+                        elif "login" in _access_status.lower():
+                            _reason += " The provider may require a login or registration."
+                        elif "no legal-pack/addendum candidate" in _warnings.lower():
+                            _reason += " No legal-pack link was detected on the listing page."
+                        _notice = (
+                            "warning",
+                            _reason + " This does not mean the property has no legal pack. Download the pack from the auction listing and upload it below."
+                        )
+                    else:
+                        _notice = (
+                            "info",
+                            f"Refresh completed. The verified legal evidence is unchanged at {_after_verified} document(s) and {_after_complete}% completeness."
+                        )
+                    st.session_state[_legal_refresh_notice_key] = _notice
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.session_state[_legal_refresh_notice_key] = ("error", f"Legal-pack refresh failed: {exc}")
                 st.rerun()
         with _refresh_plan_col:
             if st.button("Refresh planning check", key=f"plan_simple_{chosen['id']}", use_container_width=True):
@@ -2631,6 +2674,71 @@ def render_deal_room(chosen):
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
+
+        _refresh_notice = st.session_state.get(_legal_refresh_notice_key)
+        if _refresh_notice:
+            _notice_level, _notice_text = _refresh_notice
+            if _notice_level == "success":
+                st.success(_notice_text)
+            elif _notice_level == "warning":
+                st.warning(_notice_text)
+            elif _notice_level == "error":
+                st.error(_notice_text)
+            else:
+                st.info(_notice_text)
+
+        if not _simple_legal_complete:
+            with st.expander("Can't get the legal pack automatically? Upload it here", expanded=(_simple_complete == 0)):
+                st.markdown(
+                    "**Simple route:** 1) open the auction listing, 2) download the latest legal pack and any addendum, "
+                    "3) upload the PDF/ZIP below. Lotly will check that the documents belong to this property before using them."
+                )
+                if str(chosen.get("url") or "").startswith(("http://", "https://")):
+                    st.link_button("Open auction listing", chosen["url"], use_container_width=True)
+                _beginner_uploads = st.file_uploader(
+                    "Upload legal pack or addendum (PDF/TXT/ZIP)",
+                    type=["pdf", "txt", "zip"], accept_multiple_files=True,
+                    key=f"beginner_legal_upload_{chosen['id']}"
+                )
+                if _beginner_uploads and st.button(
+                    "Analyse uploaded legal pack", key=f"beginner_legal_analyse_{chosen['id']}",
+                    type="primary", use_container_width=True
+                ):
+                    try:
+                        _parsed_docs = []
+                        with st.spinner("Checking the uploaded documents against this property..."):
+                            for _file in _beginner_uploads:
+                                for _doc in uploaded_documents(_file.name, _file.getvalue()):
+                                    _raw = _doc.pop("_raw_bytes", b"")
+                                    if cloud_store and _raw:
+                                        try:
+                                            _path = cloud_store.upload_legal_document(
+                                                chosen["id"], _doc.get("name") or _file.name, _raw, _doc.get("sha256") or "document"
+                                            )
+                                            _doc.setdefault("metadata", {})["cloud_storage_path"] = _path
+                                            _doc["access_status"] = (
+                                                "uploaded, parsed and stored privately" if _doc.get("text_content")
+                                                else "uploaded and stored; no extractable text"
+                                            )
+                                        except Exception as _cloud_exc:
+                                            _doc.setdefault("metadata", {})["cloud_storage_error"] = str(_cloud_exc)[:300]
+                                    _parsed_docs.append(_doc)
+                            _uploaded_summary = save_uploaded_legal_documents(db, chosen, _parsed_docs)
+                            if companies_house_api_key:
+                                try:
+                                    refresh_property_company(db, chosen, companies_house_api_key)
+                                except Exception:
+                                    pass
+                            sync_cloud("beginner legal pack upload", quiet=False)
+                        _uploaded_verified = int((_uploaded_summary or {}).get("verified_document_count") or len(_parsed_docs))
+                        _uploaded_complete = int((_uploaded_summary or {}).get("pack_completeness_pct") or 0)
+                        st.session_state[_legal_refresh_notice_key] = (
+                            "success",
+                            f"Uploaded legal evidence analysed: {_uploaded_verified} document(s) accepted; core-pack completeness is now {_uploaded_complete}%."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"The uploaded legal pack could not be analysed: {exc}")
 
         _simple_questions = solicitor_questions(chosen, legal_summary)
         if _simple_questions:
