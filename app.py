@@ -3561,10 +3561,17 @@ def render_deal_room(chosen):
             chosen, db.comparables_for(chosen["id"]), planning_items, db.underwriting_for(chosen["id"]), db.rental_comparables_for(chosen["id"])
         )
         workspace_plan = workspace_beginner_summary(
-            chosen, readiness, actions, legal_summary, planning_items, db.underwriting_for(chosen["id"]), auction_integrity, workspace_location
+            chosen, readiness, actions, legal_summary, planning_items, db.underwriting_for(chosen["id"]),
+            auction_integrity, workspace_location, workspace
         )
         db.sync_auto_tasks(chosen["id"], workspace_plan.get("tasks") or [])
         tasks = db.tasks_for(chosen["id"])
+        buyer_solicitor_name = str(workspace.get("solicitor_name") or "").strip()
+        buyer_solicitor_email = str(workspace.get("solicitor_email") or "").strip()
+        buyer_solicitor_phone = str(workspace.get("solicitor_phone") or "").strip()
+        funding_contact_name = str(workspace.get("funding_contact_name") or "").strip()
+        funding_contact_email = str(workspace.get("funding_contact_email") or "").strip()
+        funding_contact_phone = str(workspace.get("funding_contact_phone") or "").strip()
         active_tasks = [t for t in tasks if str(t.get("evidence_status") or "Open") != "Resolved"]
         resolved_tasks = [t for t in tasks if str(t.get("evidence_status") or "Open") == "Resolved"]
         action_done = [t for t in active_tasks if t.get("status") == "Done"]
@@ -3611,6 +3618,56 @@ def render_deal_room(chosen):
             for label, value, copy, tone in ws_cards
         ) + '</div>', unsafe_allow_html=True)
 
+        st.markdown('<div class="deal-facts-title">Funding readiness</div>', unsafe_allow_html=True)
+        completion_days = workspace_plan.get("completion_days")
+        funding_position_saved = str(workspace.get("funding_position") or "").strip()
+        funding_completion_saved = str(workspace.get("funding_completion_status") or "").strip()
+        funding_positions = ["Not set", "Cash available", "Mortgage/bridge approved", "Agreement in principle only", "Funding not confirmed"]
+        funding_completion_options = ["Not sure", "Yes — confirmed", "No"]
+        funding_position_default = funding_position_saved if funding_position_saved in funding_positions else "Not set"
+        funding_completion_default = funding_completion_saved if funding_completion_saved in funding_completion_options else "Not sure"
+        fr1, fr2 = st.columns(2)
+        with fr1:
+            funding_position_input = st.selectbox(
+                "Funding position", funding_positions, index=funding_positions.index(funding_position_default),
+                key=f"funding_position_{chosen['id']}"
+            )
+        with fr2:
+            timing_label = f"Can funds complete within {int(completion_days)} days?" if completion_days else "Can funds complete by the contractual deadline?"
+            funding_completion_input = st.selectbox(
+                timing_label, funding_completion_options, index=funding_completion_options.index(funding_completion_default),
+                key=f"funding_completion_{chosen['id']}"
+            )
+        funding_is_confirmed = funding_completion_input == "Yes — confirmed" and funding_position_input in {"Cash available", "Mortgage/bridge approved"}
+        if funding_is_confirmed:
+            st.success("Funding timing confirmed. Lotly will clear this Workspace funding blocker after you save.")
+        elif funding_completion_input == "Yes — confirmed" and funding_position_input == "Agreement in principle only":
+            st.warning("An agreement in principle is not treated as confirmed completion funding. Confirm the full facility or cash position before Lotly clears this blocker.")
+        else:
+            st.info("This is a buyer-confirmed workflow check. It does not replace proof of funds, lender approval, legal review or the auction contract.")
+        with st.expander("Broker / lender contact and evidence reference (optional)", expanded=bool(funding_contact_name or funding_contact_email or funding_contact_phone or workspace.get("funding_reference"))):
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                funding_contact_name_input = st.text_input("Broker / lender name", value=funding_contact_name, key=f"funding_contact_name_{chosen['id']}")
+            with fc2:
+                funding_contact_email_input = st.text_input("Email", value=funding_contact_email, key=f"funding_contact_email_{chosen['id']}")
+            with fc3:
+                funding_contact_phone_input = st.text_input("Phone", value=funding_contact_phone, key=f"funding_contact_phone_{chosen['id']}")
+            funding_reference_input = st.text_input(
+                "Evidence / reference (optional)", value=str(workspace.get("funding_reference") or ""),
+                placeholder="e.g. cash statement checked, broker case ref, facility approval date",
+                key=f"funding_reference_{chosen['id']}"
+            )
+        if st.button("Save funding position", key=f"save_funding_{chosen['id']}", use_container_width=True):
+            db.save_funding_confirmation(
+                chosen["id"],
+                "" if funding_position_input == "Not set" else funding_position_input,
+                funding_completion_input,
+                funding_contact_name_input, funding_contact_email_input, funding_contact_phone_input, funding_reference_input,
+            )
+            sync_cloud("funding confirmation", quiet=True)
+            st.rerun()
+
         st.markdown('<div class="deal-facts-title">Acquisition checklist</div>', unsafe_allow_html=True)
         st.markdown('<div class="deal-workspace-rule"><strong>Two different states:</strong> tick <strong>Action done</strong> when you have made the call, sent the email or completed the task. The separate issue badge only changes to <strong>Issue resolved</strong> when Lotly can see that the underlying evidence has actually cleared.</div>', unsafe_allow_html=True)
 
@@ -3653,6 +3710,19 @@ def render_deal_room(chosen):
                         if destination:
                             if st.button(f"Open {destination}", key=f"jump_{chosen['id']}_{task['id']}", use_container_width=True):
                                 jump_to_deal_tab(destination)
+                        task_key = str(task.get("task_key") or "")
+                        if task_key == "legal-stop-review":
+                            if buyer_solicitor_name or buyer_solicitor_email or buyer_solicitor_phone:
+                                sol_bits = [x for x in (buyer_solicitor_name, buyer_solicitor_phone, buyer_solicitor_email) if x]
+                                st.caption("Your solicitor: " + " · ".join(sol_bits))
+                            else:
+                                st.caption("Your solicitor: not added yet")
+                        if task_key == "funding-deadline":
+                            if funding_contact_name or funding_contact_email or funding_contact_phone:
+                                fund_bits = [x for x in (funding_contact_name, funding_contact_phone, funding_contact_email) if x]
+                                st.caption("Broker / lender: " + " · ".join(fund_bits))
+                            else:
+                                st.caption("Broker / lender: optional")
                     if new_done != done:
                         db.set_task_status(task["id"], "Done" if new_done else "Open", chosen["id"])
                         sync_cloud("deal task", quiet=True)
@@ -3706,9 +3776,6 @@ def render_deal_room(chosen):
         auctioneer_email = chosen.get("listing_auctioneer_email") or "Not captured"
         legal_contacts = list(legal_summary.get("contacts") or [])
         pack_solicitor = next((c for c in legal_contacts if "solicitor" in str(c.get("role") or c.get("type") or "").lower()), None)
-        buyer_solicitor_name = str(workspace.get("solicitor_name") or "").strip()
-        buyer_solicitor_email = str(workspace.get("solicitor_email") or "").strip()
-        buyer_solicitor_phone = str(workspace.get("solicitor_phone") or "").strip()
         con1, con2, con3 = st.columns(3)
         with con1:
             st.markdown("**Auctioneer**")

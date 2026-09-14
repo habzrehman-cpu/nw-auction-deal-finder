@@ -544,7 +544,7 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
 def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions: Iterable[dict] | None = None,
                                legal_summary: dict | None = None, planning_items: Iterable[dict] | None = None,
                                underwriting: dict | None = None, auction_integrity: dict | None = None,
-                               location_summary: dict | None = None) -> dict:
+                               location_summary: dict | None = None, workspace_state: dict | None = None) -> dict:
     """Build a novice-friendly acquisition action plan from existing evidence.
 
     Workspace tasks describe *actions the buyer should take*. Completing an action never
@@ -557,6 +557,7 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
     underwriting = dict(underwriting or {})
     auction_integrity = dict(auction_integrity or {})
     location_summary = dict(location_summary or {})
+    workspace_state = dict(workspace_state or {})
     planning_items = [dict(x) for x in (planning_items or [])]
 
     readiness_status = str(readiness.get("readiness_status") or "Reviewing")
@@ -571,6 +572,12 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
     property_type = str(row.get("property_type") or "").lower()
     flat_like = any(x in property_type for x in ("flat", "apartment", "maisonette"))
     status_low = str(row.get("status") or "").lower()
+    funding_position = str(workspace_state.get("funding_position") or "").strip()
+    funding_completion_status = str(workspace_state.get("funding_completion_status") or "").strip()
+    funding_confirmed = (
+        funding_completion_status == "Yes — confirmed"
+        and funding_position in {"Cash available", "Mortgage/bridge approved"}
+    )
 
     tasks = []
 
@@ -593,7 +600,11 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
     if int(location_summary.get("rental_comp_count") or 0) < 3 and not _num(underwriting.get("erv_annual")):
         add("rental-evidence", "Numbers", "Add at least 3 rental comparables", "Use current comparable rents to evidence achievable rent and gross yield.", "check", "pre_offer", "Location")
     if completion_days is not None and completion_days <= 14:
-        add("funding-deadline", "Money", f"Confirm funds can complete within {int(completion_days)} days", "Auction completion is fast. Confirm cash/finance, solicitor capacity and transfer timing before any binding bid.", "stop" if readiness_status == "BID BLOCKED" else "check", "must_resolve", "Financials")
+        if not funding_confirmed:
+            funding_detail = "Auction completion is fast. Confirm cash/finance, solicitor capacity and transfer timing before any binding bid."
+            if funding_position or funding_completion_status:
+                funding_detail += f" Current buyer funding status: {funding_position or 'not set'}; completion: {funding_completion_status or 'not sure'}."
+            add("funding-deadline", "Money", f"Confirm funds can complete within {int(completion_days)} days", funding_detail, "stop", "must_resolve", "Financials")
     else:
         add("funding-proof", "Money", "Confirm proof of funds and buying costs", "Make sure purchase funds, tax, legal fees, auction fees and contingency are available before offering.", "check", "pre_offer", "Financials")
     add("viewing-condition", "Property", "Inspect the property and condition", "Arrange a viewing or suitable survey/condition check so the numbers reflect the property you are actually buying.", "check", "pre_offer", "")
@@ -606,7 +617,8 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
     if row.get("opening_offer"):
         add("price-test", "Auctioneer", f"Price-test around GBP {float(row.get('opening_offer')):,.0f}", "Treat this as a non-binding conversation while any red STOP item remains.", "check", "negotiation", "Seller")
 
-    if readiness_status == "BID BLOCKED":
+    has_open_stop_task = any(str(t.get("priority") or "").lower() == "stop" for t in tasks)
+    if readiness_status == "BID BLOCKED" or has_open_stop_task:
         workspace_status = "BLOCKED — CHECKS STILL OPEN"
         status_tone = "risk"
     elif readiness_pct >= 90 and row.get("max_bid"):
@@ -635,6 +647,9 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
         "legal_pct": legal_pct,
         "comp_confidence": comp_conf,
         "planning_screened": planning_screened,
+        "funding_position": funding_position,
+        "funding_completion_status": funding_completion_status,
+        "funding_confirmed": funding_confirmed,
     }
 
 

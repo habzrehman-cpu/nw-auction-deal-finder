@@ -255,6 +255,12 @@ CREATE TABLE IF NOT EXISTS deal_workspace (
   solicitor_name TEXT,
   solicitor_email TEXT,
   solicitor_phone TEXT,
+  funding_position TEXT,
+  funding_completion_status TEXT,
+  funding_contact_name TEXT,
+  funding_contact_email TEXT,
+  funding_contact_phone TEXT,
+  funding_reference TEXT,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
@@ -364,6 +370,12 @@ DEAL_WORKSPACE_MIGRATIONS = {
     "solicitor_name": "TEXT",
     "solicitor_email": "TEXT",
     "solicitor_phone": "TEXT",
+    "funding_position": "TEXT",
+    "funding_completion_status": "TEXT",
+    "funding_contact_name": "TEXT",
+    "funding_contact_email": "TEXT",
+    "funding_contact_phone": "TEXT",
+    "funding_reference": "TEXT",
 }
 
 DEAL_TASK_MIGRATIONS = {
@@ -1122,6 +1134,9 @@ class Database:
         return dict(row) if row else {
             "property_id": property_id, "stage": "New", "next_action": "", "follow_up_date": "",
             "solicitor_name": "", "solicitor_email": "", "solicitor_phone": "",
+            "funding_position": "", "funding_completion_status": "",
+            "funding_contact_name": "", "funding_contact_email": "",
+            "funding_contact_phone": "", "funding_reference": "",
         }
 
     def save_workspace(self, property_id, stage="New", next_action="", follow_up_date=""):
@@ -1144,6 +1159,34 @@ class Database:
                 ON CONFLICT(property_id) DO UPDATE SET solicitor_name=excluded.solicitor_name,
                 solicitor_email=excluded.solicitor_email,solicitor_phone=excluded.solicitor_phone,updated_at=excluded.updated_at""",
                 (property_id, str(name or "")[:300], str(email or "")[:300], str(phone or "")[:100], now),
+            )
+            con.commit()
+
+    def save_funding_confirmation(self, property_id, position="", completion_status="", contact_name="", contact_email="", contact_phone="", reference=""):
+        """Persist the buyer's funding position separately from automated underwriting.
+
+        This is buyer-supplied workflow evidence. It can clear the Workspace timing blocker
+        only when the buyer explicitly confirms completion capability; it does not alter
+        legal, valuation or lender evidence elsewhere in Lotly.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO deal_workspace(
+                property_id,stage,next_action,follow_up_date,funding_position,funding_completion_status,
+                funding_contact_name,funding_contact_email,funding_contact_phone,funding_reference,updated_at
+                ) VALUES(?, 'New', '', '', ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(property_id) DO UPDATE SET
+                funding_position=excluded.funding_position,
+                funding_completion_status=excluded.funding_completion_status,
+                funding_contact_name=excluded.funding_contact_name,
+                funding_contact_email=excluded.funding_contact_email,
+                funding_contact_phone=excluded.funding_contact_phone,
+                funding_reference=excluded.funding_reference,
+                updated_at=excluded.updated_at""",
+                (property_id, str(position or "")[:120], str(completion_status or "")[:120],
+                 str(contact_name or "")[:300], str(contact_email or "")[:300],
+                 str(contact_phone or "")[:100], str(reference or "")[:1200], now),
             )
             con.commit()
 
