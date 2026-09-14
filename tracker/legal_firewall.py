@@ -132,18 +132,60 @@ def _route_lot_tokens(path: str) -> set[str]:
     }
 
 
+def _normalise_document_probe(value: str) -> str:
+    """Make auction-pack filenames readable to the classifier.
+
+    Legal archives frequently contain names such as ``OfficialCopyLease...`` or
+    ``LEASEHOLDOCETITLEPLAN...``.  Treating those as raw tokens caused genuine
+    leases/official copies to fall through the class gate.  This normalisation is
+    classification-only; it never changes the stored filename or evidence bytes.
+    """
+    value = str(value or "")
+    value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    value = re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", value)
+    value = re.sub(r"(?i)officialcopy", "official copy", value)
+    value = re.sub(r"(?i)titleplan", "title plan", value)
+    value = re.sub(r"(?i)headlease", "head lease", value)
+    value = re.sub(r"(?i)specialconditions", "special conditions", value)
+    value = re.sub(r"(?i)conditionsofsale", "conditions of sale", value)
+    value = re.sub(r"[_\-./]+", " ", value)
+    return " ".join(value.split())
+
+
 def document_type_classification(label: str = "", url: str = "", text: str = "") -> dict:
     """Classify whether a candidate looks like a legal/DD document.
 
     Generic provider pages and marketing/advisory PDFs are explicitly excluded,
     even if they happen to contain words such as lease, rent or solicitor.
     """
-    probe = " ".join(str(x or "") for x in (label, url, text[:4000]))
-    if MARKETING_OR_ADVISORY_RE.search(probe):
+    surface_probe = " ".join((_normalise_document_probe(label), _normalise_document_probe(url)))
+    text_probe = str(text or "")[:4000]
+    # Marketing/advisory blocking is based on the link/file surface, not arbitrary
+    # words buried inside an otherwise genuine legal document.
+    if MARKETING_OR_ADVISORY_RE.search(surface_probe):
         return {"doc_type": "Context / marketing", "allowed": False, "reason": "marketing/advisory content is not legal-pack evidence"}
+
+    if re.search(r"\bauction\s+information\b|\bimportant\s+information\b|\bpreliminary\s+enquiries\b|\breplies\s+to\s+enquiries\b", surface_probe, re.I):
+        return {"doc_type": "Uploaded legal document", "allowed": True, "reason": "recognised supporting legal-pack information document"}
+
+    # Prefer what the file/link itself claims to be.  A generic Auction Information
+    # sheet often mentions "special conditions" and must not therefore be classified
+    # as the lot's Special Conditions document.
     for pattern, name in DOCUMENT_TYPE_PATTERNS:
-        if pattern.search(probe):
-            return {"doc_type": name, "allowed": name in VERIFIED_LEGAL_TYPES, "reason": f"recognised document class: {name}"}
+        if pattern.search(surface_probe):
+            return {"doc_type": name, "allowed": name in VERIFIED_LEGAL_TYPES, "reason": f"recognised document class from filename/link: {name}"}
+
+    # Content fallback uses deliberately strong document-level signatures.
+    strong_text_patterns = [
+        (re.compile(r"(?:^|\n)\s*SPECIAL\s+CONDITIONS\s+OF\s+SALE\b", re.I), "Special conditions"),
+        (re.compile(r"electronic\s+official\s+copy\s+of\s+the\s+register\s+follows|\bA:\s*Property\s+Register\b", re.I), "Title register"),
+        (re.compile(r"electronic\s+official\s+copy\s+of\s+the\s+title\s+plan\s+follows", re.I), "Title plan"),
+        (re.compile(r"(?:^|\n)\s*ADDENDUM\b", re.I), "Addendum"),
+        (re.compile(r"electronic\s+official\s+copy\s+of\s+the\s+document\s+follows", re.I), "Official copy"),
+    ]
+    for pattern, name in strong_text_patterns:
+        if pattern.search(text_probe):
+            return {"doc_type": name, "allowed": name in VERIFIED_LEGAL_TYPES, "reason": f"recognised document class from content signature: {name}"}
     return {"doc_type": "Unclassified", "allowed": False, "reason": "document type is not recognised as legal/DD evidence"}
 
 

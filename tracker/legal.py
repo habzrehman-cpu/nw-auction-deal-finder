@@ -862,6 +862,7 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
         r"\bRegistered proprietor(?:s)?\s*:\s*([^\n]{3,260})",
     ], text)
     seller_raw = _first_text([
+        r"\b(?:the\s+)?(?:Seller|Vendor)[\s\u2018\u2019\u201c\u201d\"']*(?:is|:)\s*([^\n]{3,260})",
         r"\b(?:Seller|Vendor)\s*:\s*([^\n]{3,260})",
     ], text)
     proprietor_name = proprietor_raw
@@ -997,30 +998,103 @@ def _evidence_location(documents: list[dict], pattern: str, label: str, value=No
     return None
 
 
-def _pack_completeness(documents: list[dict], extracted_fields: dict) -> tuple[int, list[str], list[str]]:
-    """Return a pragmatic legal-pack completeness score and missing/available components."""
-    types = {str(d.get("doc_type") or "") for d in documents if d.get("doc_type")}
+def _normalise_title_number(value: str | None) -> str:
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
+def _document_title_numbers(doc: dict) -> set[str]:
+    """Return Land Registry-style title numbers evidenced by one document."""
+    text = str(doc.get("text_content") or "")
+    name = str(doc.get("name") or "")
+    out = set()
+    for m in re.finditer(r"(?:title\s*(?:number|no\.?))\s*[:\-]?\s*([A-Z]{1,4}\s?\d{3,10})", text, re.I):
+        out.add(_normalise_title_number(m.group(1)))
+    # Auction archives often embed the title number in a compressed filename,
+    # immediately after markers such as TITLEPLAN/OCE/LEASE.
+    compact_name = re.sub(r"[^A-Za-z0-9]", "", name)
+    for m in re.finditer(
+        r"(?:TITLEPLAN|OCE|COPYLEASE\d{0,8}|LEASE\d{0,8}|HEADLEASE\d{0,8})([A-Z]{1,4}\d{3,10})",
+        compact_name, re.I
+    ):
+        out.add(_normalise_title_number(m.group(1)))
+    for m in re.finditer(r"\b([A-Z]{1,4}\d{3,10})\b", name, re.I):
+        out.add(_normalise_title_number(m.group(1)))
+    return {x for x in out if x}
+
+
+def _doc_matches_subject_title(doc: dict, subject_title_number: str | None) -> bool:
+    subject = _normalise_title_number(subject_title_number)
+    if not subject:
+        return True
+    return subject in _document_title_numbers(doc)
+
+
+def _subject_title_number(documents: list[dict], listing_fields: dict) -> str | None:
+    """Resolve the title being sold, preferring lot-specific evidence over superior titles."""
+    listing_title = _normalise_title_number(listing_fields.get("title_number"))
+    if listing_title:
+        return listing_title
+    for doc in documents:
+        if str(doc.get("doc_type") or "") != "Special conditions":
+            continue
+        fields, _ = extract_legal_fields(str(doc.get("text_content") or ""), fallback_lease_years=None)
+        title = _normalise_title_number(fields.get("title_number"))
+        if title:
+            return title
+    # A subject lease/title plan often contains the sold title even where the listing omitted it.
+    for dtype in ("Lease", "Title plan"):
+        candidates = [d for d in documents if str(d.get("doc_type") or "") == dtype and "head lease" not in str(d.get("name") or "").lower().replace("_", " ")]
+        numbers = {n for d in candidates for n in _document_title_numbers(d)}
+        if len(numbers) == 1:
+            return next(iter(numbers))
+    return None
+
+
+def _core_doc_present(documents: list[dict], dtype: str, subject_title_number: str | None) -> bool:
+    candidates = [d for d in documents if str(d.get("doc_type") or "") == dtype]
+    if not candidates:
+        return False
+    if dtype in {"Special conditions", "Addendum"}:
+        return True
+    subject = _normalise_title_number(subject_title_number)
+    if not subject:
+        return True
+    return any(_doc_matches_subject_title(d, subject) for d in candidates)
+
+
+def _pack_completeness(documents: list[dict], extracted_fields: dict, subject_title_number: str | None = None) -> tuple[int, list[str], list[str]]:
+    """Return core-pack completeness for the actual title being sold.
+
+    Superior freehold/headlease registers are useful supporting evidence, but they must
+    never satisfy the subject property's Title Register requirement.
+    """
     available, missing = [], []
     checks = [
         ("Title register", "Title register"),
         ("Title plan", "Title plan"),
         ("Special conditions", "Special conditions"),
     ]
-    # Lease is only a mandatory component where the evidence says leasehold/lease terms exist.
-    if extracted_fields.get("lease_years_remaining") is not None or extracted_fields.get("lease_term_years") is not None:
+    subject_lease_present = _core_doc_present(documents, "Lease", subject_title_number)
+    if (
+        extracted_fields.get("lease_years_remaining") is not None
+        or extracted_fields.get("lease_term_years") is not None
+        or subject_lease_present
+    ):
         checks.append(("Lease", "Lease"))
+    present_count = 0
     for dtype, label in checks:
-        if dtype in types:
+        if _core_doc_present(documents, dtype, subject_title_number):
             available.append(label)
+            present_count += 1
         else:
             missing.append(label)
-    if "Addendum" in types:
+    if _core_doc_present(documents, "Addendum", subject_title_number):
         available.append("Addendum")
     parsed = sum(1 for d in documents if d.get("text_content"))
     if parsed:
         available.append(f"{parsed} document(s) text-readable")
     base = max(1, len(checks))
-    score = int(round(100 * (len([x for x, _ in checks if x in types]) / base)))
+    score = int(round(100 * (present_count / base)))
     if parsed == 0:
         score = 0
     return min(100, score), missing, available
@@ -1034,13 +1108,51 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
     provide labelled signals, but it cannot confirm legal conclusions.
     """
     documents = list(documents or [])
-    verified_docs = verified_legal_documents(documents)
+    # Work on local copies so a smarter classifier never mutates the persisted source row.
+    verified_docs = [copy.deepcopy(d) for d in verified_legal_documents(documents)]
+    for doc in verified_docs:
+        current_type = str(doc.get("doc_type") or "")
+        if current_type in {"", "Legal document", "Uploaded legal document", "Official copy", "Unclassified"}:
+            inferred = classify_document(
+                str(doc.get("name") or ""),
+                str(doc.get("url") or ""),
+                str(doc.get("text_content") or ""),
+            )
+            if inferred != "Legal document":
+                doc["doc_type"] = inferred
+
     verified_texts = [str(d.get("text_content") or "") for d in verified_docs if d.get("text_content")]
     verified_text = "\n".join(verified_texts)
     listing_text = str(extra_text or "")
 
-    verified_fields, contacts = extract_legal_fields(verified_text, fallback_lease_years=None) if verified_text else ({}, [])
+    all_verified_fields, contacts = extract_legal_fields(verified_text, fallback_lease_years=None) if verified_text else ({}, [])
     listing_fields, _ignored_listing_contacts = extract_legal_fields(listing_text, fallback_lease_years=None) if listing_text else ({}, [])
+    subject_title_number = _subject_title_number(verified_docs, listing_fields)
+
+    # Identity fields must come from the title actually being sold.  Superior freehold
+    # and headlease registers are valuable context but can name a different proprietor.
+    subject_register_docs = [
+        d for d in verified_docs
+        if str(d.get("doc_type") or "") == "Title register"
+        and _doc_matches_subject_title(d, subject_title_number)
+    ]
+    subject_register_text = "\n".join(str(d.get("text_content") or "") for d in subject_register_docs)
+    subject_register_fields, _ = extract_legal_fields(subject_register_text, fallback_lease_years=None) if subject_register_text else ({}, [])
+    special_conditions_docs = [d for d in verified_docs if str(d.get("doc_type") or "") == "Special conditions"]
+    special_conditions_text = "\n".join(str(d.get("text_content") or "") for d in special_conditions_docs)
+    special_fields, _ = extract_legal_fields(special_conditions_text, fallback_lease_years=None) if special_conditions_text else ({}, [])
+
+    verified_fields = dict(all_verified_fields)
+    if subject_title_number:
+        verified_fields["title_number"] = subject_title_number
+    for key in ("proprietor_name", "title_price_paid", "title_price_paid_date"):
+        verified_fields[key] = subject_register_fields.get(key)
+    verified_fields["registered_charge_count"] = subject_register_fields.get("registered_charge_count") or 0
+    # The seller named in Special Conditions is safer than a company/solicitor name
+    # found elsewhere in a mixed legal pack.
+    verified_fields["seller_name"] = special_fields.get("seller_name") or subject_register_fields.get("proprietor_name")
+    verified_fields["company_number"] = subject_register_fields.get("company_number") or special_fields.get("company_number")
+    verified_fields["registered_office"] = subject_register_fields.get("registered_office") or special_fields.get("registered_office")
 
     def present(value):
         return value not in (None, "", False, [], {})
@@ -1099,13 +1211,18 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
             flags.append({"severity": severity, "label": label})
             seen.add(label)
 
-    completion_days = _first_number(r"completion.{0,100}?(\d{1,3})\s*(?:working\s*)?days", verified_text, 1, 180) if verified_text else None
-    deposit_pct = _first_number(r"deposit.{0,80}?(\d{1,2}(?:\.\d+)?)\s*%", verified_text, 0, 100) if verified_text else None
+    # Lot-specific Special Conditions override generic auction-information wording.
+    # This matters for novice buyers: a catalogue may say completion is usually 28
+    # days while the actual lot contract can require 14 days.
+    terms_text = special_conditions_text or verified_text
+    completion_days = _first_number(r"completion.{0,100}?(\d{1,3})\s*(?:working\s*)?days", terms_text, 1, 180) if terms_text else None
+    deposit_pct = _first_number(r"deposit.{0,80}?(\d{1,2}(?:\.\d+)?)\s*%", terms_text, 0, 100) if terms_text else None
     lease_years = extracted_fields.get("lease_years_remaining")
+    fee_text = special_conditions_text or verified_text
     buyer_fee = _first_number(
         r"(?:buyer(?:'s)?\s*(?:fee|premium|administration fee)|administration fee).{0,60}?£\s*([\d,]+(?:\.\d+)?)",
-        verified_text.replace(",", ""), 0, 1_000_000
-    ) if verified_text else None
+        fee_text.replace(",", ""), 0, 1_000_000
+    ) if fee_text else None
     has_addendum = any((d.get("doc_type") or "").lower() == "addendum" for d in verified_docs)
     vat_flag = bool(verified_text and re.search(
         r"vat.{0,80}(?:payable|chargeable|applicable)|option to tax|opted to tax", verified_text, re.I | re.S
@@ -1149,7 +1266,9 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
     else:
         status = "not-found"
 
-    completeness_pct, missing_components, available_components = _pack_completeness(verified_docs, verified_fields)
+    completeness_pct, missing_components, available_components = _pack_completeness(
+        verified_docs, extracted_fields, subject_title_number
+    )
     evidence = []
     evidence_specs = [
         (r"(?:title\s*(?:number|no\.?))\s*[:\-]?\s*[A-Z]{1,4}\s?\d{3,10}", "Title number", verified_fields.get("title_number")),
@@ -1267,7 +1386,7 @@ def uploaded_document(name: str, data: bytes) -> dict:
         text = extract_pdf_text(data)
     else:
         text = data.decode("utf-8", errors="ignore")[:MAX_DOC_CHARS]
-    doc_type = classify_document(name)
+    doc_type = classify_document(name, text=text)
     if doc_type == "Legal document":
         doc_type = "Uploaded legal document"
     return {
