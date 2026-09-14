@@ -25,7 +25,7 @@ from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
-from tracker.intelligence import build_vendor_story, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
+from tracker.intelligence import build_vendor_story, seller_negotiation_plan, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -541,6 +541,20 @@ st.markdown(
 .deal-proof-banner strong {color:#0B1F33;}
 @media(max-width:1100px){.deal-signal-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-snapshot-lower{grid-template-columns:1fr;}.deal-maxbid-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-risk-row{grid-template-columns:78px 1fr;}.deal-risk-detail{grid-column:2;}}
 
+
+
+/* v1.13.11 beginner-first Seller & negotiation */
+.deal-seller-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px;}
+.deal-seller-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33;letter-spacing:-.025em;margin-bottom:3px;}.deal-seller-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;max-width:800px;}
+.deal-seller-position{display:grid;grid-template-columns:150px 1fr 190px;gap:14px;align-items:center;border-radius:14px;padding:13px 14px;margin:0 0 12px;border:1px solid #D5EAE4;background:linear-gradient(135deg,#F1FAF7,#FBFDFC);}
+.deal-seller-position .position-word{font-size:1.18rem;font-weight:950;letter-spacing:-.03em;color:#08786F;}.deal-seller-position .position-label{font-size:.52rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90;margin-bottom:3px;}
+.deal-seller-position .headline{font-size:.92rem;font-weight:900;color:#0B1F33;line-height:1.25}.deal-seller-position .copy{font-size:.64rem;color:#607489;line-height:1.42;margin-top:3px;}.deal-seller-position .score{text-align:right;font-size:1.45rem;font-weight:950;color:#0B1F33}.deal-seller-position .score span{display:block;font-size:.54rem;color:#738397;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-top:3px;}
+.deal-seller-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px;}.deal-seller-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:135px;}.deal-seller-card.good{background:#F8FCFB;border-color:#D2EAE4}.deal-seller-card.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-seller-card.stop{background:#FFF8F7;border-color:#F0CBC6}
+.deal-seller-card .label{font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:#718195;font-weight:900;margin-bottom:6px;}.deal-seller-card .value{font-size:.88rem;line-height:1.24;font-weight:900;color:#0B1F33;}.deal-seller-card .detail{font-size:.62rem;line-height:1.43;color:#607489;margin-top:6px;}.deal-seller-card .status{display:inline-flex;border-radius:999px;padding:3px 6px;margin-top:7px;font-size:.49rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;background:#EEF3F5;color:#536A7D;}.deal-seller-card.good .status{background:#E9F7F1;color:#08786F}.deal-seller-card.warn .status{background:#FFF2CC;color:#8E6100}.deal-seller-card.stop .status{background:#FDEDEC;color:#B42318}
+.deal-negotiation-banner{background:#F1FAF7;border:1px solid #CDE9E2;border-radius:14px;padding:12px 14px;margin:0 0 12px;}.deal-negotiation-banner .label{font-size:.54rem;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#08786F}.deal-negotiation-banner .action{font-size:.9rem;font-weight:900;color:#0B1F33;line-height:1.3;margin-top:4px}.deal-negotiation-banner .note{font-size:.64rem;color:#5F7387;line-height:1.43;margin-top:4px}.deal-negotiation-banner.blocked{background:#FFF8F7;border-color:#F0CBC6}.deal-negotiation-banner.blocked .label{color:#B42318}
+.deal-seller-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:7px 0 12px;}.deal-seller-step{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:11px 12px;}.deal-seller-step .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900;margin-bottom:7px}.deal-seller-step .title{font-size:.7rem;font-weight:880;color:#17324B;line-height:1.32}.deal-seller-step .copy{font-size:.61rem;color:#66798C;line-height:1.42;margin-top:4px}
+.deal-evidence-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:7px 0 12px;}.deal-evidence-box{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:12px 13px;}.deal-evidence-box h4{font-size:.76rem;margin:0 0 7px;color:#0B1F33}.deal-evidence-box ul{margin:0;padding-left:16px;color:#607489;font-size:.63rem;line-height:1.48}.deal-evidence-box li{margin-bottom:4px}.deal-evidence-box.inference{background:#FFFDF8;border-color:#ECDDB6}
+@media(max-width:1100px){.deal-seller-position{grid-template-columns:1fr 130px}.deal-seller-position>div:first-child{grid-column:1/-1}.deal-seller-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-seller-steps{grid-template-columns:1fr}.deal-evidence-split{grid-template-columns:1fr}}
 
 
 /* v1.13.6 beginner-first Legal & Planning */
@@ -2003,126 +2017,219 @@ def render_deal_room(chosen):
                 st.dataframe(facts, hide_index=True, use_container_width=True)
 
     with tabs[1]:
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Vendor motivation", f"{chosen.get('motivation_score', 0):.1f}/10", delta=chosen.get("motivation_label"))
-        s2.metric("Buyer leverage", f"{story.get('buyer_leverage_score', 0):.1f}/10", delta=story.get("buyer_leverage_label"))
-        s3.metric("Story confidence", f"{story.get('story_confidence', 0)}%", delta=story.get("story_confidence_label"))
+        seller_plan = seller_negotiation_plan(chosen, story, readiness)
+        leverage_score = float(seller_plan.get("leverage_score") or 0)
+        confidence = int(seller_plan.get("story_confidence") or 0)
+        position = seller_plan.get("position") or "Limited"
+        identity_status = seller_plan.get("identity_status") or "Not yet confirmed"
+        identity_tone = "good" if identity_status == "Confirmed" else "stop"
+        blocked = bool(seller_plan.get("bid_blocked"))
+        opening_offer = seller_plan.get("opening_offer")
+        max_bid = seller_plan.get("max_bid")
+        guide_price = seller_plan.get("guide_price")
+        leverage_reasons = seller_plan.get("leverage_reasons") or []
 
-        st.markdown("### Seller profile")
-        seller_rows = [
-            ["Registered proprietor / seller", profile.get("seller_name") or "Not extracted yet"],
-            ["Seller / disposal type", profile.get("seller_type") or "Not identified"],
-            ["Disposal evidence", profile.get("seller_type_evidence") or "Not established"],
-            ["Title number", profile.get("title_number") or "Not extracted"],
-            ["Company number", profile.get("company_number") or "Not extracted"],
-            ["Registered office", profile.get("registered_office") or "Not extracted"],
-            ["Title price paid", money(profile.get("title_price_paid")) if profile.get("title_price_paid") is not None else "Not extracted"],
-            ["Title price date", profile.get("title_price_paid_date") or "Not extracted"],
+        st.markdown(
+            '<div class="deal-seller-intro"><div>'
+            '<div class="title">Seller & negotiation — plain English</div>'
+            '<div class="copy">You do not need to guess why a seller is selling. Lotly scores observable auction, price and legal signals, then turns them into a simple negotiation plan. Seller motivation is never treated as a fact unless the evidence proves it.</div>'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f'<div class="deal-seller-position">'
+            f'<div><div class="position-label">Negotiation position</div><div class="position-word">{html.escape(str(position).upper())}</div></div>'
+            f'<div><div class="headline">{html.escape(str(seller_plan.get("headline") or "Review the evidence"))}</div><div class="copy">{html.escape(str(seller_plan.get("position_copy") or ""))}</div></div>'
+            f'<div class="score">{leverage_score:.1f}/10<span>{html.escape(str(seller_plan.get("leverage_label") or ""))} leverage · {confidence}% evidence confidence</span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        seller_name_value = seller_plan.get("identity_value") or "Seller identity not yet confirmed"
+        seller_identity_detail = seller_plan.get("identity_copy") or "Authoritative ownership evidence is still required."
+        disposal_copy = seller_plan.get("disposal_copy") or "No verified distressed-disposal context has been established."
+        reason_summary = "; ".join(leverage_reasons[:3]) if leverage_reasons else "No strong negotiation-pressure signal has been established yet."
+        opener_value = money(opening_offer) if opening_offer else "Ask first"
+        opener_detail = "Price-testing level — not a binding bid." if blocked else "Suggested first position before the seller responds."
+        if blocked:
+            ceiling_value = "WAIT"
+            ceiling_detail = "A modelled ceiling may exist, but Lotly will not treat it as permission to bid while a red STOP item remains."
+            ceiling_tone = "stop"
+        elif max_bid:
+            ceiling_value = money(max_bid)
+            ceiling_detail = "Do not go above this without re-running the numbers and evidence checks."
+            ceiling_tone = "warn"
+        else:
+            ceiling_value = "PENDING"
+            ceiling_detail = "The maximum price is not yet evidence-backed."
+            ceiling_tone = "warn"
+
+        pressure_value = "Strong observable pressure signals" if leverage_score >= 7 else "Some negotiation signals" if leverage_score >= 4 else "Limited pressure evidence"
+        pressure_detail = reason_summary + ((" " + disposal_copy) if disposal_copy and "No verified" not in disposal_copy else "")
+        seller_cards = [
+            ("Who is selling?", seller_name_value, seller_identity_detail, identity_status, identity_tone),
+            ("Why might they negotiate?", pressure_value, pressure_detail, "Evidence, not guesswork", "good" if leverage_score >= 7 else "warn"),
+            ("Opening position", opener_value, opener_detail + (f" Current guide: {money(guide_price)}." if guide_price else ""), "Start here", "good"),
+            ("When should I stop?", ceiling_value, ceiling_detail, "Bid blocked" if blocked else "Modelled ceiling", ceiling_tone),
         ]
-        st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
+        seller_card_html = ''.join(
+            f'<div class="deal-seller-card {tone}"><div class="label">{html.escape(str(label))}</div><div class="value">{html.escape(str(value))}</div><div class="detail">{html.escape(str(detail))}</div><div class="status">{html.escape(str(status))}</div></div>'
+            for label, value, detail, status, tone in seller_cards
+        )
+        st.markdown('<div class="deal-seller-grid">' + seller_card_html + '</div>', unsafe_allow_html=True)
 
-        st.markdown("### Ownership / company intelligence")
-        company_number = profile.get("company_number") or effective_company_summary.get("company_number")
-        seller_name = profile.get("seller_name") or effective_company_summary.get("company_name")
-        if company_summary and not legal_identity_verified:
-            st.warning("Stored Companies House intelligence is quarantined because the seller/company identity was not established by verified lot-bound legal evidence. Refresh the legal pack after the evidence-firewall upgrade.")
-        if companies_house_api_key and legal_identity_verified and (company_number or seller_name):
-            if st.button("Refresh official Companies House intelligence", key=f"ch_refresh_{chosen['id']}", use_container_width=True):
-                try:
-                    with st.spinner("Checking Companies House profile, charges, insolvency, officers and filings..."):
-                        refresh_property_company(db, chosen, companies_house_api_key)
-                        sync_cloud("Companies House refresh", quiet=False)
-                    st.success("Companies House intelligence refreshed.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Companies House refresh failed: {exc}")
-        elif legal_identity_verified and (company_number or (seller_name and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))):
-            st.info("Corporate seller identified. Add a free Companies House API key in Streamlit Secrets to enrich company status, charges, insolvency, directors, PSCs and filings automatically.")
+        negotiation_label = "PRICE TEST ONLY — NOT A BID" if blocked else "SUGGESTED OPENING MOVE"
+        st.markdown(
+            f'<div class="deal-negotiation-banner {"blocked" if blocked else ""}"><div class="label">{html.escape(negotiation_label)}</div>'
+            f'<div class="action">{html.escape(str(seller_plan.get("offer_instruction") or "Speak to the auctioneer before moving on price."))}</div>'
+            f'<div class="note">{html.escape(str(seller_plan.get("ceiling_instruction") or ""))}</div></div>',
+            unsafe_allow_html=True,
+        )
 
-        if effective_company_summary.get("status") == "ok":
-            ci1, ci2, ci3, ci4 = st.columns(4)
-            ci1.metric("Company status", effective_company_summary.get("company_status") or "Unknown")
-            ci2.metric("Corporate pressure", f"{float(effective_company_summary.get('corporate_pressure_score') or 0):.1f}/10", delta=effective_company_summary.get("corporate_pressure_label"))
-            ci3.metric("Outstanding charges", int(effective_company_summary.get("outstanding_charge_count") or 0))
-            ci4.metric("Insolvency cases", int(effective_company_summary.get("insolvency_case_count") or 0))
-            company_rows = [
-                ["Verified company", effective_company_summary.get("company_name") or "-"],
-                ["Company number", effective_company_summary.get("company_number") or "-"],
-                ["Registered office", effective_company_summary.get("registered_office") or "-"],
-                ["Incorporated", effective_company_summary.get("incorporation_date") or "-"],
-                ["Accounts overdue", "Yes" if effective_company_summary.get("accounts_overdue") else "No"],
-                ["Confirmation statement overdue", "Yes" if effective_company_summary.get("confirmation_overdue") else "No"],
-                ["SIC codes", ", ".join(effective_company_summary.get("sic_codes") or []) or "-"],
+        step2 = f"Ask whether the seller would consider around {money(opening_offer)}" if opening_offer else "Ask what level the seller would genuinely consider"
+        steps = [
+            ("Ask before you offer", "Find out the seller's current expectation, whether there are other offers and whether speed/certainty matters more than price."),
+            ("Test the price", step2 + ". Phrase it as a price test subject to legal and financial review, not as a binding commitment."),
+            ("Make the seller move next", "Do not negotiate against yourself. Wait for a counter or new evidence before increasing, and never ignore a red STOP item."),
+        ]
+        step_html = ''.join(
+            f'<div class="deal-seller-step"><div class="num">{i}</div><div class="title">{html.escape(title)}</div><div class="copy">{html.escape(copy)}</div></div>'
+            for i, (title, copy) in enumerate(steps, 1)
+        )
+        st.markdown('<div class="deal-facts-title">Three simple negotiation steps</div><div class="deal-seller-steps">' + step_html + '</div>', unsafe_allow_html=True)
+
+        st.markdown("#### Suggested auctioneer call")
+        st.caption("This is a conversation starter to test price and seller expectations. It is not a formal or binding bid.")
+        st.code(seller_plan.get("call_script") or "Ask the auctioneer for the seller's current expectation before discussing price.", language=None)
+        q1, q2 = st.columns(2)
+        with q1:
+            phone = chosen.get("listing_auctioneer_phone") or "Not captured"
+            st.caption(f"Auctioneer phone: {phone}")
+        with q2:
+            email = chosen.get("listing_auctioneer_email") or "Not captured"
+            st.caption(f"Auctioneer email: {email}")
+        with st.expander("Questions to ask the auctioneer"):
+            for question in seller_plan.get("auctioneer_questions") or []:
+                st.write(f"- {question}")
+
+        facts = story.get("confirmed_facts") or ["No material seller-pressure facts beyond the auction listing have been confirmed yet."]
+        inferences = story.get("inferences") or ["There is not enough evidence to form a useful seller-pressure interpretation yet."]
+        fact_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in facts[:6])
+        inference_items = ''.join(f'<li>{html.escape(str(x))}</li>' for x in inferences[:6])
+        st.markdown(
+            '<div class="deal-evidence-split">'
+            f'<div class="deal-evidence-box"><h4>What Lotly knows</h4><ul>{fact_items}</ul></div>'
+            f'<div class="deal-evidence-box inference"><h4>What the evidence may mean</h4><ul>{inference_items}</ul></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("The right-hand column is negotiation interpretation, not a statement of fact about the seller's private circumstances or intentions.")
+
+        with st.expander("Advanced seller evidence & Companies House"):
+            st.markdown("#### Seller profile")
+            seller_rows = [
+                ["Registered proprietor / seller", profile.get("seller_name") or "Not verified yet"],
+                ["Seller / disposal type", profile.get("seller_type") or "Not identified"],
+                ["Disposal evidence", profile.get("seller_type_evidence") or "Not established"],
+                ["Title number", profile.get("title_number") or "Not verified"],
+                ["Company number", profile.get("company_number") or "Not verified"],
+                ["Registered office", profile.get("registered_office") or "Not verified"],
+                ["Title price paid", money(profile.get("title_price_paid")) if profile.get("title_price_paid") is not None else "Not extracted"],
+                ["Title price date", profile.get("title_price_paid_date") or "Not extracted"],
             ]
-            st.dataframe(pd.DataFrame(company_rows, columns=["Corporate fact", "Official record"]), hide_index=True, use_container_width=True)
-            reasons = effective_company_summary.get("corporate_pressure_reasons") or []
-            if reasons:
-                with st.expander("Corporate pressure evidence"):
+            st.dataframe(pd.DataFrame(seller_rows, columns=["Item", "Evidence"]), hide_index=True, use_container_width=True)
+
+            st.markdown("#### Ownership / company intelligence")
+            company_number = profile.get("company_number") or effective_company_summary.get("company_number")
+            seller_name = profile.get("seller_name") or effective_company_summary.get("company_name")
+            if company_summary and not legal_identity_verified:
+                st.warning("Stored Companies House intelligence is quarantined because the seller/company identity has not been established by verified lot-bound legal evidence.")
+            if companies_house_api_key and legal_identity_verified and (company_number or seller_name):
+                if st.button("Refresh official Companies House intelligence", key=f"ch_refresh_{chosen['id']}", use_container_width=True):
+                    try:
+                        with st.spinner("Checking Companies House profile, charges, insolvency, officers and filings..."):
+                            refresh_property_company(db, chosen, companies_house_api_key)
+                            sync_cloud("Companies House refresh", quiet=False)
+                        st.success("Companies House intelligence refreshed.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Companies House refresh failed: {exc}")
+            elif legal_identity_verified and (company_number or (seller_name and re.search(r"\b(?:LTD|LIMITED|PLC|LLP)\b", seller_name, re.I))):
+                st.info("Corporate seller identified. Add a free Companies House API key in Streamlit Secrets to enrich company status, charges, insolvency, directors, PSCs and filings automatically.")
+
+            if effective_company_summary.get("status") == "ok":
+                ci1, ci2, ci3, ci4 = st.columns(4)
+                ci1.metric("Company status", effective_company_summary.get("company_status") or "Unknown")
+                ci2.metric("Corporate pressure", f"{float(effective_company_summary.get('corporate_pressure_score') or 0):.1f}/10", delta=effective_company_summary.get("corporate_pressure_label"))
+                ci3.metric("Outstanding charges", int(effective_company_summary.get("outstanding_charge_count") or 0))
+                ci4.metric("Insolvency cases", int(effective_company_summary.get("insolvency_case_count") or 0))
+                company_rows = [
+                    ["Verified company", effective_company_summary.get("company_name") or "-"],
+                    ["Company number", effective_company_summary.get("company_number") or "-"],
+                    ["Registered office", effective_company_summary.get("registered_office") or "-"],
+                    ["Incorporated", effective_company_summary.get("incorporation_date") or "-"],
+                    ["Accounts overdue", "Yes" if effective_company_summary.get("accounts_overdue") else "No"],
+                    ["Confirmation statement overdue", "Yes" if effective_company_summary.get("confirmation_overdue") else "No"],
+                    ["SIC codes", ", ".join(effective_company_summary.get("sic_codes") or []) or "-"],
+                ]
+                st.dataframe(pd.DataFrame(company_rows, columns=["Corporate fact", "Official record"]), hide_index=True, use_container_width=True)
+                reasons = effective_company_summary.get("corporate_pressure_reasons") or []
+                if reasons:
+                    st.markdown("**Corporate pressure evidence**")
                     for reason in reasons:
                         st.write(f"- {reason}")
                     st.caption("Outstanding charges show secured financing but are not treated as proof of distress on their own.")
-            directors = effective_company_summary.get("active_directors") or []
-            pscs = effective_company_summary.get("persons_with_significant_control") or []
-            charges = effective_company_summary.get("charges") or []
-            filings = effective_company_summary.get("recent_filings") or []
-            if directors:
-                with st.expander("Active directors"):
-                    st.dataframe(pd.DataFrame(directors), hide_index=True, use_container_width=True)
-            if pscs:
-                with st.expander("Persons with significant control"):
-                    psc_frame = pd.DataFrame([{
-                        "Name": x.get("name"), "Kind": x.get("kind"),
-                        "Control": ", ".join(x.get("natures_of_control") or []),
-                    } for x in pscs if not x.get("ceased_on")])
-                    if not psc_frame.empty:
-                        st.dataframe(psc_frame, hide_index=True, use_container_width=True)
-            if charges:
-                with st.expander("Company charges"):
-                    st.dataframe(pd.DataFrame([{
-                        "Status": x.get("status"), "Created": x.get("created_on"),
-                        "Holder": ", ".join(x.get("persons_entitled") or []),
-                        "Type": x.get("classification"),
-                    } for x in charges]), hide_index=True, use_container_width=True)
-            if filings:
-                with st.expander("Recent Companies House filings"):
-                    st.dataframe(pd.DataFrame(filings[:15]), hide_index=True, use_container_width=True)
-        elif effective_company_summary.get("status") == "unresolved":
-            st.warning("A corporate seller name was found but the Companies House match was not definitive, so the app has not guessed the company identity.")
-            candidates = (effective_company_summary.get("resolution") or {}).get("candidates") or []
-            if candidates:
-                st.dataframe(pd.DataFrame(candidates), hide_index=True, use_container_width=True)
-        elif effective_company_summary.get("status") == "error":
-            st.warning(f"Companies House intelligence needs refreshing: {effective_company_summary.get('error') or 'last lookup failed'}")
+                directors = effective_company_summary.get("active_directors") or []
+                pscs = effective_company_summary.get("persons_with_significant_control") or []
+                charges = effective_company_summary.get("charges") or []
+                filings = effective_company_summary.get("recent_filings") or []
+                if directors:
+                    with st.expander("Active directors"):
+                        st.dataframe(pd.DataFrame(directors), hide_index=True, use_container_width=True)
+                if pscs:
+                    with st.expander("Persons with significant control"):
+                        psc_frame = pd.DataFrame([{
+                            "Name": x.get("name"), "Kind": x.get("kind"),
+                            "Control": ", ".join(x.get("natures_of_control") or []),
+                        } for x in pscs if not x.get("ceased_on")])
+                        if not psc_frame.empty:
+                            st.dataframe(psc_frame, hide_index=True, use_container_width=True)
+                if charges:
+                    with st.expander("Company charges"):
+                        st.dataframe(pd.DataFrame([{
+                            "Status": x.get("status"), "Created": x.get("created_on"),
+                            "Holder": ", ".join(x.get("persons_entitled") or []),
+                            "Type": x.get("classification"),
+                        } for x in charges]), hide_index=True, use_container_width=True)
+                if filings:
+                    with st.expander("Recent Companies House filings"):
+                        st.dataframe(pd.DataFrame(filings[:15]), hide_index=True, use_container_width=True)
+            elif effective_company_summary.get("status") == "unresolved":
+                st.warning("A corporate seller name was found but the Companies House match was not definitive, so Lotly has not guessed the company identity.")
+                candidates = (effective_company_summary.get("resolution") or {}).get("candidates") or []
+                if candidates:
+                    st.dataframe(pd.DataFrame(candidates), hide_index=True, use_container_width=True)
+            elif effective_company_summary.get("status") == "error":
+                st.warning(f"Companies House intelligence needs refreshing: {effective_company_summary.get('error') or 'last lookup failed'}")
 
-        fact_col, inference_col = st.columns(2)
-        with fact_col:
-            st.markdown("### Confirmed evidence")
-            facts = story.get("confirmed_facts") or ["No material seller-motivation facts beyond the auction listing have been confirmed yet."]
-            for fact in facts:
-                st.write(f"- {fact}")
-        with inference_col:
-            st.markdown("### What the evidence may indicate")
-            inferences = story.get("inferences") or ["There is not enough evidence to form a useful seller-pressure interpretation yet."]
-            for item in inferences:
-                st.write(f"- {item}")
-            st.caption("Interpretations are hypotheses for negotiation planning, not statements of fact about the seller.")
+        with st.expander("Seller / auction evidence timeline"):
+            timeline = story.get("timeline") or []
+            if timeline:
+                for event in timeline:
+                    source = f" [source]({event.get('source_url')})" if event.get("source_url") else ""
+                    st.markdown(f"**{event.get('display_date')} - {event.get('label')}**{source}")
+                    if event.get("detail"):
+                        st.caption(event.get("detail"))
+            else:
+                st.info("No dated auction/planning story has been assembled yet. Historical backfill and planning/legal refreshes will strengthen this section.")
 
-        st.markdown("### Vendor story timeline")
-        timeline = story.get("timeline") or []
-        if timeline:
-            for event in timeline:
-                source = f" [source]({event.get('source_url')})" if event.get("source_url") else ""
-                st.markdown(f"**{event.get('display_date')} - {event.get('label')}**{source}")
-                if event.get("detail"):
-                    st.caption(event.get("detail"))
-        else:
-            st.info("No dated auction/planning story has been assembled yet. Historical backfill and planning/legal refreshes will strengthen this section.")
+            contacts = story.get("seller_profile", {}).get("contacts") or []
+            if contacts:
+                st.markdown("#### Professional contacts found in legal evidence")
+                st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
+                st.caption("Only professional/business contact details found in the supplied/public legal evidence are surfaced here; Lotly does not hunt for private personal contact details.")
 
-        contacts = story.get("seller_profile", {}).get("contacts") or []
-        if contacts:
-            st.markdown("### Professional contacts found in legal evidence")
-            st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
-            st.caption("Only professional/business contact details found in the supplied/public legal evidence are surfaced here; the app does not hunt for private personal contact details.")
 
     with tabs[2]:
         strategy = "commercial" if is_commercial(chosen) else "residential"

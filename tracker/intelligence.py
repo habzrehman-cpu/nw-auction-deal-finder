@@ -276,6 +276,121 @@ def buyer_leverage(lot: dict, deal_analysis: dict | None = None, legal_summary: 
     return {"buyer_leverage_score": score, "buyer_leverage_label": label, "buyer_leverage_reasons": reasons}
 
 
+
+def seller_negotiation_plan(row: dict, story: dict | None = None, readiness: dict | None = None) -> dict:
+    """Translate seller/auction evidence into a beginner-safe negotiation plan.
+
+    The plan deliberately scores *observable negotiation signals*, not the seller's
+    private motivation. It also suppresses any suggestion of a binding bid while
+    the acquisition-readiness gate is blocked.
+    """
+    story = story or {}
+    readiness = readiness or {}
+    profile = story.get("seller_profile") or {}
+
+    leverage_score = float(story.get("buyer_leverage_score") or 0)
+    leverage_label = str(story.get("buyer_leverage_label") or "Low")
+    story_confidence = int(story.get("story_confidence") or 0)
+    reasons = [str(x) for x in (story.get("buyer_leverage_reasons") or []) if str(x).strip()]
+
+    if leverage_score >= 8:
+        position = "Strong"
+        headline = "You have a strong negotiating position"
+        position_copy = "The auction history gives you reasons to test a lower price before moving upward."
+    elif leverage_score >= 6:
+        position = "Good"
+        headline = "You have a useful negotiating position"
+        position_copy = "There are credible signs that the seller may listen to a sensible lower starting point."
+    elif leverage_score >= 4:
+        position = "Moderate"
+        headline = "You have some room to negotiate"
+        position_copy = "There are some useful signals, but do not assume the seller is under pressure."
+    else:
+        position = "Limited"
+        headline = "Your negotiating position is limited"
+        position_copy = "There is little evidence of price pressure, so focus on information-gathering before pushing on price."
+
+    missing = {str(x).strip().lower() for x in (row.get("legal_missing_components") or [])}
+    legal_status = str(row.get("legal_status") or "").lower()
+    subject_title_verified = legal_status == "verified" and "title register" not in missing
+    seller_name = profile.get("seller_name")
+    seller_type = profile.get("seller_type")
+    if seller_name and subject_title_verified:
+        identity_status = "Confirmed"
+        identity_value = str(seller_name)
+        identity_copy = "The current legal evidence supports the seller/registered-owner identity shown here."
+    else:
+        identity_status = "Not yet confirmed"
+        identity_value = "Seller identity not yet confirmed"
+        identity_copy = "Do not rely on a seller name until the subject title register or equivalent authoritative evidence is verified."
+
+    disposal_copy = None
+    if seller_type:
+        evidence = str(profile.get("seller_type_evidence") or "")
+        if "confirmed" in evidence.lower():
+            disposal_copy = f"Confirmed disposal context: {seller_type}."
+        else:
+            disposal_copy = f"Possible disposal signal: {seller_type}. Treat this as a clue until legal evidence confirms it."
+
+    opening_offer = _num(row.get("opening_offer"))
+    guide = _num(row.get("guide_price"))
+    max_bid = _num(row.get("max_bid"))
+    readiness_status = str(readiness.get("readiness_status") or "")
+    blockers = [str(x) for x in (readiness.get("readiness_blockers") or []) if str(x).strip()]
+    bid_blocked = readiness_status.upper() == "BID BLOCKED" or bool(blockers)
+
+    lot_ref = _clean(row.get("lot_number"), 40)
+    address = _clean(row.get("address") or row.get("title"), 180) or "this property"
+    opener_text = f"GBP {opening_offer:,.0f}" if opening_offer else "a cautious opening level"
+    guide_text = f"GBP {guide:,.0f}" if guide else "the current guide"
+    ceiling_text = f"GBP {max_bid:,.0f}" if max_bid else "not yet established"
+
+    if bid_blocked:
+        offer_instruction = f"Use {opener_text} only to test the seller's position. Do not make a binding bid while red STOP items remain."
+        ceiling_instruction = "Lotly will not treat the modelled ceiling as permission to bid while a critical evidence blocker remains."
+    else:
+        offer_instruction = f"Start around {opener_text}. Let the seller respond before increasing, and move in small steps only if the evidence still supports the deal."
+        ceiling_instruction = f"Do not exceed the modelled ceiling of {ceiling_text} without re-running the numbers and legal checks."
+
+    ref = f"Lot {lot_ref}, {address}" if lot_ref else address
+    call_script = (
+        f"I'm interested in {ref}. Before making anything binding, I'd like to understand the seller's position. "
+        f"Would the seller consider something around {opener_text}, subject to my legal and financial review? "
+        "Can you tell me the seller's current expectation, whether there are competing offers, and whether speed or certainty matters to them?"
+    )
+
+    questions = [
+        "What price is the seller realistically expecting now?",
+        "Are there any other offers on the table, and are any of them proceedable?",
+        "Is speed/certainty more important to the seller than achieving the highest price?",
+        "Has the seller already rejected an offer, and if so at what level?",
+    ]
+
+    return {
+        "position": position,
+        "headline": headline,
+        "position_copy": position_copy,
+        "leverage_score": leverage_score,
+        "leverage_label": leverage_label,
+        "story_confidence": story_confidence,
+        "identity_status": identity_status,
+        "identity_value": identity_value,
+        "identity_copy": identity_copy,
+        "disposal_copy": disposal_copy,
+        "opening_offer": opening_offer,
+        "guide_price": guide,
+        "max_bid": max_bid,
+        "bid_blocked": bid_blocked,
+        "offer_instruction": offer_instruction,
+        "ceiling_instruction": ceiling_instruction,
+        "leverage_reasons": reasons[:5],
+        "auctioneer_questions": questions,
+        "call_script": call_script,
+        "guide_context": f"Current guide: {guide_text}",
+        "ceiling_context": f"Modelled ceiling: {ceiling_text}",
+    }
+
+
 def _company_timeline(company: dict | None) -> list[dict]:
     company = company or {}
     out = []
