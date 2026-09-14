@@ -325,12 +325,22 @@ def seller_negotiation_plan(row: dict, story: dict | None = None, readiness: dic
         identity_copy = "Do not rely on a seller name until the subject title register or equivalent authoritative evidence is verified."
 
     disposal_copy = None
+    seller_type_source = str((profile.get("field_sources") or {}).get("seller_type") or "").strip().lower()
+    seller_type_verified = seller_type_source == "verified legal document"
     if seller_type:
-        evidence = str(profile.get("seller_type_evidence") or "")
-        if "confirmed" in evidence.lower():
+        seller_type_low = str(seller_type).lower()
+        if seller_type_verified:
             disposal_copy = f"Confirmed disposal context: {seller_type}."
+        elif "mortgage" in seller_type_low or "receiver" in seller_type_low:
+            disposal_copy = "Possible lender-led disposal. The wording is a negotiation clue, not a confirmed seller fact until authoritative legal evidence verifies it."
         else:
-            disposal_copy = f"Possible disposal signal: {seller_type}. Treat this as a clue until legal evidence confirms it."
+            disposal_copy = f"Possible disposal signal: {seller_type}. Treat this as a clue until authoritative legal evidence confirms it."
+
+    signal_confidence_label = (
+        "High confidence in negotiation signals" if story_confidence >= 75
+        else "Medium confidence in negotiation signals" if story_confidence >= 50
+        else "Low confidence in negotiation signals"
+    )
 
     opening_offer = _num(row.get("opening_offer"))
     guide = _num(row.get("guide_price"))
@@ -373,6 +383,8 @@ def seller_negotiation_plan(row: dict, story: dict | None = None, readiness: dic
         "leverage_score": leverage_score,
         "leverage_label": leverage_label,
         "story_confidence": story_confidence,
+        "signal_confidence_label": signal_confidence_label,
+        "seller_type_verified": seller_type_verified,
         "identity_status": identity_status,
         "identity_value": identity_value,
         "identity_copy": identity_copy,
@@ -390,6 +402,116 @@ def seller_negotiation_plan(row: dict, story: dict | None = None, readiness: dic
         "ceiling_context": f"Modelled ceiling: {ceiling_text}",
     }
 
+
+
+def auction_beginner_summary(row: dict, history: Iterable[dict] | None = None, readiness: dict | None = None) -> dict:
+    """Explain the auction journey in beginner-safe language.
+
+    This deliberately separates observed auction facts from negotiation meaning.
+    An unsold/post-auction status can justify a price test, but never proves that
+    the seller is distressed or that a lower offer will be accepted.
+    """
+    history = list(history or [])
+    readiness = readiness or {}
+    status = str(row.get("status") or "Unknown").strip()
+    status_low = status.lower()
+    failures = int(row.get("failure_count") or 0)
+    reductions = int(row.get("price_reduction_events") or 0)
+    reduction_pct = float(row.get("price_reduction_pct") or 0)
+    days_since_failure = row.get("days_since_failure")
+    guide = _num(row.get("guide_price"))
+    opener = _num(row.get("opening_offer"))
+    history_points = int(row.get("history_points") or len(history) or 0)
+    bid_blocked = str(readiness.get("readiness_status") or "").upper() == "BID BLOCKED" or bool(readiness.get("readiness_blockers"))
+
+    if status_low == "available post-auction":
+        stage = "POST-AUCTION"
+        headline = "It did not sell at auction and is still available"
+        stage_copy = "The competitive auction has ended, so the next conversation is directly about what price and certainty the seller will accept."
+        current_answer = "Available to negotiate now"
+        meaning = "You may have more room to test the seller's position than you had during a live auction, but a discount is not guaranteed."
+    elif status_low in {"no bids", "last bid", "unsold"}:
+        stage = "UNSOLD"
+        headline = "The latest auction attempt did not complete a sale"
+        stage_copy = "This is a useful negotiation signal. Confirm with the auctioneer whether the property is still available and what the seller expects now."
+        current_answer = status or "Unsold"
+        meaning = "A failed auction can create leverage, but only the auctioneer can confirm the seller's current position."
+    elif status_low == "relisted":
+        stage = "RELISTED"
+        headline = "The property has returned to market after an earlier attempt"
+        stage_copy = "A relist can indicate that the previous route did not produce an acceptable sale. Check whether the guide or seller expectation has changed."
+        current_answer = "Back on the market"
+        meaning = "There may be a negotiation window, but do not assume the seller will accept below the current guide."
+    elif status_low in {"sold", "sold prior", "sold after"}:
+        stage = "SOLD SIGNAL"
+        headline = "The auctioneer records a sold status"
+        stage_copy = "Treat this as an auctioneer result signal rather than proof that the Land Registry transfer has completed."
+        current_answer = status
+        meaning = "This is not currently an acquisition opportunity unless the auctioneer confirms the sale has fallen through."
+    else:
+        stage = "LIVE / CHECK"
+        headline = "The property is still in the auction process"
+        stage_copy = "Understand the guide, auction date and legal position before deciding whether to bid or wait."
+        current_answer = status or "Live"
+        meaning = "Live bidding can reduce your ability to negotiate, so set your ceiling before the auction starts."
+
+    if failures >= 2:
+        happened = f"{failures} separate failed auction attempts observed"
+    elif failures == 1:
+        happened = "1 failed auction attempt observed"
+    elif status_low == "available post-auction":
+        happened = "Post-auction availability confirms at least one unsuccessful sale attempt"
+    else:
+        happened = "No failed auction attempt confirmed yet"
+
+    if reduction_pct > 0:
+        price_move = f"Guide down {reduction_pct:.1f}%"
+        price_copy = f"Lotly has observed {reductions or 1} guide-price reduction event(s). This suggests the marketed price has moved, not that the seller must accept below it."
+    elif reductions:
+        price_move = f"{reductions} guide change(s) observed"
+        price_copy = "The guide has moved over time. Ask the auctioneer what changed and what level the seller expects now."
+    else:
+        price_move = "No guide reduction observed"
+        price_copy = "There is no recorded guide-price cut to support extra price pressure yet."
+
+    age_text = "Timing not yet established"
+    if days_since_failure is not None:
+        try:
+            d = int(days_since_failure)
+            age_text = "Failed/post-auction signal is today" if d == 0 else f"About {d} day{'s' if d != 1 else ''} since the latest failed/post-auction signal"
+        except Exception:
+            pass
+
+    if bid_blocked:
+        if opener:
+            action = f"Ask what the seller wants now. If useful, test around GBP {opener:,.0f} as a non-binding price conversation only; do not bid while a red STOP remains."
+        else:
+            action = "Ask what the seller wants now, but do not make a binding bid while a red STOP remains."
+    else:
+        if opener:
+            action = f"Ask what the seller wants now, then test around GBP {opener:,.0f} and wait for the seller to respond before increasing."
+        else:
+            action = "Ask the auctioneer for the seller's current expectation before discussing a binding offer."
+
+    confidence = "High" if history_points >= 3 or failures or reduction_pct > 0 else "Medium" if history_points >= 1 else "Low"
+    guide_text = f"GBP {guide:,.0f}" if guide else "Not captured"
+    return {
+        "stage": stage,
+        "headline": headline,
+        "stage_copy": stage_copy,
+        "what_happened": happened,
+        "current_status": current_answer,
+        "price_movement": price_move,
+        "price_copy": price_copy,
+        "meaning": meaning,
+        "timing": age_text,
+        "guide_text": guide_text,
+        "action": action,
+        "bid_blocked": bid_blocked,
+        "confidence_label": f"{confidence} confidence in auction-history signals",
+        "failure_count": failures,
+        "reduction_pct": reduction_pct,
+    }
 
 def _company_timeline(company: dict | None) -> list[dict]:
     company = company or {}

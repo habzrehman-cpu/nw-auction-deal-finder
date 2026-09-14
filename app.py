@@ -25,7 +25,7 @@ from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
-from tracker.intelligence import build_vendor_story, seller_negotiation_plan, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
+from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -555,6 +555,17 @@ st.markdown(
 .deal-seller-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:7px 0 12px;}.deal-seller-step{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:11px 12px;}.deal-seller-step .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900;margin-bottom:7px}.deal-seller-step .title{font-size:.7rem;font-weight:880;color:#17324B;line-height:1.32}.deal-seller-step .copy{font-size:.61rem;color:#66798C;line-height:1.42;margin-top:4px}
 .deal-evidence-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:7px 0 12px;}.deal-evidence-box{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:12px 13px;}.deal-evidence-box h4{font-size:.76rem;margin:0 0 7px;color:#0B1F33}.deal-evidence-box ul{margin:0;padding-left:16px;color:#607489;font-size:.63rem;line-height:1.48}.deal-evidence-box li{margin-bottom:4px}.deal-evidence-box.inference{background:#FFFDF8;border-color:#ECDDB6}
 @media(max-width:1100px){.deal-seller-position{grid-template-columns:1fr 130px}.deal-seller-position>div:first-child{grid-column:1/-1}.deal-seller-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-seller-steps{grid-template-columns:1fr}.deal-evidence-split{grid-template-columns:1fr}}
+
+
+/* v1.13.12 beginner-first Seller accuracy + Auction story */
+.deal-call-script{background:#F8FAFA;border:1px solid #E1E8EB;border-left:4px solid #0F8F83;border-radius:12px;padding:13px 14px;margin:7px 0 10px;font-size:.76rem;line-height:1.5;color:#17324B;}
+.deal-auction-intro{background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px}.deal-auction-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33;letter-spacing:-.025em}.deal-auction-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;margin-top:3px;max-width:850px}
+.deal-auction-position{display:grid;grid-template-columns:160px 1fr 240px;gap:14px;align-items:center;border:1px solid #D7E7E3;background:#F7FBFA;border-radius:14px;padding:13px 14px;margin:0 0 12px}.deal-auction-position.blocked{background:#FFF8F7;border-color:#F0CBC6}.deal-auction-position.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-auction-position .stage-label{font-size:.52rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90}.deal-auction-position .stage-word{font-size:1.05rem;font-weight:950;color:#08786F;margin-top:2px}.deal-auction-position.blocked .stage-word{color:#B42318}.deal-auction-position.warn .stage-word{color:#8E6100}.deal-auction-position .headline{font-size:.9rem;font-weight:900;color:#0B1F33;line-height:1.25}.deal-auction-position .copy{font-size:.64rem;color:#607489;line-height:1.42;margin-top:3px}.deal-auction-position .confidence{text-align:right;font-size:.58rem;line-height:1.35;font-weight:850;text-transform:uppercase;letter-spacing:.04em;color:#6B7D90}
+.deal-auction-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px}.deal-auction-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:128px}.deal-auction-card.good{background:#F8FCFB;border-color:#D2EAE4}.deal-auction-card.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-auction-card .label{font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:#718195;font-weight:900;margin-bottom:6px}.deal-auction-card .value{font-size:.88rem;line-height:1.28;font-weight:900;color:#0B1F33}.deal-auction-card .detail{font-size:.62rem;line-height:1.43;color:#607489;margin-top:6px}
+.deal-auction-action{background:#F1FAF7;border:1px solid #CDE9E2;border-radius:14px;padding:12px 14px;margin:0 0 12px}.deal-auction-action.blocked{background:#FFF8F7;border-color:#F0CBC6}.deal-auction-action .label{font-size:.54rem;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#08786F}.deal-auction-action.blocked .label{color:#B42318}.deal-auction-action .action{font-size:.9rem;font-weight:900;color:#0B1F33;line-height:1.32;margin-top:4px}.deal-auction-action .note{font-size:.63rem;color:#5F7387;line-height:1.43;margin-top:4px}
+.deal-auction-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:7px 0 12px}.deal-auction-step{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:11px 12px}.deal-auction-step .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900;margin-bottom:7px}.deal-auction-step .title{font-size:.7rem;font-weight:880;color:#17324B;line-height:1.32}.deal-auction-step .copy{font-size:.61rem;color:#66798C;line-height:1.42;margin-top:4px}
+.deal-auction-timeline{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:4px 13px;margin:7px 0 10px}.deal-auction-event{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 0;border-top:1px solid #EEF2F3}.deal-auction-event:first-child{border-top:0}.deal-auction-event .date{font-size:.61rem;font-weight:800;color:#6B7D90}.deal-auction-event .event-title{font-size:.7rem;font-weight:850;color:#17324B}.deal-auction-event .event-copy{font-size:.61rem;color:#66798C;line-height:1.4;margin-top:2px}
+@media(max-width:1100px){.deal-auction-position{grid-template-columns:1fr}.deal-auction-position .confidence{text-align:left}.deal-auction-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.deal-auction-steps{grid-template-columns:1fr}}
 
 
 /* v1.13.6 beginner-first Legal & Planning */
@@ -2041,7 +2052,7 @@ def render_deal_room(chosen):
             f'<div class="deal-seller-position">'
             f'<div><div class="position-label">Negotiation position</div><div class="position-word">{html.escape(str(position).upper())}</div></div>'
             f'<div><div class="headline">{html.escape(str(seller_plan.get("headline") or "Review the evidence"))}</div><div class="copy">{html.escape(str(seller_plan.get("position_copy") or ""))}</div></div>'
-            f'<div class="score">{leverage_score:.1f}/10<span>{html.escape(str(seller_plan.get("leverage_label") or ""))} leverage · {confidence}% evidence confidence</span></div>'
+            f'<div class="score">{leverage_score:.1f}/10<span>{html.escape(str(seller_plan.get("signal_confidence_label") or "Confidence in negotiation signals"))}</span></div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -2101,7 +2112,21 @@ def render_deal_room(chosen):
 
         st.markdown("#### Suggested auctioneer call")
         st.caption("This is a conversation starter to test price and seller expectations. It is not a formal or binding bid.")
-        st.code(seller_plan.get("call_script") or "Ask the auctioneer for the seller's current expectation before discussing price.", language=None)
+        _seller_address = clean_address(chosen)
+        _seller_lot = str(chosen.get("lot_number") or "").strip()
+        _seller_status = str(chosen.get("status") or "").strip().lower()
+        _seller_guide = money(guide_price) if guide_price else "the current guide"
+        _seller_ref = f"Lot {_seller_lot} at {_seller_address}" if _seller_lot else _seller_address
+        _seller_lines = [
+            f"Hi, I'm interested in {_seller_ref}.",
+            f"I understand the guide is {_seller_guide}" + (f" and the property is {_seller_status}." if _seller_status else "."),
+            "Can I ask what sort of figure the seller is looking for now?",
+            "I may be able to move quickly, subject to legal and financial review.",
+        ]
+        if opening_offer:
+            _seller_lines.append(f"If the seller wants me to indicate a starting position, I would be looking around {money(opening_offer)} as a price test, not a binding offer.")
+        _seller_script_html = '<br><br>'.join(html.escape(x) for x in _seller_lines)
+        st.markdown(f'<div class="deal-call-script">{_seller_script_html}</div>', unsafe_allow_html=True)
         q1, q2 = st.columns(2)
         with q1:
             phone = chosen.get("listing_auctioneer_phone") or "Not captured"
@@ -2460,27 +2485,84 @@ def render_deal_room(chosen):
             st.caption(f"Comparable note: {warning}")
 
     with tabs[4]:
-        h1, h2, h3 = st.columns(3)
-        h1.metric("Failed auction attempts", int(chosen.get("failure_count") or 0))
-        h2.metric("Guide reductions", int(chosen.get("price_reduction_events") or 0))
-        h3.metric("Observed guide drop", pct(chosen.get("price_reduction_pct")))
+        auction_summary = auction_beginner_summary(chosen, hist, readiness)
+        auction_stage = auction_summary.get("stage") or "CHECK"
+        auction_blocked = bool(auction_summary.get("bid_blocked"))
+        auction_tone = "blocked" if auction_blocked else "good" if auction_stage in {"POST-AUCTION", "UNSOLD", "RELISTED"} else "warn"
+
+        st.markdown(
+            '<div class="deal-auction-intro"><div>'
+            '<div class="title">Auction story — plain English</div>'
+            '<div class="copy">You do not need to understand auction jargon. Lotly explains what happened, what changed, what it may mean for negotiation, and what to do next.</div>'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f'<div class="deal-auction-position {auction_tone}">'
+            f'<div><div class="stage-label">Current auction stage</div><div class="stage-word">{html.escape(str(auction_stage))}</div></div>'
+            f'<div><div class="headline">{html.escape(str(auction_summary.get("headline") or "Review the auction history"))}</div>'
+            f'<div class="copy">{html.escape(str(auction_summary.get("stage_copy") or ""))}</div></div>'
+            f'<div class="confidence">{html.escape(str(auction_summary.get("confidence_label") or "Auction-history evidence"))}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        auction_cards = [
+            ("What happened?", auction_summary.get("what_happened") or "No result confirmed", "Observed auction/result history", "good" if int(chosen.get("failure_count") or 0) else "warn"),
+            ("Where is it now?", auction_summary.get("current_status") or chosen.get("status") or "Unknown", auction_summary.get("timing") or "Timing not established", "good" if str(chosen.get("status") or "").lower() == "available post-auction" else "warn"),
+            ("Has the price moved?", auction_summary.get("price_movement") or "No movement captured", auction_summary.get("price_copy") or "", "good" if float(chosen.get("price_reduction_pct") or 0) > 0 else "warn"),
+            ("What does it mean?", "Negotiation signal — not a guarantee", auction_summary.get("meaning") or "", "warn"),
+        ]
+        auction_card_html = ''.join(
+            f'<div class="deal-auction-card {tone}"><div class="label">{html.escape(str(label))}</div>'
+            f'<div class="value">{html.escape(str(value))}</div><div class="detail">{html.escape(str(detail))}</div></div>'
+            for label, value, detail, tone in auction_cards
+        )
+        st.markdown('<div class="deal-auction-grid">' + auction_card_html + '</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            f'<div class="deal-auction-action {"blocked" if auction_blocked else ""}">'
+            f'<div class="label">YOUR NEXT MOVE</div><div class="action">{html.escape(str(auction_summary.get("action") or "Speak to the auctioneer before moving on price."))}</div>'
+            f'<div class="note">Current guide: {html.escape(str(auction_summary.get("guide_text") or "Not captured"))}. A post-auction or failed-auction signal can improve your negotiating position, but it never proves the seller will accept a discount.</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        auction_steps = [
+            ("Understand the result", "Check whether the lot failed to sell, was withdrawn, was relisted or is still available post-auction."),
+            ("Ask what the seller wants now", "Ask the auctioneer for the seller's current expectation, whether there are competing offers and whether speed/certainty matters."),
+            ("Make the seller move next", "Do not negotiate against yourself. Test one sensible position, wait for a response and never ignore a red legal STOP item."),
+        ]
+        auction_steps_html = ''.join(
+            f'<div class="deal-auction-step"><div class="num">{i}</div><div class="title">{html.escape(title)}</div><div class="copy">{html.escape(copy)}</div></div>'
+            for i, (title, copy) in enumerate(auction_steps, 1)
+        )
+        st.markdown('<div class="deal-facts-title">Three simple auction steps</div><div class="deal-auction-steps">' + auction_steps_html + '</div>', unsafe_allow_html=True)
+
+        st.markdown("#### Auction history")
+        st.caption("This is Lotly's record of observed auction events and guide changes. It is not proof of legal completion or Land Registry ownership transfer.")
         if hist:
             chronological = list(reversed(hist))
-            st.markdown("### Property auction timeline")
+            timeline_rows = []
             for event in chronological:
-                when = event.get("auction_date") or str(event.get("captured_at") or "")[:10]
-                line = f"**{when}** - {event.get('status') or 'Observed'}"
+                when = event.get("auction_date") or str(event.get("captured_at") or "")[:10] or "Date not captured"
+                status_text = event.get("status") or "Observed"
+                detail_bits = []
                 if event.get("guide_text"):
-                    line += f" | {event.get('guide_text')}"
+                    detail_bits.append(f"Guide {event.get('guide_text')}")
                 elif event.get("guide_price"):
-                    line += f" | Guide {money(event.get('guide_price'))}"
+                    detail_bits.append(f"Guide {money(event.get('guide_price'))}")
                 if event.get("result_price"):
-                    line += f" | Result {money(event.get('result_price'))}"
-                st.markdown(line)
-            with st.expander("Raw history table"):
+                    detail_bits.append(f"Result {money(event.get('result_price'))}")
+                detail = " · ".join(detail_bits) if detail_bits else "No price detail captured"
+                timeline_rows.append(
+                    f'<div class="deal-auction-event"><div class="date">{html.escape(str(when))}</div><div><div class="event-title">{html.escape(str(status_text))}</div><div class="event-copy">{html.escape(detail)}</div></div></div>'
+                )
+            st.markdown('<div class="deal-auction-timeline">' + ''.join(timeline_rows) + '</div>', unsafe_allow_html=True)
+            with st.expander("Raw auction-history evidence"):
                 st.dataframe(pd.DataFrame(chronological), hide_index=True, use_container_width=True)
         else:
-            st.info("No auction-history observations stored yet. Future refreshes and historical backfill will populate this timeline.")
+            st.info("No auction-history observations are stored yet. Future refreshes will build the timeline automatically.")
 
     with tabs[5]:
 
