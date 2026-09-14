@@ -25,7 +25,7 @@ from tracker.legal import uploaded_document, uploaded_documents
 from tracker.legal_firewall import EVIDENCE_POLICY_VERSION
 from tracker.legal_access import config_from_mapping as legal_access_from_mapping, provider_access_status, provider_for_lot
 from tracker.cloud import SupabaseStorage, config_from_mapping
-from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, auction_history_integrity, location_beginner_summary, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
+from tracker.intelligence import build_vendor_story, seller_negotiation_plan, auction_beginner_summary, auction_history_integrity, location_beginner_summary, workspace_beginner_summary, deal_readiness, next_actions, solicitor_questions, deal_brief_markdown
 
 
 POUND = "\u00a3"
@@ -576,6 +576,12 @@ st.markdown(
 .deal-location-proof{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:7px 0 12px}.deal-location-proof .item{background:#fff;border:1px solid #E1E8EB;border-radius:12px;padding:10px 11px}.deal-location-proof .item .label{font-size:.54rem;color:#718195;font-weight:800}.deal-location-proof .item .value{font-size:.92rem;color:#0B1F33;font-weight:900;margin-top:3px}.deal-location-proof .item .sub{font-size:.58rem;color:#718195;margin-top:3px;line-height:1.35}
 .deal-location-list{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:5px 13px;margin:7px 0 12px}.deal-location-list-row{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:9px 0;border-top:1px solid #EEF2F3}.deal-location-list-row:first-child{border-top:0}.deal-location-list-row .num{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#078B7D;color:#fff;font-size:.58rem;font-weight:900}.deal-location-list-row .title{font-size:.69rem;font-weight:850;color:#17324B}.deal-location-list-row .copy{font-size:.61rem;color:#66798C;line-height:1.4;margin-top:2px}
 .deal-location-gap{background:#FFFCF5;border:1px solid #ECDDB6;border-radius:13px;padding:11px 13px;margin:8px 0 12px}.deal-location-gap .title{font-size:.72rem;font-weight:900;color:#17324B}.deal-location-gap .copy{font-size:.62rem;color:#66798C;line-height:1.45;margin-top:4px}
+/* Beginner Workspace v1.13.15 */
+.deal-workspace-intro{background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px}.deal-workspace-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33}.deal-workspace-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;margin-top:3px}
+.deal-workspace-hero{display:grid;grid-template-columns:230px 1fr 150px;gap:14px;align-items:center;border:1px solid #D7E7E3;background:#F7FBFA;border-radius:14px;padding:14px;margin-bottom:12px}.deal-workspace-hero.risk{background:#FFF8F7;border-color:#F0CBC6}.deal-workspace-hero.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-workspace-hero .label{font-size:.53rem;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#6B7D90}.deal-workspace-hero .status{font-size:1rem;font-weight:950;color:#08786F;margin-top:3px}.deal-workspace-hero.risk .status{color:#B42318}.deal-workspace-hero.warn .status{color:#8E6100}.deal-workspace-hero .next{font-size:.9rem;font-weight:900;color:#0B1F33}.deal-workspace-hero .sub{font-size:.62rem;color:#607489;line-height:1.4;margin-top:4px}.deal-workspace-hero .pct{text-align:right;font-size:1.45rem;font-weight:950;color:#0B1F33}.deal-workspace-hero .pct small{display:block;font-size:.5rem;text-transform:uppercase;letter-spacing:.08em;color:#718195}
+.deal-workspace-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px}.deal-workspace-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:112px}.deal-workspace-card.risk{background:#FFF8F7;border-color:#F0CBC6}.deal-workspace-card.warn{background:#FFFCF5;border-color:#ECDDB6}.deal-workspace-card.good{background:#F8FCFB;border-color:#D2EAE4}.deal-workspace-card .label{font-size:.52rem;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#718195}.deal-workspace-card .value{font-size:.82rem;line-height:1.28;font-weight:900;color:#0B1F33;margin-top:5px}.deal-workspace-card .copy{font-size:.59rem;line-height:1.4;color:#607489;margin-top:5px}
+.deal-task-row{display:grid;grid-template-columns:32px 86px 1fr;gap:9px;align-items:start;padding:9px 0;border-top:1px solid #EEF2F3}.deal-task-row:first-child{border-top:0}.deal-task-pill{display:inline-flex;border-radius:999px;padding:3px 6px;font-size:.48rem;font-weight:900;text-transform:uppercase;justify-content:center;background:#FFF2CC;color:#8E6100}.deal-task-pill.stop{background:#FDEDEC;color:#B42318}.deal-task-title{font-size:.69rem;font-weight:850;color:#17324B}.deal-task-copy{font-size:.59rem;color:#66798C;line-height:1.4;margin-top:2px}.deal-workspace-rule{background:#F7FBFA;border:1px solid #DDEBE7;border-radius:12px;padding:10px 12px;font-size:.62rem;color:#526A7D;line-height:1.45;margin:8px 0 12px}
+@media(max-width:1100px){.deal-workspace-hero{grid-template-columns:1fr}.deal-workspace-hero .pct{text-align:left}.deal-workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1100px){.deal-location-position{grid-template-columns:1fr}.deal-location-position .evidence{text-align:left}.deal-location-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.deal-location-split{grid-template-columns:1fr}.deal-location-proof{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 
@@ -964,12 +970,23 @@ with st.sidebar:
         <div class="side-kv"><span>Reduced</span><strong>{_sidebar_reduced}</strong></div>
         <div class="side-kv"><span>Saved</span><strong>{_sidebar_saved}</strong></div></div>'''
         st.markdown(today_html, unsafe_allow_html=True)
-        buy_box = f'''<div class="side-card"><div class="side-card-title"><span>◎ &nbsp; Your buy box</span><span>Edit</span></div>
-        <div class="side-kv"><span>Commercial target</span><strong>{POUND}{int(st.session_state['commercial_target_psf'])} / sq ft</strong></div>
-        <div class="side-kv"><span>Max guide price</span><strong>{money(st.session_state['commercial_max_price'],0)}</strong></div>
-        <div class="side-kv"><span>Preferred size</span><strong>{int(st.session_state['commercial_min_sqft']):,}–10,000 sq ft</strong></div>
-        <div class="side-kv"><span>Motorway radius</span><strong>{float(st.session_state['preferred_motorway_miles']):.0f} miles</strong></div>
-        <div class="side-link">View full criteria &nbsp; →</div></div>'''
+        _sidebar_selected_row = next((r for r in _raw_rows if r.get("id") == st.session_state.get("selected_deal_id")), None)
+        _sidebar_context_commercial = is_commercial(_sidebar_selected_row) if _sidebar_selected_row else (_sidebar_market == "Commercial")
+        if _sidebar_context_commercial:
+            buy_box = f'''<div class="side-card"><div class="side-card-title"><span>◎ &nbsp; Your buy box</span><span>Edit</span></div>
+            <div class="side-kv"><span>Commercial target</span><strong>{POUND}{int(st.session_state['commercial_target_psf'])} / sq ft</strong></div>
+            <div class="side-kv"><span>Max guide price</span><strong>{money(st.session_state['commercial_max_price'],0)}</strong></div>
+            <div class="side-kv"><span>Preferred size</span><strong>{int(st.session_state['commercial_min_sqft']):,}–10,000 sq ft</strong></div>
+            <div class="side-kv"><span>Motorway radius</span><strong>{float(st.session_state['preferred_motorway_miles']):.0f} miles</strong></div>
+            <div class="side-link">View full criteria &nbsp; →</div></div>'''
+        else:
+            _deal_guide = money(_sidebar_selected_row.get("guide_price"),0) if _sidebar_selected_row else "-"
+            buy_box = f'''<div class="side-card"><div class="side-card-title"><span>◎ &nbsp; Your buy box</span><span>Edit</span></div>
+            <div class="side-kv"><span>Residential target</span><strong>{money(st.session_state['residential_target_price'],0)}</strong></div>
+            <div class="side-kv"><span>Target margin</span><strong>{float(st.session_state['default_res_margin']):.0f}%</strong></div>
+            <div class="side-kv"><span>Current deal guide</span><strong>{_deal_guide}</strong></div>
+            <div class="side-kv"><span>Market</span><strong>Residential</strong></div>
+            <div class="side-link">View full criteria &nbsp; →</div></div>'''
         st.markdown(buy_box, unsafe_allow_html=True)
         st.markdown('<div class="side-brand-card"><span class="diamond">◆</span>Serious opportunities.<br>Smarter decisions.</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sidebar-version">Lotly v{html.escape(APP_VERSION)}</div>', unsafe_allow_html=True)
@@ -3347,7 +3364,8 @@ def render_deal_room(chosen):
     with tabs[6]:
         location_comps = db.comparables_for(chosen["id"])
         location_uw = db.underwriting_for(chosen["id"])
-        location_view = location_beginner_summary(chosen, location_comps, planning_items, location_uw)
+        rental_comps = db.rental_comparables_for(chosen["id"])
+        location_view = location_beginner_summary(chosen, location_comps, planning_items, location_uw, rental_comps)
         location_tone = str(location_view.get("verdict_tone") or "warn")
         verdict_class = "risk" if location_tone == "risk" else "warn" if location_tone == "warn" else ""
 
@@ -3381,6 +3399,45 @@ def render_deal_room(chosen):
             for card in location_view.get("cards") or []
         )
         st.markdown('<div class="deal-location-grid">' + card_html + '</div>', unsafe_allow_html=True)
+
+        rental_count = int(location_view.get("rental_comp_count") or 0)
+        with st.expander("Rental evidence — add comparables to unlock rent & yield", expanded=rental_count < 3):
+            st.caption("Use current comparable listings/lettings for a similar property. Lotly needs at least 3 before it treats rent as supported evidence.")
+            rr1, rr2, rr3 = st.columns([2.0, 1.0, 2.0])
+            with rr1:
+                rent_address = st.text_input("Comparable address / description", key=f"rent_addr_{chosen['id']}", placeholder="e.g. similar 2-bed apartment nearby")
+            with rr2:
+                rent_amount = st.number_input("Monthly rent (GBP)", min_value=0, step=25, key=f"rent_amount_{chosen['id']}")
+            with rr3:
+                rent_source = st.text_input("Source link (optional)", key=f"rent_source_{chosen['id']}", placeholder="https://...")
+            if st.button("Add rental comparable", key=f"add_rent_comp_{chosen['id']}", use_container_width=True, disabled=not rent_amount):
+                db.add_rental_comparable(chosen["id"], rent_amount, rent_address, rent_source)
+                sync_cloud("rental comparable", quiet=True)
+                st.rerun()
+            rental_comps_live = db.rental_comparables_for(chosen["id"])
+            if rental_comps_live:
+                rent_frame = pd.DataFrame([{
+                    "Address / description": r.get("address") or "Comparable",
+                    "Monthly rent": r.get("monthly_rent"),
+                    "Source": r.get("source_url") or None,
+                    "Added": str(r.get("captured_at") or "")[:10],
+                } for r in rental_comps_live])
+                st.dataframe(rent_frame, hide_index=True, use_container_width=True, column_config={
+                    "Monthly rent": st.column_config.NumberColumn(format="GBP %d"),
+                    "Source": st.column_config.LinkColumn("Source"),
+                })
+                rents = sorted(float(r.get("monthly_rent") or 0) for r in rental_comps_live if float(r.get("monthly_rent") or 0) > 0)
+                if len(rents) >= 3:
+                    n = len(rents)
+                    median_rent = rents[n//2] if n % 2 else (rents[n//2-1] + rents[n//2]) / 2
+                    st.success(f"Rental evidence supported: {len(rents)} comparables, median GBP {median_rent:,.0f}/month.")
+                    if st.button("Use median rent as working ERV in Financials", key=f"use_rent_erv_{chosen['id']}", use_container_width=True):
+                        merged_uw = dict(db.underwriting_for(chosen["id"]) or {})
+                        merged_uw["erv_annual"] = median_rent * 12
+                        db.save_underwriting(chosen["id"], merged_uw)
+                        sync_cloud("rental ERV", quiet=True)
+                        st.success("Working ERV updated in Financials.")
+                        st.rerun()
 
         st.markdown(
             '<div class="deal-location-split">'
@@ -3484,58 +3541,157 @@ def render_deal_room(chosen):
                 st.caption("No mapped planning/environment constraint rows are currently stored for this property. Absence of a row is not a guarantee that none exists.")
 
     with tabs[7]:
-        st.markdown("### Lotly workspace")
-        brief = deal_brief_markdown(chosen, story, readiness, actions)
-        st.download_button(
-            "Download one-page deal brief", brief,
-            file_name=f"deal-brief-{chosen.get('postcode') or chosen.get('id')}.md".replace(" ", "-"),
-            mime="text/markdown", use_container_width=True,
-        )
         workspace = db.workspace_for(chosen["id"])
-        stages = ["New", "Reviewing", "Auctioneer Contacted", "Viewing", "Legal Review", "Offer Made", "Negotiating", "Bid Approved", "Won", "Lost", "Archived"]
-        w1, w2, w3 = st.columns([1.1, 2.0, 1.1])
+        workspace_location = location_beginner_summary(
+            chosen, db.comparables_for(chosen["id"]), planning_items, db.underwriting_for(chosen["id"]), db.rental_comparables_for(chosen["id"])
+        )
+        workspace_plan = workspace_beginner_summary(
+            chosen, readiness, actions, legal_summary, planning_items, db.underwriting_for(chosen["id"]), auction_integrity, workspace_location
+        )
+        db.sync_auto_tasks(chosen["id"], workspace_plan.get("tasks") or [])
+        tasks = db.tasks_for(chosen["id"])
+        open_tasks = [t for t in tasks if t.get("status") != "Done"]
+        done_tasks = [t for t in tasks if t.get("status") == "Done"]
+        task_progress = int(round((len(done_tasks) / len(tasks) * 100))) if tasks else 100
+
+        st.markdown(
+            '<div class="deal-workspace-intro"><div class="title">Workspace — your deal action centre</div>'
+            '<div class="copy">You do not need to remember every step. Lotly turns the evidence into a simple checklist, keeps your calls and offers together, and shows the single next action that matters most.</div></div>',
+            unsafe_allow_html=True,
+        )
+        ws_tone = str(workspace_plan.get("status_tone") or "warn")
+        custom_next = str(workspace.get("next_action") or "").strip()
+        next_move = custom_next or str(workspace_plan.get("next_action") or "Continue due diligence")
+        st.markdown(
+            f'<div class="deal-workspace-hero {html.escape(ws_tone)}">'
+            f'<div><div class="label">Deal status</div><div class="status">{html.escape(str(workspace_plan.get("status") or "DUE DILIGENCE"))}</div></div>'
+            f'<div><div class="label">Your next action</div><div class="next">{html.escape(next_move)}</div><div class="sub">Completing a Workspace task records your progress; it never overrides a red legal, valuation or planning gate elsewhere in Lotly.</div></div>'
+            f'<div class="pct">{task_progress}%<small>checklist complete</small></div>'
+            '</div>', unsafe_allow_html=True,
+        )
+
+        legal_open = any(t.get("category") == "Legal" and t.get("status") != "Done" for t in tasks)
+        money_open = any(t.get("category") == "Money" and t.get("status") != "Done" for t in tasks)
+        property_open = any(t.get("category") == "Property" and t.get("status") != "Done" for t in tasks)
+        auctioneer_open = any(t.get("category") == "Auctioneer" and t.get("status") != "Done" for t in tasks)
+        ws_cards = [
+            ("Legal", "OPEN CHECKS" if legal_open else "WORKSPACE TASKS DONE", "Complete legal evidence and solicitor review before a binding bid.", "risk" if legal_open else "good"),
+            ("Auctioneer", "ACTION NEEDED" if auctioneer_open else "NO OPEN ACTION", "Clarify the seller position and any conflicting auction history.", "warn" if auctioneer_open else "good"),
+            ("Money", "CONFIRM FUNDS" if money_open else "WORKSPACE TASKS DONE", "Make sure funds, fees and the completion deadline are genuinely achievable.", "warn" if money_open else "good"),
+            ("Property", "INSPECT / CHECK" if property_open else "WORKSPACE TASKS DONE", "Viewing, condition, block and building-safety checks belong here.", "warn" if property_open else "good"),
+        ]
+        st.markdown('<div class="deal-workspace-grid">' + ''.join(
+            f'<div class="deal-workspace-card {tone}"><div class="label">{html.escape(label)}</div><div class="value">{html.escape(value)}</div><div class="copy">{html.escape(copy)}</div></div>'
+            for label, value, copy, tone in ws_cards
+        ) + '</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="deal-facts-title">Acquisition checklist</div>', unsafe_allow_html=True)
+        st.markdown('<div class="deal-workspace-rule"><strong>Important:</strong> ticking a task means you have done the action. Lotly will still keep the deal blocked until the underlying evidence itself is resolved.</div>', unsafe_allow_html=True)
+        if tasks:
+            for task in tasks:
+                c1, c2 = st.columns([0.07, 0.93], vertical_alignment="top")
+                done = task.get("status") == "Done"
+                with c1:
+                    new_done = st.checkbox("Done", value=done, key=f"task_done_{chosen['id']}_{task['id']}", label_visibility="collapsed")
+                with c2:
+                    pill_class = "stop" if task.get("priority") == "stop" else ""
+                    st.markdown(
+                        f'<div class="deal-task-row"><div></div><span class="deal-task-pill {pill_class}">{html.escape(str(task.get("category") or "Check"))}</span>'
+                        f'<div><div class="deal-task-title">{html.escape(str(task.get("title") or "Check item"))}</div><div class="deal-task-copy">{html.escape(str(task.get("detail") or ""))}</div></div></div>',
+                        unsafe_allow_html=True,
+                    )
+                if new_done != done:
+                    db.set_task_status(task["id"], "Done" if new_done else "Open", chosen["id"])
+                    sync_cloud("deal task", quiet=True)
+                    st.rerun()
+        else:
+            st.success("No open acquisition tasks are currently generated from the evidence.")
+
+        with st.expander("Add your own task", expanded=False):
+            ct1, ct2 = st.columns([1.2, 2.8])
+            with ct1:
+                custom_category = st.selectbox("Category", ["General", "Legal", "Auctioneer", "Money", "Property", "Numbers"], key=f"custom_task_cat_{chosen['id']}")
+            with ct2:
+                custom_task = st.text_input("Task", key=f"custom_task_title_{chosen['id']}", placeholder="e.g. Ask broker to confirm funds")
+            custom_detail = st.text_input("Details (optional)", key=f"custom_task_detail_{chosen['id']}")
+            if st.button("Add task", key=f"add_custom_task_{chosen['id']}", use_container_width=True, disabled=not custom_task.strip()):
+                db.add_custom_task(chosen["id"], custom_task, custom_detail, custom_category)
+                sync_cloud("custom deal task", quiet=True)
+                st.rerun()
+
+        st.markdown('<div class="deal-facts-title">Deal stage & follow-up</div>', unsafe_allow_html=True)
+        stages = ["Reviewing", "Due diligence", "Ready to offer", "Offer made", "Negotiating", "Acquired", "Passed"]
+        legacy_stage = str(workspace.get("stage") or "Reviewing")
+        stage_alias = {"New":"Reviewing", "Auctioneer Contacted":"Due diligence", "Viewing":"Due diligence", "Legal Review":"Due diligence", "Bid Approved":"Ready to offer", "Won":"Acquired", "Lost":"Passed", "Archived":"Passed"}
+        current_stage = stage_alias.get(legacy_stage, legacy_stage if legacy_stage in stages else "Reviewing")
+        w1, w2, w3 = st.columns([1.0, 2.2, 1.0])
         with w1:
-            current_stage = workspace.get("stage") if workspace.get("stage") in stages else "New"
             stage = st.selectbox("Stage", stages, index=stages.index(current_stage), key=f"stage_{chosen['id']}")
         with w2:
-            next_action = st.text_input("Next action", value=workspace.get("next_action") or "", key=f"next_{chosen['id']}")
+            next_action = st.text_input("My next action (optional override)", value=workspace.get("next_action") or "", key=f"next_{chosen['id']}", placeholder=workspace_plan.get("next_action") or "")
         with w3:
             follow_up = st.text_input("Follow-up date", value=workspace.get("follow_up_date") or "", placeholder="YYYY-MM-DD", key=f"follow_{chosen['id']}")
-        if st.button("Save deal stage", key=f"save_workspace_{chosen['id']}", type="primary"):
+        if st.button("Save deal stage", key=f"save_workspace_{chosen['id']}", type="primary", use_container_width=True):
             db.save_workspace(chosen["id"], stage, next_action, follow_up)
             sync_cloud("deal workspace", quiet=False)
             st.success("Deal workspace saved.")
 
-        st.markdown("### Action centre")
-        q1, q2, q3, q4 = st.columns(4)
-        if chosen.get("url"):
-            q1.link_button("Auction listing", chosen["url"], use_container_width=True)
-        else:
-            q1.caption("Auction link unavailable")
-        legal_docs = [d for d in db.legal_documents_for(chosen["id"]) if d.get("url")]
-        if legal_docs:
-            q2.link_button("Legal document", legal_docs[0]["url"], use_container_width=True)
-        else:
-            q2.caption("Legal document link pending")
-        plan_links = [i for i in planning_items if i.get("source_url")]
-        if plan_links:
-            q3.link_button("Planning record", plan_links[0]["source_url"], use_container_width=True)
-        else:
-            q3.caption("Planning record link pending")
-        if profile.get("company_number"):
-            q4.link_button("Companies House", f"https://find-and-update.company-information.service.gov.uk/company/{profile['company_number']}", use_container_width=True)
-        else:
-            q4.caption("Company owner not identified")
+        st.markdown('<div class="deal-facts-title">Important contacts</div>', unsafe_allow_html=True)
+        auctioneer_phone = chosen.get("listing_auctioneer_phone") or "Not captured"
+        auctioneer_email = chosen.get("listing_auctioneer_email") or "Not captured"
+        legal_contacts = list(legal_summary.get("contacts") or [])
+        solicitor = next((c for c in legal_contacts if "solicitor" in str(c.get("role") or c.get("type") or "").lower()), None)
+        con1, con2, con3 = st.columns(3)
+        with con1:
+            st.markdown("**Auctioneer**")
+            st.write(auctioneer_phone)
+            st.write(auctioneer_email)
+            if chosen.get("url"):
+                st.link_button("Open auction listing", chosen["url"], use_container_width=True)
+        with con2:
+            st.markdown("**Solicitor / legal contact**")
+            if solicitor:
+                st.write(solicitor.get("name") or solicitor.get("organisation") or "Legal-pack contact")
+                st.write(solicitor.get("email") or solicitor.get("phone") or "Contact found in legal pack")
+            else:
+                st.info("No solicitor contact has been reliably extracted yet. Add your own solicitor as a task/note if needed.")
+        with con3:
+            st.markdown("**Evidence shortcuts**")
+            st.write(f"Legal pack: {int(chosen.get('legal_pack_completeness_pct') or 0)}% complete")
+            st.write(f"Valuation confidence: {int(chosen.get('comparable_confidence') or 0)}%")
+            st.write(f"Rental comps: {int(workspace_location.get('rental_comp_count') or 0)}")
 
-        st.markdown("### Deal notes")
-        note = st.text_area("Add call, viewing, negotiation or due-diligence note", key=f"new_note_{chosen['id']}", height=100)
-        if st.button("Add note", key=f"add_note_{chosen['id']}"):
+        st.markdown('<div class="deal-facts-title">Offer / price-test history</div>', unsafe_allow_html=True)
+        of1, of2, of3 = st.columns([1.0, 1.2, 2.2])
+        with of1:
+            offer_amount = st.number_input("Amount (GBP)", min_value=0, step=1000, key=f"offer_amount_{chosen['id']}", value=int(chosen.get("opening_offer") or 0))
+        with of2:
+            offer_status = st.selectbox("Type / status", ["Price test", "Offer discussed", "Offer made", "Counter received", "Rejected", "Accepted", "Withdrawn"], key=f"offer_status_{chosen['id']}")
+        with of3:
+            offer_note = st.text_input("Note", key=f"offer_note_{chosen['id']}", placeholder="e.g. auctioneer said seller wants closer to guide")
+        if st.button("Record price conversation / offer", key=f"add_offer_{chosen['id']}", use_container_width=True, disabled=not offer_amount):
+            db.add_offer(chosen["id"], offer_amount, offer_status, offer_note)
+            sync_cloud("offer history", quiet=True)
+            st.rerun()
+        offers = db.offers_for(chosen["id"])
+        if offers:
+            offer_frame = pd.DataFrame([{
+                "Date": str(x.get("created_at") or "")[:16].replace("T", " "),
+                "Amount": x.get("amount"), "Status": x.get("status"), "Note": x.get("note") or ""
+            } for x in offers])
+            st.dataframe(offer_frame, hide_index=True, use_container_width=True, column_config={"Amount": st.column_config.NumberColumn(format="GBP %d")})
+        else:
+            st.caption("No price conversations or offers recorded yet.")
+
+        st.markdown('<div class="deal-facts-title">Deal notes</div>', unsafe_allow_html=True)
+        note = st.text_area("Add call, viewing, negotiation or due-diligence note", key=f"new_note_{chosen['id']}", height=90)
+        if st.button("Add note", key=f"add_note_{chosen['id']}", use_container_width=True):
             db.add_note(chosen["id"], note)
-            sync_cloud("deal note")
+            sync_cloud("deal note", quiet=True)
             st.rerun()
         notes = db.notes_for(chosen["id"])
         if notes:
-            for item in notes:
+            for item in notes[:8]:
                 c1, c2 = st.columns([8, 1])
                 with c1:
                     st.markdown(f"**{str(item.get('created_at') or '')[:16].replace('T', ' ')}**")
@@ -3543,11 +3699,22 @@ def render_deal_room(chosen):
                 with c2:
                     if st.button("Delete", key=f"del_note_{item['id']}"):
                         db.delete_note(item["id"], chosen["id"])
-                        sync_cloud("delete note")
+                        sync_cloud("delete note", quiet=True)
                         st.rerun()
-                st.divider()
         else:
             st.caption("No deal notes yet.")
+
+        st.markdown('<div class="deal-facts-title">Documents & deal brief</div>', unsafe_allow_html=True)
+        d1, d2 = st.columns(2)
+        with d1:
+            st.info("Upload and analyse legal documents in the Legal & Planning tab. Workspace shows the resulting actions rather than duplicating the legal evidence screen.")
+        with d2:
+            brief = deal_brief_markdown(chosen, story, readiness, actions)
+            st.download_button(
+                "Download one-page deal brief", brief,
+                file_name=f"deal-brief-{chosen.get('postcode') or chosen.get('id')}.md".replace(" ", "-"),
+                mime="text/markdown", use_container_width=True,
+            )
 
 
 selected_id = st.session_state.get("selected_deal_id")

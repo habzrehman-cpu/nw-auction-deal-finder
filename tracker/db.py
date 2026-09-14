@@ -263,6 +263,43 @@ CREATE TABLE IF NOT EXISTS deal_notes (
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
 CREATE INDEX IF NOT EXISTS idx_deal_notes_property ON deal_notes(property_id);
+CREATE TABLE IF NOT EXISTS rental_comparables (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  property_id INTEGER NOT NULL,
+  address TEXT,
+  monthly_rent REAL NOT NULL,
+  source_url TEXT,
+  notes TEXT,
+  captured_at TEXT NOT NULL,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
+CREATE INDEX IF NOT EXISTS idx_rental_comparables_property ON rental_comparables(property_id);
+CREATE TABLE IF NOT EXISTS deal_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  property_id INTEGER NOT NULL,
+  task_key TEXT,
+  category TEXT,
+  title TEXT NOT NULL,
+  detail TEXT,
+  priority TEXT DEFAULT 'check',
+  status TEXT DEFAULT 'Open',
+  source TEXT DEFAULT 'auto',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(property_id) REFERENCES properties(id),
+  UNIQUE(property_id, task_key)
+);
+CREATE INDEX IF NOT EXISTS idx_deal_tasks_property ON deal_tasks(property_id);
+CREATE TABLE IF NOT EXISTS deal_offers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  property_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  amount REAL NOT NULL,
+  status TEXT DEFAULT 'Price test',
+  note TEXT,
+  FOREIGN KEY(property_id) REFERENCES properties(id)
+);
+CREATE INDEX IF NOT EXISTS idx_deal_offers_property ON deal_offers(property_id);
 CREATE TABLE IF NOT EXISTS shortlist (
   property_id INTEGER PRIMARY KEY,
   added_at TEXT NOT NULL,
@@ -1067,6 +1104,119 @@ class Database:
                 (property_id, stage or "New", next_action or "", follow_up_date or "", now),
             )
             con.commit()
+
+    def rental_comparables_for(self, property_id):
+        with closing(self.connect()) as con:
+            return [dict(r) for r in con.execute(
+                "SELECT * FROM rental_comparables WHERE property_id=? ORDER BY captured_at DESC, id DESC", (property_id,)
+            ).fetchall()]
+
+    def add_rental_comparable(self, property_id, monthly_rent, address="", source_url="", notes=""):
+        rent = float(monthly_rent or 0)
+        if rent <= 0:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            cur = con.execute(
+                "INSERT INTO rental_comparables(property_id,address,monthly_rent,source_url,notes,captured_at) VALUES(?,?,?,?,?,?)",
+                (property_id, str(address or "")[:500], rent, str(source_url or "")[:1200], str(notes or "")[:2000], now),
+            )
+            con.commit()
+            return cur.lastrowid
+
+    def delete_rental_comparable(self, comparable_id, property_id=None):
+        with closing(self.connect()) as con:
+            if property_id is None:
+                con.execute("DELETE FROM rental_comparables WHERE id=?", (comparable_id,))
+            else:
+                con.execute("DELETE FROM rental_comparables WHERE id=? AND property_id=?", (comparable_id, property_id))
+            con.commit()
+
+    def sync_auto_tasks(self, property_id, tasks):
+        now = datetime.now(timezone.utc).isoformat()
+        keys = []
+        with closing(self.connect()) as con:
+            for task in tasks or []:
+                key = str(task.get("key") or "").strip()
+                if not key:
+                    continue
+                keys.append(key)
+                con.execute(
+                    """INSERT INTO deal_tasks(property_id,task_key,category,title,detail,priority,status,source,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,'auto',?,?)
+                    ON CONFLICT(property_id,task_key) DO UPDATE SET
+                    category=excluded.category,title=excluded.title,detail=excluded.detail,priority=excluded.priority,updated_at=excluded.updated_at""",
+                    (property_id, key, task.get("category") or "General", task.get("title") or "Check item",
+                     task.get("detail") or "", task.get("priority") or "check", "Open", now, now),
+                )
+            if keys:
+                placeholders = ",".join("?" for _ in keys)
+                con.execute(
+                    f"DELETE FROM deal_tasks WHERE property_id=? AND source='auto' AND task_key NOT IN ({placeholders})",
+                    [property_id] + keys,
+                )
+            else:
+                con.execute("DELETE FROM deal_tasks WHERE property_id=? AND source='auto'", (property_id,))
+            con.commit()
+
+    def tasks_for(self, property_id):
+        with closing(self.connect()) as con:
+            return [dict(r) for r in con.execute(
+                """SELECT * FROM deal_tasks WHERE property_id=?
+                ORDER BY CASE priority WHEN 'stop' THEN 0 WHEN 'check' THEN 1 ELSE 2 END,
+                CASE status WHEN 'Open' THEN 0 ELSE 1 END, id""", (property_id,)
+            ).fetchall()]
+
+    def set_task_status(self, task_id, status, property_id=None):
+        status = status if status in {"Open", "Done"} else "Open"
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            if property_id is None:
+                con.execute("UPDATE deal_tasks SET status=?,updated_at=? WHERE id=?", (status, now, task_id))
+            else:
+                con.execute("UPDATE deal_tasks SET status=?,updated_at=? WHERE id=? AND property_id=?", (status, now, task_id, property_id))
+            con.commit()
+
+    def add_custom_task(self, property_id, title, detail="", category="General"):
+        title = str(title or "").strip()
+        if not title:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        key = f"custom-{int(datetime.now(timezone.utc).timestamp()*1000000)}"
+        with closing(self.connect()) as con:
+            cur = con.execute(
+                "INSERT INTO deal_tasks(property_id,task_key,category,title,detail,priority,status,source,created_at,updated_at) VALUES(?,?,?,?,?,'check','Open','manual',?,?)",
+                (property_id, key, category or "General", title[:500], str(detail or "")[:2000], now, now),
+            )
+            con.commit()
+            return cur.lastrowid
+
+    def delete_task(self, task_id, property_id=None):
+        with closing(self.connect()) as con:
+            if property_id is None:
+                con.execute("DELETE FROM deal_tasks WHERE id=? AND source='manual'", (task_id,))
+            else:
+                con.execute("DELETE FROM deal_tasks WHERE id=? AND property_id=? AND source='manual'", (task_id, property_id))
+            con.commit()
+
+    def offers_for(self, property_id):
+        with closing(self.connect()) as con:
+            return [dict(r) for r in con.execute(
+                "SELECT * FROM deal_offers WHERE property_id=? ORDER BY created_at DESC, id DESC", (property_id,)
+            ).fetchall()]
+
+    def add_offer(self, property_id, amount, status="Price test", note=""):
+        amount = float(amount or 0)
+        if amount <= 0:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            cur = con.execute(
+                "INSERT INTO deal_offers(property_id,created_at,amount,status,note) VALUES(?,?,?,?,?)",
+                (property_id, now, amount, str(status or "Price test")[:100], str(note or "")[:2000]),
+            )
+            con.commit()
+            return cur.lastrowid
 
     def notes_for(self, property_id):
         with closing(self.connect()) as con:

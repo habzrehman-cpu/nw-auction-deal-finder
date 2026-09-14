@@ -277,7 +277,8 @@ def auction_history_integrity(row: dict, history: Iterable[dict] | None = None) 
 
 def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = None,
                               planning_items: Iterable[dict] | None = None,
-                              underwriting: dict | None = None) -> dict:
+                              underwriting: dict | None = None,
+                              rental_comparables: Iterable[dict] | None = None) -> dict:
     """Translate existing location evidence into a beginner-safe investment screen.
 
     The function deliberately avoids claiming rental demand, crime quality, amenity
@@ -288,6 +289,7 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
     comps = [dict(x) for x in (comparables or [])]
     planning_items = [dict(x) for x in (planning_items or [])]
     underwriting = dict(underwriting or {})
+    rental_comps = [dict(x) for x in (rental_comparables or [])]
 
     postcode = str(row.get("postcode") or "").strip().upper()
     postcode_district = postcode.split()[0] if postcode else "Local area"
@@ -344,16 +346,32 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
     # --- Rental / yield evidence ---------------------------------------------
     erv_annual = _num(underwriting.get("erv_annual"))
     guide = _num(row.get("guide_price"))
-    monthly_rent = (erv_annual / 12) if erv_annual else None
-    gross_yield = (erv_annual / guide * 100) if erv_annual and guide else None
-    if erv_annual:
+    usable_rents = sorted(float(x.get("monthly_rent")) for x in rental_comps if (_num(x.get("monthly_rent")) or 0) > 0)
+    rental_median = None
+    rental_low = rental_high = None
+    if usable_rents:
+        rn = len(usable_rents)
+        rental_median = usable_rents[rn // 2] if rn % 2 else (usable_rents[rn // 2 - 1] + usable_rents[rn // 2]) / 2
+        rental_low, rental_high = usable_rents[0], usable_rents[-1]
+    evidence_monthly_rent = rental_median or ((erv_annual / 12) if erv_annual else None)
+    effective_erv_annual = (evidence_monthly_rent * 12) if evidence_monthly_rent else None
+    gross_yield = (effective_erv_annual / guide * 100) if effective_erv_annual and guide else None
+    if len(usable_rents) >= 3:
+        rent_status, rent_tone = "SUPPORTED", "good"
+        rent_value = f"GBP {rental_low:,.0f}–{rental_high:,.0f}/month" if rental_low != rental_high else f"GBP {rental_median:,.0f}/month"
+        rent_detail = f"{len(usable_rents)} rental comparables; median GBP {rental_median:,.0f}/month" + (f"; {gross_yield:.1f}% gross yield at guide." if gross_yield is not None else ".")
+    elif usable_rents:
+        rent_status, rent_tone = "CHECK", "warn"
+        rent_value = f"GBP {rental_median:,.0f}/month — early evidence"
+        rent_detail = f"Only {len(usable_rents)} rental comparable{'s' if len(usable_rents) != 1 else ''}. Add at least 3 before relying on rent or yield."
+    elif erv_annual:
         rent_status, rent_tone = "EVIDENCED", "good"
-        rent_value = f"GBP {monthly_rent:,.0f}/month"
-        rent_detail = f"User-entered ERV GBP {erv_annual:,.0f}/year" + (f"; {gross_yield:.1f}% gross yield at guide." if gross_yield is not None else ".")
+        rent_value = f"GBP {erv_annual/12:,.0f}/month — manual evidence"
+        rent_detail = f"User-entered ERV GBP {erv_annual:,.0f}/year; add rental comparables if you want Lotly to independently support the assumption" + (f"; implied gross yield {gross_yield:.1f}%." if gross_yield is not None else ".")
     else:
         rent_status, rent_tone = "CHECK", "warn"
         rent_value = "Rent not yet evidenced"
-        rent_detail = "Lotly will not guess local rent. Add comparable rental evidence in Financials before relying on yield."
+        rent_detail = "Lotly will not guess local rent. Add at least 3 current rental comparables below to calculate an evidence-backed rent range and gross yield."
 
     # --- Access ---------------------------------------------------------------
     road_miles = _num(row.get("motorway_road_miles"))
@@ -380,11 +398,19 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
         env_status, env_tone = "CHECK", "warn"
         bits = []
         if flood_items:
-            bits.append(f"{len(flood_items)} mapped flood-risk item{'s' if len(flood_items) != 1 else ''}")
+            flood_distances = [float(x.get("distance_miles")) for x in flood_items if _num(x.get("distance_miles")) is not None]
+            nearest_flood = min(flood_distances) if flood_distances else None
+            subject_flood = any(bool(x.get("likely_subject")) for x in flood_items) or (nearest_flood is not None and nearest_flood <= 0.05)
+            if subject_flood:
+                bits.append("Flood-risk mapping returned at or very near the property")
+            elif nearest_flood is not None:
+                bits.append(f"Flood-risk mapping returned about {nearest_flood:.2f} mi away")
+            else:
+                bits.append("Flood-risk mapping returned nearby")
         if high_constraints:
             bits.append(f"{len(high_constraints)} higher-severity designation{'s' if len(high_constraints) != 1 else ''}")
         env_value = "; ".join(bits) or "Constraints found"
-        env_detail = "Review the official planning/environment records and insurance implications before relying on the location."
+        env_detail = "This does not prove the property itself will flood. Check the official flood map and obtain an insurance indication before purchase."
     elif planning_screened:
         env_status, env_tone = "SCREENED", "good"
         env_value = "No major mapped blocker returned"
@@ -427,11 +453,12 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
         exit_tone = "warn"
 
     # --- Overall beginner verdict --------------------------------------------
+    rental_supported = len(usable_rents) >= 3 or bool(erv_annual)
     if highest_severity >= 5:
         verdict = "CAUTION — REVIEW LOCAL CONSTRAINTS"
         verdict_tone = "warn"
         verdict_copy = "A serious mapped planning/environment constraint needs review before Lotly can call the location straightforward."
-    elif comp_conf >= 70 and planning_screened and erv_annual:
+    elif comp_conf >= 70 and planning_screened and rental_supported:
         verdict = "PROMISING — CORE LOCATION EVIDENCE IN PLACE"
         verdict_tone = "good"
         verdict_copy = "Sold-price, planning/environment and rent evidence are present. Still verify competing supply and the area on the ground."
@@ -449,8 +476,8 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
         verdict_copy = "The location screen is incomplete. Add stronger sold, rent and local-market evidence before relying on it."
 
     risks = []
-    if not erv_annual:
-        risks.append("Rental demand and achievable rent are not yet independently evidenced.")
+    if len(usable_rents) < 3:
+        risks.append("Rental demand and achievable rent are not yet supported by at least 3 current rental comparables.")
     if spread_pct is not None and spread_pct > 25:
         risks.append(f"Comparable valuation spread is {spread_pct:.1f}%, so local pricing is still dispersed.")
     if flood_items:
@@ -463,8 +490,8 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
     risks.append("Current competing listings / active supply are not yet measured by Lotly, so do not infer scarcity from sold comparables alone.")
 
     next_steps = []
-    if not erv_annual:
-        next_steps.append("Collect at least 3 current rental comparables for the same property type and enter a conservative ERV in Financials.")
+    if len(usable_rents) < 3:
+        next_steps.append("Add at least 3 current rental comparables for the same property type so Lotly can calculate an evidence-backed rent range and gross yield.")
     next_steps.append("Check 5-10 current competing sale/rental listings nearby so you understand active supply, not just historic sold prices.")
     next_steps.append("Visit the immediate area in daytime and evening and test the actual route to transport, employment and everyday amenities.")
     if flood_items:
@@ -497,8 +524,12 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
         "latest_sale_date": latest_sale_date,
         "spread_pct": spread_pct,
         "erv_annual": erv_annual,
-        "monthly_rent": monthly_rent,
+        "monthly_rent": evidence_monthly_rent,
         "gross_yield_pct": gross_yield,
+        "rental_comp_count": len(usable_rents),
+        "rental_median": rental_median,
+        "rental_low": rental_low,
+        "rental_high": rental_high,
         "planning_screened": planning_screened,
         "flood_items": flood_items,
         "high_constraints": high_constraints,
@@ -508,6 +539,96 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
         "postcode_district": postcode_district,
     }
 
+
+
+def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions: Iterable[dict] | None = None,
+                               legal_summary: dict | None = None, planning_items: Iterable[dict] | None = None,
+                               underwriting: dict | None = None, auction_integrity: dict | None = None,
+                               location_summary: dict | None = None) -> dict:
+    """Build a novice-friendly acquisition action plan from existing evidence.
+
+    Workspace tasks describe *actions the buyer should take*. Completing a task does not
+    override evidence gates elsewhere in Lotly; legal/planning/valuation readiness remains
+    authoritative.
+    """
+    readiness = dict(readiness or {})
+    actions = [dict(x) for x in (actions or [])]
+    legal_summary = dict(legal_summary or {})
+    underwriting = dict(underwriting or {})
+    auction_integrity = dict(auction_integrity or {})
+    location_summary = dict(location_summary or {})
+    planning_items = [dict(x) for x in (planning_items or [])]
+
+    readiness_status = str(readiness.get("readiness_status") or "Reviewing")
+    readiness_pct = int(readiness.get("readiness_pct") or 0)
+    legal_pct = int(row.get("legal_pack_completeness_pct") or legal_summary.get("pack_completeness_pct") or 0)
+    legal_missing = list(legal_summary.get("missing_components") or row.get("legal_missing_components") or [])
+    legal_flags = list(legal_summary.get("risk_flags") or row.get("legal_risk_flags") or [])
+    severe_flags = [x for x in legal_flags if int(x.get("severity") or 0) >= 4]
+    planning_screened = str(row.get("planning_status") or "").lower() == "ok"
+    comp_conf = int(row.get("comparable_confidence") or 0)
+    completion_days = _num(legal_summary.get("completion_days") or row.get("legal_completion_days"))
+    property_type = str(row.get("property_type") or "").lower()
+    flat_like = any(x in property_type for x in ("flat", "apartment", "maisonette"))
+    status_low = str(row.get("status") or "").lower()
+
+    tasks = []
+    def add(key, category, title, detail, priority="check"):
+        tasks.append({"key": key, "category": category, "title": title, "detail": detail, "priority": priority})
+
+    if legal_pct < 100:
+        missing = ", ".join(str(x).replace("_", " ").title() for x in legal_missing[:4]) or "core legal documents"
+        add("legal-pack", "Legal", "Complete the legal pack", f"Still missing or unverified: {missing}.", "stop")
+    if severe_flags:
+        labels = "; ".join(_clean(x.get("label") or "legal issue", 90) for x in severe_flags[:3])
+        add("legal-stop-review", "Legal", "Ask your solicitor to clear the red legal issues", labels, "stop")
+    if not planning_screened:
+        add("planning-screen", "Legal", "Run and review the planning check", "Confirm any planning, designation, flood or environmental constraints.", "check")
+    if comp_conf < 70:
+        add("valuation-evidence", "Numbers", "Strengthen the valuation evidence", f"Comparable confidence is {comp_conf}%; verify the strongest local sold evidence before relying on a ceiling.", "check")
+    if int(location_summary.get("rental_comp_count") or 0) < 3 and not _num(underwriting.get("erv_annual")):
+        add("rental-evidence", "Numbers", "Add at least 3 rental comparables", "Use current comparable rents to evidence achievable rent and gross yield.", "check")
+    if completion_days is not None and completion_days <= 14:
+        add("funding-deadline", "Money", f"Confirm funds can complete within {int(completion_days)} days", "Auction completion is fast. Confirm cash/finance, solicitor capacity and transfer timing before any binding bid.", "stop" if readiness_status == "BID BLOCKED" else "check")
+    else:
+        add("funding-proof", "Money", "Confirm proof of funds and buying costs", "Make sure purchase funds, tax, legal fees, auction fees and contingency are available before offering.", "check")
+    add("viewing-condition", "Property", "Inspect the property and condition", "Arrange a viewing or suitable survey/condition check so the numbers reflect the property you are actually buying.", "check")
+    if flat_like:
+        add("block-safety", "Property", "Check the block, service charge and building safety", "Confirm service charge, major works, insurance and any EWS1/cladding or Building Safety Act exposure.", "check")
+    if auction_integrity.get("sale_status_conflict"):
+        add("auction-sequence", "Auctioneer", "Ask the auctioneer what happened to the earlier sale status", "The property is available again after a previous sold-status signal. Confirm whether a sale fell through and the seller's position now.", "check")
+    elif status_low in {"available post-auction", "unsold", "no bids", "last bid", "relisted"}:
+        add("auctioneer-price", "Auctioneer", "Ask what the seller wants now", "Test the seller's current expectation and whether there are competing offers before increasing your price.", "check")
+    if row.get("opening_offer"):
+        add("price-test", "Auctioneer", f"Price-test around GBP {float(row.get('opening_offer')):,.0f}", "Treat this as a non-binding conversation while any red STOP item remains.", "check")
+
+    if readiness_status == "BID BLOCKED":
+        workspace_status = "BLOCKED — CHECKS STILL OPEN"
+        status_tone = "risk"
+    elif readiness_pct >= 90 and row.get("max_bid"):
+        workspace_status = "READY TO PREPARE AN OFFER"
+        status_tone = "good"
+    else:
+        workspace_status = "DUE DILIGENCE"
+        status_tone = "warn"
+
+    next_action = actions[0].get("action") if actions else None
+    if not next_action and tasks:
+        next_action = tasks[0]["title"]
+    if not next_action:
+        next_action = "Review the remaining evidence before committing capital"
+
+    return {
+        "status": workspace_status,
+        "status_tone": status_tone,
+        "readiness_pct": readiness_pct,
+        "next_action": next_action,
+        "tasks": tasks,
+        "completion_days": completion_days,
+        "legal_pct": legal_pct,
+        "comp_confidence": comp_conf,
+        "planning_screened": planning_screened,
+    }
 
 
 def _planning_timeline(planning_items: Iterable[dict]) -> list[dict]:
