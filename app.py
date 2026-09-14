@@ -11,7 +11,7 @@ import streamlit as st
 from tracker.db import Database
 from tracker.pipeline import refresh_all, refresh_geography
 from tracker.deal_engine import DealConfig, score_property, history_metrics
-from tracker.underwriting import UnderwritingDefaults, underwrite_property
+from tracker.underwriting import UnderwritingDefaults, underwrite_property, extract_listing_fees
 from tracker.comparables import refresh_due_comparables, refresh_property_comparables
 from tracker.diligence import (
     refresh_due_diligence,
@@ -1013,6 +1013,24 @@ company_map = db.company_intelligence_map() if rows else {}
 planning_flags_map = db.planning_constraint_flags_map() if rows else {}
 shortlist_ids = db.shortlist_ids() if rows else set()
 
+
+def _safe_underwriting_assumptions(row, saved):
+    """Normalise legacy overrides so zero/blank values cannot mask stronger evidence."""
+    assumptions = dict(saved or {})
+    gdv_mode = str(assumptions.get("gdv_source_mode") or ("manual" if assumptions.get("gdv") else "auto")).lower()
+    if not is_commercial(row) and gdv_mode != "manual":
+        assumptions.pop("gdv", None)
+        assumptions["use_auto_comps"] = 1
+
+    fee_mode = str(assumptions.get("fee_source_mode") or "auto").lower()
+    if fee_mode != "manual":
+        for key in ("auction_admin_fee", "buyer_premium_pct", "buyer_premium_minimum", "search_fee"):
+            assumptions.pop(key, None)
+        # underwrite_property will now re-seed these fields from the current listing
+        # evidence (or model defaults) rather than a legacy zero saved by the UI.
+    return assumptions
+
+
 for row in rows:
     analysis = score_property(row, history_map.get(row["id"], []), strategy="auto", config=config)
     row.update(analysis)
@@ -1106,10 +1124,11 @@ for row in rows:
         "company_intelligence": company,
     })
     _saved_uw = underwriting_map.get(row["id"], {})
+    _effective_uw = _safe_underwriting_assumptions(row, _saved_uw)
     uw = underwrite_property(
         row,
         row,
-        assumptions=_saved_uw,
+        assumptions=_effective_uw,
         defaults=underwriting_defaults,
         strategy="auto",
     )
@@ -1117,7 +1136,7 @@ for row in rows:
     row["profit_at_guide"] = None
     row["guide_all_in_cost"] = None
     if row.get("guide_price"):
-        _guide_assumptions = dict(_saved_uw or {})
+        _guide_assumptions = dict(_effective_uw or {})
         _guide_assumptions["purchase_price"] = float(row.get("guide_price") or 0)
         _guide_uw = underwrite_property(row, row, assumptions=_guide_assumptions, defaults=underwriting_defaults, strategy="auto")
         row["profit_at_guide"] = _guide_uw.get("profit")
@@ -1501,7 +1520,42 @@ def render_property_card(row):
 def underwriting_form(chosen):
     saved = db.underwriting_for(chosen["id"])
     strategy = "commercial" if is_commercial(chosen) else "residential"
-    st.caption("Save property-specific assumptions. Manual evidence overrides automated comparable estimates.")
+
+    # Provenance-aware defaults. Automated evidence is displayed to the user but is
+    # not silently persisted as a manual override. This prevents a blank/zero field
+    # from replacing stronger automated valuation or fee evidence.
+    auto_gdv = float(chosen.get("comparable_valuation_mid") or chosen.get("market_value") or 0)
+    saved_gdv = float(saved.get("gdv") or 0)
+    gdv_mode_saved = str(saved.get("gdv_source_mode") or ("manual" if saved_gdv else "auto")).lower()
+    if gdv_mode_saved not in {"auto", "manual"}:
+        gdv_mode_saved = "auto"
+
+    detected_pct = chosen.get("detected_buyer_premium_pct")
+    detected_min = chosen.get("detected_buyer_premium_minimum")
+    detected_search = chosen.get("detected_search_fee")
+    detected_fixed = chosen.get("detected_auction_admin_fee_fixed")
+    listing_fee_evidence = any(v is not None for v in (detected_pct, detected_min, detected_search, detected_fixed))
+    auto_fee_values = {
+        "auction_admin_fee": float(detected_fixed if detected_fixed is not None else (0.0 if detected_pct is not None else underwriting_defaults.auction_admin_fee)),
+        "buyer_premium_pct": float(detected_pct or 0.0),
+        "buyer_premium_minimum": float(detected_min or 0.0),
+        "search_fee": float(detected_search or 0.0),
+    }
+    fee_mode_saved = str(saved.get("fee_source_mode") or "").lower()
+    if fee_mode_saved not in {"auto", "manual"}:
+        # Legacy saves wrote every visible field, including zeros. Treat a saved zero
+        # as non-authoritative when stronger listing evidence now exists.
+        materially_different = False
+        for key, auto_value in auto_fee_values.items():
+            raw = saved.get(key)
+            if raw is None:
+                continue
+            saved_value = float(raw or 0)
+            if saved_value > 0 and abs(saved_value - auto_value) > 0.01:
+                materially_different = True
+        fee_mode_saved = "manual" if materially_different else "auto"
+
+    st.caption("Save property-specific assumptions. Automated evidence stays authoritative until you explicitly choose a manual override.")
     with st.form(f"uw_{chosen['id']}"):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -1510,14 +1564,27 @@ def underwriting_form(chosen):
             contingency_pct = st.number_input("Works contingency %", min_value=0.0, value=float(saved.get("contingency_pct") if saved.get("contingency_pct") is not None else 10.0), step=1.0)
         with c2:
             if strategy == "residential":
-                gdv = st.number_input("GDV / resale value", min_value=0.0, value=float(saved.get("gdv") or 0), step=5000.0, help="Leave 0 to use eligible automated residential comps.")
+                gdv_source = st.selectbox(
+                    "GDV source",
+                    ["Automatic comparable midpoint", "Manual override"],
+                    index=1 if gdv_mode_saved == "manual" else 0,
+                    help="Automatic keeps the HM Land Registry comparable midpoint live. Manual override freezes your own value until you switch back.",
+                )
+                gdv_display = saved_gdv if gdv_mode_saved == "manual" and saved_gdv else auto_gdv
+                gdv = st.number_input("GDV / resale value", min_value=0.0, value=float(gdv_display or 0), step=5000.0)
+                if gdv_source == "Automatic comparable midpoint":
+                    st.caption(f"AUTO · HM Land Registry PPD · {int(chosen.get('comparable_confidence') or 0)}% evidence confidence. Saving will not convert this to a manual override.")
+                else:
+                    st.caption("MANUAL · Your override will take precedence over the automated comparable midpoint until changed.")
                 market_psf = 0.0
                 manual_market_value = 0.0
                 erv_annual = 0.0
                 exit_yield_pct = 0.0
                 target_profit_margin_pct = st.number_input("Target profit margin % of GDV", min_value=0.0, max_value=80.0, value=float(saved.get("target_profit_margin_pct") if saved.get("target_profit_margin_pct") is not None else underwriting_defaults.target_residential_profit_margin_pct), step=1.0)
                 target_equity_margin_pct = 20.0
+                use_auto = gdv_source == "Automatic comparable midpoint"
             else:
+                gdv_source = "Automatic comparable midpoint"
                 gdv = 0.0
                 market_psf = st.number_input("Market GBP / sq ft", min_value=0.0, value=float(saved.get("market_psf") or 0), step=5.0)
                 manual_market_value = st.number_input("Manual market value", min_value=0.0, value=float(saved.get("manual_market_value") or 0), step=5000.0)
@@ -1525,16 +1592,31 @@ def underwriting_form(chosen):
                 exit_yield_pct = st.number_input("Exit yield %", min_value=0.0, value=float(saved.get("exit_yield_pct") or 0), step=0.25)
                 target_equity_margin_pct = st.number_input("Target equity uplift %", min_value=0.0, max_value=80.0, value=float(saved.get("target_equity_margin_pct") if saved.get("target_equity_margin_pct") is not None else underwriting_defaults.target_commercial_equity_margin_pct), step=1.0)
                 target_profit_margin_pct = 20.0
+                use_auto = st.checkbox("Use automatic commercial comparable value", value=bool(saved.get("use_auto_comps")))
         with c3:
-            detected_pct = chosen.get("detected_buyer_premium_pct")
-            detected_min = chosen.get("detected_buyer_premium_minimum")
-            detected_search = chosen.get("detected_search_fee")
-            detected_fixed = chosen.get("detected_auction_admin_fee_fixed")
-            auction_admin_default = detected_fixed if detected_fixed is not None else (0.0 if detected_pct is not None else underwriting_defaults.auction_admin_fee)
-            auction_admin_fee = st.number_input("Auction/admin fixed fee", min_value=0.0, value=float(saved.get("auction_admin_fee") if saved.get("auction_admin_fee") is not None else auction_admin_default), step=100.0)
-            buyer_premium_pct = st.number_input("Buyer/admin fee %", min_value=0.0, value=float(saved.get("buyer_premium_pct") if saved.get("buyer_premium_pct") is not None else (detected_pct or 0.0)), step=0.25)
-            buyer_premium_minimum = st.number_input("Minimum buyer/admin fee", min_value=0.0, value=float(saved.get("buyer_premium_minimum") if saved.get("buyer_premium_minimum") is not None else (detected_min or 0.0)), step=100.0)
-            search_fee = st.number_input("Search fee", min_value=0.0, value=float(saved.get("search_fee") if saved.get("search_fee") is not None else (detected_search or 0.0)), step=50.0)
+            fee_options = ["Detected listing evidence", "Manual override"] if listing_fee_evidence else ["Model defaults", "Manual override"]
+            fee_source = st.selectbox(
+                "Auction fee source",
+                fee_options,
+                index=1 if fee_mode_saved == "manual" else 0,
+                help="Detected listing evidence is protected from accidental zero-value overrides. Choose Manual override only when you have better evidence.",
+            )
+            use_auto_fees = fee_source != "Manual override"
+            auction_admin_default = auto_fee_values["auction_admin_fee"]
+            buyer_pct_default = auto_fee_values["buyer_premium_pct"]
+            buyer_min_default = auto_fee_values["buyer_premium_minimum"]
+            search_default = auto_fee_values["search_fee"]
+            auction_admin_fee = st.number_input("Additional fixed auction/admin fee", min_value=0.0, value=float(saved.get("auction_admin_fee") if fee_mode_saved == "manual" and saved.get("auction_admin_fee") is not None else auction_admin_default), step=100.0)
+            buyer_premium_pct = st.number_input("Buyer/admin fee %", min_value=0.0, value=float(saved.get("buyer_premium_pct") if fee_mode_saved == "manual" and saved.get("buyer_premium_pct") is not None else buyer_pct_default), step=0.25)
+            buyer_premium_minimum = st.number_input("Minimum buyer/admin fee", min_value=0.0, value=float(saved.get("buyer_premium_minimum") if fee_mode_saved == "manual" and saved.get("buyer_premium_minimum") is not None else buyer_min_default), step=100.0)
+            search_fee = st.number_input("Search fee", min_value=0.0, value=float(saved.get("search_fee") if fee_mode_saved == "manual" and saved.get("search_fee") is not None else search_default), step=50.0)
+            preview_pct = buyer_pct_default if use_auto_fees else buyer_premium_pct
+            preview_min = buyer_min_default if use_auto_fees else buyer_premium_minimum
+            preview_fixed = auction_admin_default if use_auto_fees else auction_admin_fee
+            preview_search = search_default if use_auto_fees else search_fee
+            effective_buyer_fee = max(float(purchase_price or 0) * preview_pct / 100, preview_min) if (preview_pct or preview_min) else 0.0
+            source_tag = "LISTING EVIDENCE" if listing_fee_evidence and use_auto_fees else "MODEL DEFAULT" if use_auto_fees else "MANUAL"
+            st.caption(f"{source_tag} · Effective fees at the working price: {money(preview_fixed + effective_buyer_fee + preview_search)} ({money(effective_buyer_fee)} buyer/admin).")
         c4, c5, c6 = st.columns(3)
         with c4:
             legal_cost = st.number_input("Legal allowance", min_value=0.0, value=float(saved.get("legal_cost") if saved.get("legal_cost") is not None else underwriting_defaults.legal_cost), step=250.0)
@@ -1546,14 +1628,30 @@ def underwriting_form(chosen):
         with c6:
             term_months = st.number_input("Hold / finance months", min_value=1, value=int(saved.get("term_months") or underwriting_defaults.term_months), step=1)
             holding_cost_monthly = st.number_input("Holding / rates / utilities per month", min_value=0.0, value=float(saved.get("holding_cost_monthly") or 0), step=100.0)
-            use_auto = st.checkbox("Use automatic commercial comparable value", value=bool(saved.get("use_auto_comps")), disabled=strategy != "commercial")
         notes = st.text_area("Deal notes / evidence", value=str(saved.get("underwriting_notes") or ""), placeholder="Agent feedback, works quote, ERV evidence, local comparable, title point...")
         save = st.form_submit_button("Save and recalculate", type="primary", use_container_width=True)
         if save:
+            if strategy == "residential":
+                gdv_to_save = None if gdv_source == "Automatic comparable midpoint" else (gdv or None)
+                gdv_source_mode = "auto" if gdv_source == "Automatic comparable midpoint" else "manual"
+            else:
+                gdv_to_save = None
+                gdv_source_mode = None
+            if use_auto_fees:
+                fee_values = auto_fee_values
+                fee_source_mode = "auto"
+            else:
+                fee_values = {
+                    "auction_admin_fee": auction_admin_fee,
+                    "buyer_premium_pct": buyer_premium_pct,
+                    "buyer_premium_minimum": buyer_premium_minimum,
+                    "search_fee": search_fee,
+                }
+                fee_source_mode = "manual"
             db.save_underwriting(chosen["id"], {
                 "strategy": strategy,
                 "purchase_price": purchase_price or None,
-                "gdv": gdv or None,
+                "gdv": gdv_to_save,
                 "market_psf": market_psf or None,
                 "manual_market_value": manual_market_value or None,
                 "erv_annual": erv_annual or None,
@@ -1561,10 +1659,10 @@ def underwriting_form(chosen):
                 "refurb_cost": refurb_cost or 0,
                 "capex_cost": 0,
                 "contingency_pct": contingency_pct,
-                "auction_admin_fee": auction_admin_fee,
-                "buyer_premium_pct": buyer_premium_pct,
-                "buyer_premium_minimum": buyer_premium_minimum,
-                "search_fee": search_fee,
+                "auction_admin_fee": fee_values["auction_admin_fee"],
+                "buyer_premium_pct": fee_values["buyer_premium_pct"],
+                "buyer_premium_minimum": fee_values["buyer_premium_minimum"],
+                "search_fee": fee_values["search_fee"],
                 "legal_cost": legal_cost,
                 "survey_cost": survey_cost,
                 "finance_mode": finance_mode,
@@ -1577,10 +1675,11 @@ def underwriting_form(chosen):
                 "residential_sdlt_mode": "Additional dwelling",
                 "underwriting_notes": notes,
                 "use_auto_comps": 1 if use_auto else 0,
+                "gdv_source_mode": gdv_source_mode,
+                "fee_source_mode": fee_source_mode,
             })
             sync_cloud("underwriting", quiet=False)
             st.rerun()
-
 
 def render_deal_room(chosen):
     # Assemble evidence-led intelligence for this property only when its Deal Room is opened.
@@ -2041,7 +2140,7 @@ def render_deal_room(chosen):
             if price in seen_prices:
                 continue
             seen_prices.add(price)
-            assumptions = dict(saved)
+            assumptions = _safe_underwriting_assumptions(chosen, saved)
             assumptions["purchase_price"] = price
             result = underwrite_property(chosen, chosen, assumptions=assumptions, defaults=underwriting_defaults, strategy="auto")
             profit_value = result.get("profit")
@@ -2078,6 +2177,11 @@ def render_deal_room(chosen):
                 f'<div class="deal-proof-banner"><strong>Financial basis:</strong> returns above use a current modelled value/GDV of {html.escape(money(market_value))}. This is an acquisition-screening model, not a guaranteed resale value. Change the valuation, works, finance or fee assumptions below to stress-test the ceiling.</div>',
                 unsafe_allow_html=True,
             )
+
+        _gdv_provenance = "MANUAL" if str(saved.get("gdv_source_mode") or ("manual" if saved.get("gdv") else "auto")).lower() == "manual" else "AUTO"
+        _fee_provenance = "MANUAL" if str(saved.get("fee_source_mode") or "auto").lower() == "manual" else ("LISTING EVIDENCE" if chosen.get("detected_fee_evidence") else "MODEL DEFAULT")
+        _legal_provenance = "VERIFIED" if str(chosen.get("legal_status") or "").lower() == "verified" else "UNVERIFIED"
+        st.caption(f"Assumption provenance · Valuation: {_gdv_provenance} · Auction fees: {_fee_provenance} · Legal evidence: {_legal_provenance}")
 
         underwriting_form(chosen)
         st.markdown("### Cost stack at working purchase price")
@@ -2156,21 +2260,42 @@ def render_deal_room(chosen):
 
         comps = db.comparables_for(chosen["id"])
         if comps:
+            legacy_scoring = (not is_commercial(chosen)) and any((r.get("metadata") or {}).get("scoring_version") != "residential-v2" for r in comps)
+            if legacy_scoring:
+                st.info("Comparable evidence was scored by the previous matching model. Refresh this property's comparables to apply distance, recency, tenure, locality and price-coherence scoring.")
             ordered = sorted(comps, key=lambda r: float(r.get("match_score") or 0), reverse=True)
             st.markdown("### Best-matching sold evidence")
             top_frame = pd.DataFrame([{
                 "Address": r.get("address"), "Sold price": r.get("sale_price"), "Sold date": r.get("sale_date"),
                 "Distance": r.get("distance_miles"), "Property type": r.get("property_type"),
                 "Tenure": r.get("tenure"), "Match": r.get("match_score"),
+                "Why selected": "; ".join(((r.get("metadata") or {}).get("match_reasons") or [])[:4]) or "Legacy comparable score",
+                "Outlier": "REVIEW" if (r.get("metadata") or {}).get("outlier_flag") else "",
             } for r in ordered[:5]])
             st.dataframe(top_frame, hide_index=True, use_container_width=True, column_config={
                 "Sold price": st.column_config.NumberColumn(format="GBP %d"),
                 "Distance": st.column_config.NumberColumn(format="%.2f mi"),
-                "Match": st.column_config.NumberColumn(format="%.0f"),
+                "Match": st.column_config.NumberColumn(format="%.0f%%"),
+                "Why selected": st.column_config.TextColumn(width="large"),
             })
+            st.caption("Match is now discriminating: it scores property subtype, distance, recency, tenure, locality and price coherence. Material price outliers and prior sales of the subject are down-weighted.")
             with st.expander("All comparable evidence"):
-                frame = pd.DataFrame([{k: r.get(k) for k in ["address", "postcode", "sale_price", "sale_date", "property_type", "tenure", "distance_miles", "price_per_sqft", "match_score"]} for r in ordered])
-                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"sale_price": st.column_config.NumberColumn(format="GBP %d"), "price_per_sqft": st.column_config.NumberColumn(format="GBP %.2f"), "distance_miles": st.column_config.NumberColumn(format="%.2f mi"), "match_score": st.column_config.NumberColumn(format="%.0f")})
+                frame = pd.DataFrame([{
+                    "address": r.get("address"), "postcode": r.get("postcode"), "sale_price": r.get("sale_price"),
+                    "sale_date": r.get("sale_date"), "property_type": r.get("property_type"), "tenure": r.get("tenure"),
+                    "distance_miles": r.get("distance_miles"), "price_per_sqft": r.get("price_per_sqft"), "match_score": r.get("match_score"),
+                    "price_deviation_pct": (r.get("metadata") or {}).get("price_deviation_pct"),
+                    "outlier": bool((r.get("metadata") or {}).get("outlier_flag")),
+                    "selection_reason": "; ".join((r.get("metadata") or {}).get("match_reasons") or []),
+                } for r in ordered])
+                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
+                    "sale_price": st.column_config.NumberColumn(format="GBP %d"),
+                    "price_per_sqft": st.column_config.NumberColumn(format="GBP %.2f"),
+                    "distance_miles": st.column_config.NumberColumn(format="%.2f mi"),
+                    "match_score": st.column_config.NumberColumn(format="%.0f%%"),
+                    "price_deviation_pct": st.column_config.NumberColumn(format="%.1f%%"),
+                    "selection_reason": st.column_config.TextColumn(width="large"),
+                })
         else:
             st.info("No comparable evidence stored yet.")
         for warning in chosen.get("comparable_warnings") or []:

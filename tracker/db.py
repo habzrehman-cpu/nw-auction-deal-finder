@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS underwriting_overrides (
   residential_sdlt_mode TEXT,
   underwriting_notes TEXT,
   use_auto_comps INTEGER,
+  gdv_source_mode TEXT,
+  fee_source_mode TEXT,
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
 CREATE TABLE IF NOT EXISTS postcode_cache (
@@ -324,6 +326,8 @@ UNDERWRITING_MIGRATIONS = {
     "use_auto_comps": "INTEGER",
     "buyer_premium_minimum": "REAL",
     "search_fee": "REAL",
+    "gdv_source_mode": "TEXT",
+    "fee_source_mode": "TEXT",
 }
 
 
@@ -559,7 +563,7 @@ class Database:
             "sale_cost_pct", "exit_legal_cost", "finance_mode", "ltv_pct", "annual_interest_pct",
             "term_months", "arrangement_fee_pct", "exit_fee_pct", "valuation_fee",
             "target_profit_margin_pct", "target_equity_margin_pct", "residential_sdlt_mode",
-            "underwriting_notes", "use_auto_comps",
+            "underwriting_notes", "use_auto_comps", "gdv_source_mode", "fee_source_mode",
         ]
         payload = {k: values.get(k) for k in allowed}
         cols = ["property_id", "updated_at"] + allowed

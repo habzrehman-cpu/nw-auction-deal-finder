@@ -196,10 +196,37 @@ def _trim_price_outliers(comps: list[dict]) -> list[dict]:
     return kept if len(kept) >= 4 else comps
 
 
+def _tenure_similarity(subject_tenure: str, comp_tenure: str) -> float:
+    subject = str(subject_tenure or "").strip().lower()
+    comp = str(comp_tenure or "").strip().lower()
+    known = {"freehold", "leasehold"}
+    if subject in known and comp in known:
+        return 1.0 if subject == comp else 0.25
+    if subject in known or comp in known:
+        return 0.65
+    return 0.60
+
+
+def _price_coherence(price: float, reference: float | None) -> tuple[float, float]:
+    if not reference or reference <= 0 or price <= 0:
+        return 0.6, 0.0
+    deviation = abs(price - reference) / reference
+    # Full credit inside a 10% band, then taper to zero by a 60% deviation.
+    if deviation <= 0.10:
+        score = 1.0
+    else:
+        score = max(0.0, 1.0 - (deviation - 0.10) / 0.50)
+    return score, deviation
+
+
 def summarise_residential_comps(subject: dict, comps: list[dict], today: date | None = None) -> dict:
     today = today or datetime.now(timezone.utc).date()
     comps = _trim_price_outliers([dict(c) for c in comps if c.get("sale_price")])
     subject_type = infer_residential_subtype(subject)
+    subject_tenure = str(subject.get("tenure") or "Unknown")
+    subject_pc = _normalise_postcode(subject.get("postcode") or "")
+    candidate_prices = [float(c["sale_price"]) for c in comps if c.get("sale_price")]
+    local_median = median(candidate_prices) if candidate_prices else None
     ranked = []
     for c in comps:
         sold = _parse_date(c.get("sale_date"))
@@ -211,24 +238,86 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
         type_match = _type_similarity(subject_type, comp_type)
         if type_match <= 0:
             continue
-        distance_weight = 1.0 if distance <= 0.25 else 0.92 if distance <= 0.5 else 0.78 if distance <= 1.0 else 0.62 if distance <= 1.5 else 0.45
-        recency_weight = 1.0 if months <= 6 else 0.94 if months <= 12 else 0.82 if months <= 24 else 0.68
+
         same = bool(c.get("same_property")) or _same_address(subject, c)
         same_street = _same_street(subject, c)
-        same_factor = 0.45 if same else 1.0
-        street_factor = 1.18 if same_street and not same else 1.0
-        weight = min(1.2, type_match * distance_weight * recency_weight * same_factor * street_factor)
+        same_postcode = bool(subject_pc and subject_pc == _normalise_postcode(c.get("postcode") or ""))
+        tenure_match = _tenure_similarity(subject_tenure, c.get("tenure") or "Unknown")
+        price_coherence, price_deviation = _price_coherence(float(c.get("sale_price") or 0), local_median)
+
+        # Component scoring is deliberately additive rather than multiplicative so
+        # very close/recent sales do not all saturate at 100. A perfect score requires
+        # similarity across type, distance, recency, tenure, locality and price band.
+        distance_factor = max(0.0, 1.0 - min(distance, 2.0) / 2.0)
+        recency_factor = max(0.20, 1.0 - min(months, 48.0) / 48.0)
+        if same_street:
+            locality_factor = 1.0
+        elif same_postcode:
+            locality_factor = 0.75
+        elif distance <= 0.25:
+            locality_factor = 0.45
+        elif distance <= 0.50:
+            locality_factor = 0.25
+        elif distance <= 1.0:
+            locality_factor = 0.10
+        else:
+            locality_factor = 0.0
+
+        components = {
+            "type": 25.0 * type_match,
+            "distance": 25.0 * distance_factor,
+            "recency": 20.0 * recency_factor,
+            "tenure": 10.0 * tenure_match,
+            "locality": 10.0 * locality_factor,
+            "price_coherence": 10.0 * price_coherence,
+        }
+        score = sum(components.values())
+        if same:
+            score *= 0.55  # a prior sale of the subject is context, not an independent comp
+        score = max(0.0, min(100.0, score))
+
+        reasons = []
+        reasons.append("exact property type" if type_match >= 0.99 else "related residential subtype")
+        reasons.append(f"{distance:.2f} mi away")
+        reasons.append(f"sold {months:.0f} months ago")
+        if same_street:
+            reasons.append("same street")
+        elif same_postcode:
+            reasons.append("same postcode")
+        if tenure_match >= 0.99:
+            reasons.append("matching tenure")
+        elif tenure_match <= 0.30:
+            reasons.append("tenure differs")
+        if price_deviation >= 0.40:
+            reasons.append("price outlier vs local median")
+        if same:
+            reasons.append("prior sale of subject down-weighted")
+
+        metadata = dict(c.get("metadata") or {})
+        metadata.update({
+            "scoring_version": "residential-v2",
+            "match_reasons": reasons,
+            "outlier_flag": bool(price_deviation >= 0.40),
+            "price_deviation_pct": round(price_deviation * 100, 1),
+            "score_components": {k: round(v, 1) for k, v in components.items()},
+        })
         c.update({
             "months_ago": round(months, 1),
             "type_match": round(type_match, 2),
             "same_street": 1 if same_street else 0,
-            "match_score": round(weight * 100, 1),
+            "match_score": round(score, 1),
             "same_property": 1 if same else 0,
+            "metadata": metadata,
         })
         ranked.append(c)
+
     ranked.sort(key=lambda x: (x.get("match_score") or 0, -(x.get("distance_miles") or 0)), reverse=True)
-    # If we have enough strong evidence, do not let weaker house subtypes or distant
-    # sales widen the desktop range unnecessarily.
+
+    # Prefer non-outlier evidence when there is enough of it, then retain the prior
+    # exact-type / close-distance safeguards.
+    non_outliers = [c for c in ranked if not (c.get("metadata") or {}).get("outlier_flag") and not c.get("same_property")]
+    if len(non_outliers) >= 5:
+        ranked = non_outliers
     exact_close = [c for c in ranked if (c.get("type_match") or 0) >= 0.99 and (c.get("distance_miles") or 99) <= 1.0 and not c.get("same_property")]
     if len(exact_close) >= 4:
         ranked = exact_close
@@ -236,6 +325,7 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
     if len(very_close) >= 5:
         ranked = very_close
     ranked = ranked[:10]
+
     weighted = [(float(c["sale_price"]), max(0.01, float(c["match_score"]) / 100)) for c in ranked]
     mid = _weighted_quantile(weighted, 0.50)
     low = _weighted_quantile(weighted, 0.25)
@@ -247,16 +337,23 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
             high = max(float(c["sale_price"]) for c in ranked)
         if low == high:
             low, high = mid * 0.93, mid * 1.07
+
     prices = [float(c["sale_price"]) for c in ranked]
     dispersion = ((max(prices) - min(prices)) / mid) if n >= 3 and mid else 1.0
     exact_ratio = sum((c.get("type_match") or 0) >= 0.99 for c in ranked) / n if n else 0
     recent_ratio = sum((c.get("months_ago") or 999) <= 18 for c in ranked) / n if n else 0
     close_ratio = sum((c.get("distance_miles") or 99) <= 1.0 for c in ranked) / n if n else 0
     same_street_ratio = sum(bool(c.get("same_street")) for c in ranked) / n if n else 0
-    confidence = 18 + min(32, n * 4) + exact_ratio * 12 + recent_ratio * 10 + close_ratio * 8 + same_street_ratio * 8 - min(18, dispersion * 12)
+    outlier_ratio = sum(bool((c.get("metadata") or {}).get("outlier_flag")) for c in ranked) / n if n else 0
+    avg_match = sum(float(c.get("match_score") or 0) for c in ranked) / n if n else 0
+    confidence = (
+        10 + min(30, n * 3) + avg_match * 0.25 + exact_ratio * 8 + recent_ratio * 5
+        + close_ratio * 5 + same_street_ratio * 4 - min(30, dispersion * 30) - outlier_ratio * 15
+    )
     if n < 3:
         confidence = min(confidence, 42)
-    confidence = int(max(0, min(82, round(confidence))))
+    confidence = int(max(0, min(85, round(confidence))))
+
     guide = _float(subject.get("guide_price"))
     discount = ((mid - guide) / mid * 100) if mid and guide else None
     warnings = [
@@ -266,9 +363,11 @@ def summarise_residential_comps(subject: dict, comps: list[dict], today: date | 
         warnings.append("Fewer than five usable nearby sold comparables were found; widen the evidence set or verify with local agent/RICS evidence before bidding.")
     if dispersion > 0.45:
         warnings.append("Comparable sale prices are widely dispersed, which reduces confidence in the automated range.")
+    if outlier_ratio > 0:
+        warnings.append("One or more retained sales are materially outside the local price band and are down-weighted in the comparable score.")
     return {
         "provider": "HM Land Registry PPD",
-        "methodology": "Nearby standard residential sales, weighted by exact subtype, same-street match, distance and recency, with weaker evidence removed when enough close exact-type sales exist.",
+        "methodology": "Nearby standard residential sales scored by subtype, distance, recency, tenure, locality and price coherence; subject prior sales and price outliers are down-weighted.",
         "valuation_low": _money_round(low),
         "valuation_mid": _money_round(mid),
         "valuation_high": _money_round(high),
