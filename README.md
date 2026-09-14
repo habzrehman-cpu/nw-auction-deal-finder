@@ -861,3 +861,27 @@ The Seller tab now distinguishes verified disposal evidence from listing-only si
 ## v1.13.13 — Auction History Integrity
 
 Lotly now reconciles contradictory auction statuses before presenting them to a beginner investor. Repeated observations are grouped, auctioneer `Sold` statuses are not treated as completed legal sales, and a property that is currently available after an earlier sold signal is described as **returned/available with the previous sale status needing clarification**. Negotiation leverage only uses concrete failed-auction or verified return-to-market signals. The Deal Room evidence strip also shows incomplete legal packs by percentage instead of labelling them simply `Verified`.
+
+## v1.13.14 — Beginner Location Decision Screen
+The Deal Room Location tab now translates existing sold-comparable, planning/environment, road-access and underwriting evidence into a beginner-safe location screen. It refuses to invent rent, demand, crime, amenity quality or sale speed when those datasets are not evidenced, and gives the investor a short list of checks to complete before relying on the location.
+
+## v1.13.15 — Location integrity and beginner Workspace
+Location now switches the sidebar to the correct residential/commercial buying criteria for the deal being viewed, describes flood evidence without overstating it, and includes a persistent rental-comparable workflow that can evidence rent and gross yield. Workspace is now the beginner investor's action centre: a single next action, evidence-derived checklist, deal stage, contacts, offer/price-test history, notes and deal brief. Completing a Workspace task records progress but never clears an evidence STOP elsewhere in Lotly.
+
+## v1.13.16 — Workspace guardrails and guided actions
+
+Version 1.13.16 completes the beginner-first Workspace pass. Acquisition tasks are now separated into **Must resolve before bidding**, **Check before making an offer**, and **Negotiation actions**. Buyer actions and evidence resolution are tracked separately, so ticking a task cannot accidentally clear a legal or underwriting gate. Deal Room tabs are stateful and Workspace can send the user directly to the relevant evidence tab. Ready-to-offer, offer-made and acquired stages remain locked while a red STOP is unresolved. Workspace also stores the buyer's solicitor contact separately from any solicitor/contact extracted from the seller's legal pack.
+
+## v1.13.17 — Funding confirmation and contact-aware Workspace
+
+Version 1.13.17 completes the final Workspace safety pass. Fast auction completion deadlines now have an explicit buyer funding confirmation flow, optional broker/lender contact and evidence reference. The funding STOP clears only after completion capability is genuinely confirmed from a completion-ready funding position; an agreement in principle is not treated as enough. Solicitor and funding contacts are surfaced directly beside the relevant Workspace actions so a beginner can act without hunting through the page.
+
+## v1.14.0 — Guided Deal Room Release Candidate
+
+Lotly now opens each property into a beginner-first **Guided View** while preserving the approved Discover/Home experience. The guided screen asks whether the property makes sense to buy, lets the buyer choose **Flip** or **Buy & Keep**, and then walks through price, return, comparable value, legal/property checks, location, seller/auction evidence, funding and the final decision.
+
+The v1.14 property-check picture is **England-only** and uses **CLEAR / CHECK / STOP / NOT VERIFIED** for the legal pack, planning, Building Regulations/Building Control evidence, flood risk, coal/mining and previous property history. Missing evidence is never treated as clear. Auction legal packs that cannot be accessed automatically can be uploaded directly from the Guided View and remain protected by Lotly's property-identity evidence firewall.
+
+Financials now separates return quality from evidence quality, legacy residential comparable evidence is automatically migrated where possible, and valuation/max-buy outputs remain provisional until their evidence basis is supported. Canonical auction status and Seller negotiation leverage are reused across the Deal Room so beginner-facing screens do not contradict one another.
+
+The Guided Deal Room design is locked in `DEAL_ROOM_DESIGN_LOCK.md`; Discover remains independently locked by `DISCOVER_DESIGN_LOCK.md`.

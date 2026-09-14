@@ -24,6 +24,7 @@ VERIFIED_LEGAL_TYPES = {
     "Legal pack", "Special conditions", "Title register", "Title plan", "Lease",
     "Addendum", "EPC", "Contract", "Transfer", "Search", "Tenancy agreement",
     "Management pack", "Official copy", "Auction contract", "Uploaded legal document",
+    "Building regulations", "Mining search",
 }
 
 DOCUMENT_TYPE_PATTERNS = [
@@ -36,6 +37,8 @@ DOCUMENT_TYPE_PATTERNS = [
     (re.compile(r"\blease\b|underlease", re.I), "Lease"),
     (re.compile(r"tenancy\s+agreement|assured\s+shorthold|\bAST\b", re.I), "Tenancy agreement"),
     (re.compile(r"management\s+pack|LPE1|FME1", re.I), "Management pack"),
+    (re.compile(r"building\s+(?:regulations?|control).*(?:completion|final|certificate|notice)|(?:completion|final)\s+certificate.*building", re.I), "Building regulations"),
+    (re.compile(r"coal\s+mining\s+search|mining\s+search|CON29M", re.I), "Mining search"),
     (re.compile(r"local\s+search|environmental\s+search|drainage\s+search|search\s+result", re.I), "Search"),
     (re.compile(r"epc|energy\s+performance", re.I), "EPC"),
     (re.compile(r"addendum", re.I), "Addendum"),

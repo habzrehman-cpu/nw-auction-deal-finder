@@ -380,9 +380,15 @@ def location_beginner_summary(row: dict, comparables: Iterable[dict] | None = No
     nearest_junction = str(row.get("nearest_junction") or row.get("nearest_motorway") or "").strip()
     distance_kind = str(row.get("motorway_distance_kind") or ("road" if road_miles is not None else "straight-line" if air_miles is not None else "")).strip()
     if measured_miles is not None:
-        access_status, access_tone = "MEASURED", "good" if measured_miles <= 5 else "warn"
-        access_value = f"{measured_miles:.1f} mi to {nearest_junction or 'motorway access'}"
-        access_detail = f"{distance_kind.title() if distance_kind else 'Measured'} distance. Road access is evidence, not proof of tenant or buyer demand."
+        meaningful_road = bool(re.search(r"(?:^|\b)(?:M\d+|A\d{2,4}|J(?:unction)?\s*\d+|motorway)(?:\b|$)", nearest_junction, re.I))
+        access_status = "MEASURED" if meaningful_road else "CHECK"
+        access_tone = "good" if meaningful_road and measured_miles <= 5 else "warn"
+        if meaningful_road:
+            access_value = f"{measured_miles:.1f} mi to {nearest_junction}"
+            access_detail = f"{distance_kind.title() if distance_kind else 'Measured'} strategic-road distance. Access is evidence, not proof of tenant or buyer demand."
+        else:
+            access_value = f"Strategic-road access measured at {measured_miles:.1f} mi"
+            access_detail = "The stored reference point is not a clearly recognisable motorway/A-road junction, so Lotly is suppressing the place name until the access reference is verified."
     else:
         access_status, access_tone = "CHECK", "warn"
         access_value = "Access still being enriched"
@@ -1375,7 +1381,7 @@ def next_actions(row: dict, story: dict | None = None) -> list[dict]:
         add(3, "Check the local planning authority record", "Official planning coverage is incomplete or has not been run.")
     if row.get("status") in {"Available post-auction", "No Bids", "Unsold", "Last Bid"}:
         opener = row.get("opening_offer")
-        reason = "The property has a failed/post-auction signal. Test seller expectation before increasing price."
+        reason = "The property is currently available after an auction-related status. Test the seller expectation before increasing price; do not describe it as a failed auction unless the result is evidenced."
         action = f"Call the auctioneer and test an opening position around GBP {float(opener):,.0f}" if opener else "Call the auctioneer and establish current seller expectation"
         add(4, action, reason)
     elif row.get("auction_date"):
@@ -1490,3 +1496,248 @@ def deal_brief_markdown(row: dict, story: dict, readiness: dict, actions: list[d
         lines.append(f"{idx}. {action.get('action')} - {action.get('reason')}")
     lines += ["", "---", "Desktop acquisition triage only. Verify legal, valuation, tax, condition and funding evidence before bidding."]
     return "\n".join(lines)
+
+# ---------------------------------------------------------------------------
+# v1.14.0 Guided Deal Room helpers
+# ---------------------------------------------------------------------------
+
+def evidence_confidence_summary(row: dict, legal_summary: dict | None = None,
+                                comparables: Iterable[dict] | None = None) -> dict:
+    """Return a transparent evidence-confidence score, separate from return quality.
+
+    This is deliberately not a valuation opinion.  It measures whether the main inputs
+    behind the beginner decision screen are supported by current evidence.  Legacy
+    comparable scoring is capped until it is refreshed through the current model.
+    """
+    legal_summary = dict(legal_summary or {})
+    comps = [dict(x) for x in (comparables or [])]
+    comp_conf = max(0, min(100, int(row.get("comparable_confidence") or 0)))
+    legacy_comps = bool(comps) and any(
+        (c.get("metadata") or {}).get("scoring_version") != "residential-v2"
+        for c in comps
+    ) and str(row.get("property_type") or "").lower() not in {"industrial", "commercial", "mixed use", "development", "land"}
+    effective_comp = min(comp_conf, 45) if legacy_comps else comp_conf
+
+    uw_conf = max(0, min(100, int(row.get("underwriting_confidence") or 0)))
+    legal_status = str(row.get("legal_status") or legal_summary.get("status") or "").lower()
+    legal_pct = max(0, min(100, int(row.get("legal_pack_completeness_pct") or legal_summary.get("pack_completeness_pct") or 0)))
+    pack_changed = bool(row.get("legal_pack_changed") or legal_summary.get("pack_changed"))
+    severe_flags = [
+        f for f in (row.get("legal_risk_flags") or legal_summary.get("risk_flags") or [])
+        if int(f.get("severity") or 0) >= 4
+    ]
+    if legal_status == "verified" and legal_pct >= 100 and not pack_changed and not severe_flags:
+        legal_component = 100
+    elif legal_status == "verified" and not pack_changed:
+        legal_component = min(75, legal_pct)
+    elif legal_status in {"verified-no-text", "candidates-only", "links-only"}:
+        legal_component = min(40, legal_pct)
+    else:
+        legal_component = 0
+
+    planning_component = 100 if str(row.get("planning_status") or "").lower() == "ok" else 0
+    score = int(round(
+        effective_comp * 0.40 + uw_conf * 0.25 + legal_component * 0.25 + planning_component * 0.10
+    ))
+    if legacy_comps:
+        state = "PROVISIONAL"
+        label = "Provisional — comparables need current-model refresh"
+    elif score >= 75:
+        state = "SUPPORTED"
+        label = "Good evidence coverage"
+    elif score >= 50:
+        state = "PROVISIONAL"
+        label = "Useful, but important evidence is still open"
+    else:
+        state = "LOW"
+        label = "Too much evidence is still missing"
+    return {
+        "score": score,
+        "state": state,
+        "label": label,
+        "legacy_comparables": legacy_comps,
+        "components": {
+            "comparables": effective_comp,
+            "underwriting": uw_conf,
+            "legal": legal_component,
+            "planning": planning_component,
+        },
+    }
+
+
+def due_diligence_beginner_summary(row: dict, legal_summary: dict | None = None,
+                                    planning_items: Iterable[dict] | None = None,
+                                    legal_documents: Iterable[dict] | None = None,
+                                    history: Iterable[dict] | None = None,
+                                    comparables: Iterable[dict] | None = None) -> dict:
+    """Build the England-only property-check picture for a novice investor.
+
+    CLEAR is only used where Lotly has actual evidence.  Missing public records or an
+    unavailable council/legal source are shown as NOT VERIFIED rather than silently
+    treated as clean.  The cards are evidence summaries, not conveyancing searches.
+    """
+    legal_summary = dict(legal_summary or {})
+    planning_items = [dict(x) for x in (planning_items or [])]
+    legal_documents = [dict(x) for x in (legal_documents or [])]
+    history = [dict(x) for x in (history or [])]
+    comparables = [dict(x) for x in (comparables or [])]
+    extracted = legal_summary.get("extracted_fields") or row.get("legal_extracted_fields") or {}
+    legal_flags = legal_summary.get("risk_flags") or row.get("legal_risk_flags") or []
+    legal_status = str(row.get("legal_status") or legal_summary.get("status") or "").lower()
+    legal_pct = int(row.get("legal_pack_completeness_pct") or legal_summary.get("pack_completeness_pct") or 0)
+    pack_changed = bool(row.get("legal_pack_changed") or legal_summary.get("pack_changed"))
+    severe_legal = [f for f in legal_flags if int(f.get("severity") or 0) >= 4]
+
+    checks = []
+    def add(key, label, status, summary, why, next_step, destination="Legal & Planning"):
+        checks.append({
+            "key": key, "label": label, "status": status, "summary": summary,
+            "why": why, "next": next_step, "destination": destination,
+        })
+
+    # Legal pack
+    if severe_legal:
+        add("legal", "Legal pack", "STOP",
+            "A serious issue is present in verified legal evidence",
+            "Auction contracts can bind you quickly and serious title/cost/tenure issues can change the economics.",
+            "Have your solicitor review the flagged issue before making anything binding.")
+    elif legal_status == "verified" and legal_pct >= 100 and not pack_changed:
+        add("legal", "Legal pack", "CLEAR", f"Core pack verified and {legal_pct}% complete",
+            "The title/special conditions and core documents define what you are buying and the auction terms.",
+            "Ask your solicitor to confirm the latest pack and any auction-day addendum.")
+    else:
+        add("legal", "Legal pack", "STOP", f"Core pack is only {legal_pct}% verified" if legal_pct else "Legal pack not verified",
+            "Missing or stale legal documents can change ownership, costs, occupation and completion obligations.",
+            "Open the auction listing, download the latest pack/addendum and upload it to Lotly.")
+
+    # Planning
+    planning_ok = str(row.get("planning_status") or "").lower() == "ok"
+    serious_planning = [
+        i for i in planning_items
+        if int(i.get("severity") or 0) >= 3 and (i.get("likely_subject") or i.get("kind") == "constraint")
+    ]
+    subject_apps = [i for i in planning_items if i.get("kind") == "application" and i.get("likely_subject")]
+    if not planning_ok:
+        add("planning", "Planning", "NOT VERIFIED", "Official planning screen has not completed",
+            "Past permissions, refusals and designations can restrict your intended works or use.",
+            "Run the planning check and review the local authority source record.")
+    elif serious_planning:
+        add("planning", "Planning", "CHECK", f"{len(serious_planning)} material planning/designation item(s) need review",
+            "A mapped constraint or subject-property record may affect extension, conversion or use.",
+            "Open the planning evidence and confirm the impact before fixing your strategy.")
+    else:
+        add("planning", "Planning", "CLEAR", f"Official screen run" + (f" · {len(subject_apps)} subject record(s) found" if subject_apps else " · no material blocker returned"),
+            "Planning history can reveal permissions, refusals, conservation/designation constraints and prior alterations.",
+            "Review any subject-property records if your refurbishment or use depends on permission.")
+
+    # Building Regulations / Building Control evidence from verified legal documents.
+    br_complete = bool(extracted.get("building_regs_completion_flag"))
+    br_issue = bool(extracted.get("building_regs_issue_flag"))
+    alteration_words = re.compile(r"extension|loft|conversion|alteration|garage|annex|structural|change of use", re.I)
+    alteration_apps = [i for i in subject_apps if alteration_words.search(str((i.get("metadata") or {}).get("description") or i.get("label") or ""))]
+    if br_issue:
+        add("building-regs", "Building Regulations", "CHECK", "Legal evidence suggests Building Control approval/completion may be missing",
+            "Planning permission and Building Regulations are separate. Missing completion evidence can affect lending, resale and insurance.",
+            "Check the council Building Control record or obtain the completion/final certificate from the seller.")
+    elif br_complete:
+        add("building-regs", "Building Regulations", "CLEAR", "Completion/final certificate evidence found in the verified pack",
+            "Building Control evidence supports that relevant work was signed off against applicable regulations.",
+            "Open the source document and confirm it relates to the alteration you are relying on.")
+    elif alteration_apps:
+        add("building-regs", "Building Regulations", "CHECK", "Planning records show alteration work, but Building Control completion is not yet evidenced",
+            "Planning approval does not prove Building Regulations sign-off.",
+            "Search the council Building Control portal and upload any completion/final certificate.")
+    else:
+        add("building-regs", "Building Regulations", "NOT VERIFIED", "No Building Control completion evidence is currently held",
+            "Older alterations may still need evidence even where no planning application was required.",
+            "Check the council Building Control portal if the property shows extensions, conversions or structural alterations.")
+
+    # Flood mapping uses the existing official Planning Data screen.
+    flood_items = [i for i in planning_items if str(i.get("dataset") or "") == "flood-risk-zone"]
+    near_flood = []
+    for item in flood_items:
+        d = _num(item.get("distance_miles"))
+        if item.get("likely_subject") or d is None or d <= 0.05:
+            near_flood.append(item)
+    if not planning_ok:
+        add("flood", "Flood risk", "NOT VERIFIED", "Flood mapping has not yet been screened",
+            "Flood exposure can affect insurance, lending, resale and future repair costs.",
+            "Run the official planning/flood screen and review the source map.")
+    elif near_flood:
+        add("flood", "Flood risk", "CHECK", "Mapped flood-risk evidence is at or very near the property",
+            "Mapped risk is not proof the building will flood, but it needs property-level checking and an insurance indication.",
+            "Open the official flood map and obtain an insurance quote/indication before purchase.")
+    elif flood_items:
+        nearest = min((_num(i.get("distance_miles")) for i in flood_items if _num(i.get("distance_miles")) is not None), default=None)
+        add("flood", "Flood risk", "CHECK", f"Flood-risk mapping exists nearby" + (f" (~{nearest:.2f} mi)" if nearest is not None else ""),
+            "Nearby mapped flood risk does not prove the property itself is affected.",
+            "Review the official map at property level and confirm insurance availability.")
+    else:
+        add("flood", "Flood risk", "CLEAR", "No mapped flood-risk item returned by the current official screen",
+            "This is an area-level evidence screen, not a guarantee that the individual property cannot flood.",
+            "For a final purchase decision, review the official property-level flood map and insurer response.")
+
+    # Coal/mining: require actual report/search evidence before CLEAR.
+    mining_issue = bool(extracted.get("mining_issue_flag")) or any("mining" in str(f.get("label") or "").lower() for f in legal_flags)
+    mining_search = bool(extracted.get("mining_search_present"))
+    if mining_issue:
+        add("mining", "Coal / mining", "CHECK", "Mining-related risk wording is present in verified legal evidence",
+            "Mine entries, subsidence or past workings can affect value, lending, insurance and structural risk.",
+            "Read the mining report and ask your solicitor/surveyor to confirm the significance of the finding.")
+    elif mining_search:
+        add("mining", "Coal / mining", "CLEAR", "A verified coal/mining search is present and no mining issue was extracted",
+            "A property-specific mining report is stronger evidence than simply being inside/outside a broad mining area.",
+            "Review the original report before relying on the CLEAR status.")
+    else:
+        add("mining", "Coal / mining", "NOT VERIFIED", "No property-specific coal/mining search is currently held",
+            "Some English locations require a mining search; Lotly should not infer a clean result from silence.",
+            "If the property is in a mining area, obtain/upload the official search before purchase.")
+
+    # Previous property history: use verified title price paid first, otherwise only
+    # claim auction/listing history.  Subject-property prior sales in the comp feed are
+    # deliberately described as possible until identity is exact.
+    title_price = _num(extracted.get("title_price_paid"))
+    title_date = str(extracted.get("title_price_paid_date") or "").strip()
+    subject_tokens = {t for t in re.findall(r"[a-z0-9]+", str(row.get("address") or row.get("title") or "").lower()) if len(t) >= 3}
+    possible_subject_sales = []
+    for comp in comparables:
+        comp_tokens = {t for t in re.findall(r"[a-z0-9]+", str(comp.get("address") or "").lower()) if len(t) >= 3}
+        if subject_tokens and len(subject_tokens & comp_tokens) >= max(2, min(4, len(subject_tokens))):
+            possible_subject_sales.append(comp)
+    if title_price:
+        add("history", "Property history", "CLEAR", f"Verified title evidence records a previous price paid of GBP {title_price:,.0f}" + (f" ({title_date})" if title_date else ""),
+            "Previous ownership/price history helps explain the seller position and whether the current guide reflects a genuine change in value.",
+            "Compare the title history with auction/listing history and material alterations since that purchase.", destination="Auction")
+    elif possible_subject_sales:
+        add("history", "Property history", "CHECK", f"{len(possible_subject_sales)} possible prior subject sale(s) appear in sold-price evidence",
+            "Address matching can be imperfect, especially for flats and renamed buildings.",
+            "Open the sold evidence and verify the exact address/title before treating it as this property's history.", destination="Comparables")
+    elif history:
+        add("history", "Property history", "CHECK", f"{len(history)} auction/listing observation(s) are stored; prior Land Registry ownership history is not yet verified",
+            "Auction history explains marketing changes, but it is not the same as completed sale/ownership history.",
+            "Review the auction timeline and title register before drawing conclusions about past sales.", destination="Auction")
+    else:
+        add("history", "Property history", "NOT VERIFIED", "No verified previous-sale history is currently held",
+            "Previous sales, prior auction appearances and guide changes can explain why the property is being sold now.",
+            "Refresh sold evidence and obtain the title register/legal pack.", destination="Auction")
+
+    stops = [c for c in checks if c["status"] == "STOP"]
+    open_checks = [c for c in checks if c["status"] in {"CHECK", "NOT VERIFIED"}]
+    clear = [c for c in checks if c["status"] == "CLEAR"]
+    if stops:
+        overall = "STOP"
+        overall_copy = f"{len(stops)} critical blocker(s) must be resolved before bidding."
+    elif open_checks:
+        overall = "CHECK"
+        overall_copy = f"No hard blocker is proven, but {len(open_checks)} evidence check(s) are still open."
+    else:
+        overall = "CLEAR"
+        overall_copy = "All currently supported property checks are clear; professional review still applies."
+    return {
+        "checks": checks,
+        "overall": overall,
+        "overall_copy": overall_copy,
+        "stop_count": len(stops),
+        "open_count": len(open_checks),
+        "clear_count": len(clear),
+    }

@@ -34,7 +34,7 @@ Use the full Lotly wordmark in desktop headers, reports and marketing. Use the i
 - **Refresh model:** data updating is a utility action, not the main call-to-action.
 - **Comparison:** up to four lots can be compared side by side without leaving discovery.
 
-## v1.12.1 presentation standard
+## v1.12.2 presentation standard
 - Use the Lotly mark once per screen hierarchy; avoid duplicate logo/masthead treatment.
 - Fixed image ratios are part of the brand rhythm. Missing imagery must use the branded Lotly placeholder rather than empty space.
 - "Estimated value" is the customer-facing term; methodology and desktop valuation language belongs in the evidence layer.

@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS deal_workspace (
   funding_contact_email TEXT,
   funding_contact_phone TEXT,
   funding_reference TEXT,
+  investment_strategy TEXT,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
@@ -376,6 +377,7 @@ DEAL_WORKSPACE_MIGRATIONS = {
     "funding_contact_email": "TEXT",
     "funding_contact_phone": "TEXT",
     "funding_reference": "TEXT",
+    "investment_strategy": "TEXT",
 }
 
 DEAL_TASK_MIGRATIONS = {
@@ -1137,6 +1139,7 @@ class Database:
             "funding_position": "", "funding_completion_status": "",
             "funding_contact_name": "", "funding_contact_email": "",
             "funding_contact_phone": "", "funding_reference": "",
+            "investment_strategy": "Flip",
         }
 
     def save_workspace(self, property_id, stage="New", next_action="", follow_up_date=""):
@@ -1159,6 +1162,21 @@ class Database:
                 ON CONFLICT(property_id) DO UPDATE SET solicitor_name=excluded.solicitor_name,
                 solicitor_email=excluded.solicitor_email,solicitor_phone=excluded.solicitor_phone,updated_at=excluded.updated_at""",
                 (property_id, str(name or "")[:300], str(email or "")[:300], str(phone or "")[:100], now),
+            )
+            con.commit()
+
+    def save_investment_strategy(self, property_id, strategy="Flip"):
+        """Persist the buyer's beginner-facing strategy choice for the guided Deal Room."""
+        strategy = str(strategy or "Flip").strip()
+        if strategy not in {"Flip", "Buy & Keep"}:
+            strategy = "Flip"
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO deal_workspace(property_id,stage,next_action,follow_up_date,investment_strategy,updated_at)
+                VALUES(?, 'New', '', '', ?, ?)
+                ON CONFLICT(property_id) DO UPDATE SET investment_strategy=excluded.investment_strategy,updated_at=excluded.updated_at""",
+                (property_id, strategy, now),
             )
             con.commit()
 

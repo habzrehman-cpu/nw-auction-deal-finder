@@ -1,20 +1,28 @@
-# v1.10.3 live test guide
+# Lotly v1.12.2 — Live Acceptance Test
 
-## First: validate the evidence purge on the known Eddisons lot
+Use this as a professional buyer, not as a developer. The first screen should answer **what should I investigate today?** in under 30 seconds.
 
-1. Open the PE19 5EE Eddisons property used during v1.10.2 testing.
-2. Open **Legal & planning** and press **Fetch / refresh legal pack**.
-3. Confirm the revalidation notice reports stored documents checked.
-4. Confirm Great Chesterford Court is **Rejected / cross-property**.
-5. Confirm **Passing rent £18,000** is no longer in the legal facts/evidence trail.
-6. Confirm any company/BTG ownership intelligence derived only from that rejected document is gone/quarantined.
-7. Confirm the deal remains **BID BLOCKED** while Title Register, Title Plan and Special Conditions remain unverified.
+## Discover
+- Only one Lotly brand treatment is visible in the main hierarchy; no clipped duplicate logo.
+- Property imagery uses a consistent ratio. Missing imagery shows a branded Lotly placeholder of the same size.
+- Top Opportunity appears before the general feed.
+- Standard cards use the same Lotly Score visual language as the featured opportunity.
+- Cards show Guide, Estimated value and Max buy, plus Potential profit / guide discount where available.
+- Browse cards show no more than three primary badges plus a compact "+N more" disclosure.
+- Quick Look is labelled consistently.
+- Search / market / sort controls remain accessible while scrolling on desktop.
 
-## Daily-use UX test
+## Market movement
+On the second browser session after data has changed, confirm Lotly can show:
+- New since last visit
+- Reduced since last visit
+- Newly post-auction since last visit
+The market brief must be based on persisted history, not a hard-coded demo state.
 
-- Use **Residential / Commercial** to switch markets.
-- Work mainly from **Best deals**, **Unsold**, **Reductions** and **Shortlist**.
-- Try **Cards / Map / Table** and note which feels fastest for sourcing.
-- Open a deal and judge whether Summary, Seller, Numbers, Comps, History, Legal & planning, Location and Workspace answer the next decision without hunting.
-- Shortlist at least three properties, add notes/follow-up dates, reboot Streamlit and confirm persistence.
-- Record anything that feels unclear, duplicated, visually noisy or too technical; the next dedicated release is the UI/UX redesign.
+## Deal Room
+- Estimated value terminology is customer-friendly.
+- Legal/planning unknowns remain explicit.
+- Bid blockers are still driven by the evidence firewall and Property Identity Lock.
+
+## Acceptance standard
+A professional investor should be able to identify the strongest three opportunities, understand the core money case and spot the principal blocker without needing to open a spreadsheet or decode technical labels.

@@ -81,7 +81,7 @@ RISK_PATTERNS = [
     (r"transfer of a going concern|\btogc\b", 2, "TOGC treatment requires tax/legal confirmation"),
     (r"easement|right of way|rights of access|rights reserved", 2, "Easement / access rights require review"),
     (r"chancel repair", 2, "Chancel-repair wording"),
-    (r"mining search|coal mining|mine shaft", 3, "Mining risk/search issue"),
+    (r"mine\s*shaft|mine\s+entry|mining\s+subsidence|ground\s+movement|coal\s+mining.{0,120}(?:affected|risk|hazard|entry|subsidence)", 3, "Mining risk/search issue"),
     (r"contaminat|landfill|hazardous substance", 5, "Contamination / environmental wording"),
     (r"asbestos", 3, "Asbestos wording"),
     (r"tenanted|tenant|assured shorthold|ast\b|lease in place|occupier", 2, "Occupational rights / tenancy require review"),
@@ -936,6 +936,19 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
     restrictive_covenant_flag = bool(re.search(r"restrictive\s+covenant|covenant\s+not\s+to|restriction\s+on\s+use", text, re.I))
     overage_flag = bool(re.search(r"overage|clawback|uplift\s+provision", text, re.I))
     insurance_flag = bool(re.search(r"buildings?\s+insurance|insurance\s+premium|insured\s+by\s+the\s+landlord", text, re.I))
+    building_regs_completion_flag = bool(re.search(
+        r"building\s+(?:regulations?|control).{0,140}(?:completion|final)\s+(?:certificate|notice)|"
+        r"(?:completion|final)\s+certificate.{0,140}building\s+(?:regulations?|control)", text, re.I | re.S
+    ))
+    building_regs_issue_flag = bool(re.search(
+        r"(?:no|without|lack(?:ing)?|missing|not\s+obtained|not\s+available).{0,100}building\s+(?:regulations?|control)|"
+        r"building\s+(?:regulations?|control).{0,120}(?:not\s+obtained|missing|no\s+completion|regularisation|indemnity)", text, re.I | re.S
+    ))
+    mining_search_present = bool(re.search(r"coal\s+mining\s+search|mining\s+search|\bCON29M\b", text, re.I))
+    mining_issue_flag = bool(re.search(
+        r"mine\s*shaft|mine\s+entry|ground\s+movement|mining\s+subsidence|"
+        r"coal\s+mining.{0,120}(?:affected|risk|hazard|entry|subsidence)", text, re.I | re.S
+    ))
 
     extracted = {
         "title_number": title_number,
@@ -971,6 +984,10 @@ def extract_legal_fields(text: str, fallback_lease_years=None) -> tuple[dict, li
         "restrictive_covenant_flag": restrictive_covenant_flag,
         "overage_clawback_flag": overage_flag,
         "insurance_wording_flag": insurance_flag,
+        "building_regs_completion_flag": building_regs_completion_flag,
+        "building_regs_issue_flag": building_regs_issue_flag,
+        "mining_search_present": mining_search_present,
+        "mining_issue_flag": mining_issue_flag,
     }
     return extracted, _extract_professional_contacts(text)
 
@@ -1290,6 +1307,8 @@ def analyse_legal_documents(documents: list[dict], extra_text: str = "") -> dict
         (r"restrictive\s+covenant|covenant\s+not\s+to|restriction\s+on\s+use", "Restrictive covenant", "Detected" if verified_fields.get("restrictive_covenant_flag") else None),
         (r"easement|rights?\s+of\s+way|rights\s+of\s+access|rights\s+reserved", "Rights / easements", "Detected" if verified_fields.get("rights_easements_flag") else None),
         (r"overage|clawback|uplift\s+provision", "Overage / clawback", "Detected" if verified_fields.get("overage_clawback_flag") else None),
+        (r"building\s+(?:regulations?|control).{0,140}(?:completion|final)\s+(?:certificate|notice)|(?:completion|final)\s+certificate.{0,140}building", "Building Regulations completion evidence", "Detected" if verified_fields.get("building_regs_completion_flag") else None),
+        (r"coal\s+mining\s+search|mining\s+search|\bCON29M\b", "Coal / mining search", "Detected" if verified_fields.get("mining_search_present") else None),
     ]
     for pattern, label, value in evidence_specs:
         if value in (None, "", False):
