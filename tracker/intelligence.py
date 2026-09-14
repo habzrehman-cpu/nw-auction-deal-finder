@@ -547,9 +547,9 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
                                location_summary: dict | None = None) -> dict:
     """Build a novice-friendly acquisition action plan from existing evidence.
 
-    Workspace tasks describe *actions the buyer should take*. Completing a task does not
-    override evidence gates elsewhere in Lotly; legal/planning/valuation readiness remains
-    authoritative.
+    Workspace tasks describe *actions the buyer should take*. Completing an action never
+    closes the underlying evidence issue. Auto tasks therefore carry both a buyer-action
+    state (stored in the database) and an evidence state (Open/Resolved).
     """
     readiness = dict(readiness or {})
     actions = [dict(x) for x in (actions or [])]
@@ -573,34 +573,38 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
     status_low = str(row.get("status") or "").lower()
 
     tasks = []
-    def add(key, category, title, detail, priority="check"):
-        tasks.append({"key": key, "category": category, "title": title, "detail": detail, "priority": priority})
+
+    def add(key, category, title, detail, priority="check", group="pre_offer", destination=""):
+        tasks.append({
+            "key": key, "category": category, "title": title, "detail": detail,
+            "priority": priority, "group": group, "destination": destination,
+        })
 
     if legal_pct < 100:
         missing = ", ".join(str(x).replace("_", " ").title() for x in legal_missing[:4]) or "core legal documents"
-        add("legal-pack", "Legal", "Complete the legal pack", f"Still missing or unverified: {missing}.", "stop")
+        add("legal-pack", "Legal", "Complete the legal pack", f"Still missing or unverified: {missing}.", "stop", "must_resolve", "Legal & Planning")
     if severe_flags:
         labels = "; ".join(_clean(x.get("label") or "legal issue", 90) for x in severe_flags[:3])
-        add("legal-stop-review", "Legal", "Ask your solicitor to clear the red legal issues", labels, "stop")
+        add("legal-stop-review", "Legal", "Ask your solicitor to clear the red legal issues", labels, "stop", "must_resolve", "Legal & Planning")
     if not planning_screened:
-        add("planning-screen", "Legal", "Run and review the planning check", "Confirm any planning, designation, flood or environmental constraints.", "check")
+        add("planning-screen", "Legal", "Run and review the planning check", "Confirm any planning, designation, flood or environmental constraints.", "check", "pre_offer", "Legal & Planning")
     if comp_conf < 70:
-        add("valuation-evidence", "Numbers", "Strengthen the valuation evidence", f"Comparable confidence is {comp_conf}%; verify the strongest local sold evidence before relying on a ceiling.", "check")
+        add("valuation-evidence", "Numbers", "Strengthen the valuation evidence", f"Comparable confidence is {comp_conf}%; verify the strongest local sold evidence before relying on a ceiling.", "check", "pre_offer", "Comparables")
     if int(location_summary.get("rental_comp_count") or 0) < 3 and not _num(underwriting.get("erv_annual")):
-        add("rental-evidence", "Numbers", "Add at least 3 rental comparables", "Use current comparable rents to evidence achievable rent and gross yield.", "check")
+        add("rental-evidence", "Numbers", "Add at least 3 rental comparables", "Use current comparable rents to evidence achievable rent and gross yield.", "check", "pre_offer", "Location")
     if completion_days is not None and completion_days <= 14:
-        add("funding-deadline", "Money", f"Confirm funds can complete within {int(completion_days)} days", "Auction completion is fast. Confirm cash/finance, solicitor capacity and transfer timing before any binding bid.", "stop" if readiness_status == "BID BLOCKED" else "check")
+        add("funding-deadline", "Money", f"Confirm funds can complete within {int(completion_days)} days", "Auction completion is fast. Confirm cash/finance, solicitor capacity and transfer timing before any binding bid.", "stop" if readiness_status == "BID BLOCKED" else "check", "must_resolve", "Financials")
     else:
-        add("funding-proof", "Money", "Confirm proof of funds and buying costs", "Make sure purchase funds, tax, legal fees, auction fees and contingency are available before offering.", "check")
-    add("viewing-condition", "Property", "Inspect the property and condition", "Arrange a viewing or suitable survey/condition check so the numbers reflect the property you are actually buying.", "check")
+        add("funding-proof", "Money", "Confirm proof of funds and buying costs", "Make sure purchase funds, tax, legal fees, auction fees and contingency are available before offering.", "check", "pre_offer", "Financials")
+    add("viewing-condition", "Property", "Inspect the property and condition", "Arrange a viewing or suitable survey/condition check so the numbers reflect the property you are actually buying.", "check", "pre_offer", "")
     if flat_like:
-        add("block-safety", "Property", "Check the block, service charge and building safety", "Confirm service charge, major works, insurance and any EWS1/cladding or Building Safety Act exposure.", "check")
+        add("block-safety", "Property", "Check the block, service charge and building safety", "Confirm service charge, major works, insurance and any EWS1/cladding or Building Safety Act exposure.", "check", "pre_offer", "Legal & Planning")
     if auction_integrity.get("sale_status_conflict"):
-        add("auction-sequence", "Auctioneer", "Ask the auctioneer what happened to the earlier sale status", "The property is available again after a previous sold-status signal. Confirm whether a sale fell through and the seller's position now.", "check")
+        add("auction-sequence", "Auctioneer", "Ask the auctioneer what happened to the earlier sale status", "The property is available again after a previous sold-status signal. Confirm whether a sale fell through and the seller's position now.", "check", "negotiation", "Auction")
     elif status_low in {"available post-auction", "unsold", "no bids", "last bid", "relisted"}:
-        add("auctioneer-price", "Auctioneer", "Ask what the seller wants now", "Test the seller's current expectation and whether there are competing offers before increasing your price.", "check")
+        add("auctioneer-price", "Auctioneer", "Ask what the seller wants now", "Test the seller's current expectation and whether there are competing offers before increasing your price.", "check", "negotiation", "Seller")
     if row.get("opening_offer"):
-        add("price-test", "Auctioneer", f"Price-test around GBP {float(row.get('opening_offer')):,.0f}", "Treat this as a non-binding conversation while any red STOP item remains.", "check")
+        add("price-test", "Auctioneer", f"Price-test around GBP {float(row.get('opening_offer')):,.0f}", "Treat this as a non-binding conversation while any red STOP item remains.", "check", "negotiation", "Seller")
 
     if readiness_status == "BID BLOCKED":
         workspace_status = "BLOCKED — CHECKS STILL OPEN"
@@ -612,9 +616,11 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
         workspace_status = "DUE DILIGENCE"
         status_tone = "warn"
 
-    next_action = actions[0].get("action") if actions else None
-    if not next_action and tasks:
-        next_action = tasks[0]["title"]
+    # The single next action should always prefer a genuine pre-bid blocker.
+    priority_tasks = sorted(tasks, key=lambda x: (0 if x.get("group") == "must_resolve" else 1 if x.get("group") == "pre_offer" else 2))
+    next_action = priority_tasks[0].get("title") if priority_tasks else None
+    if not next_action and actions:
+        next_action = actions[0].get("action")
     if not next_action:
         next_action = "Review the remaining evidence before committing capital"
 
@@ -622,6 +628,7 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
         "status": workspace_status,
         "status_tone": status_tone,
         "readiness_pct": readiness_pct,
+        "readiness_status": readiness_status,
         "next_action": next_action,
         "tasks": tasks,
         "completion_days": completion_days,
@@ -630,6 +637,26 @@ def workspace_beginner_summary(row: dict, readiness: dict | None = None, actions
         "planning_screened": planning_screened,
     }
 
+
+def workspace_stage_gate(stage: str, readiness_status: str = "", tasks: Iterable[dict] | None = None) -> tuple[bool, str]:
+    """Protect beginners from advancing a deal while a hard evidence gate remains open.
+
+    Negotiating is deliberately allowed because Lotly can support non-binding price tests.
+    Ready-to-offer, Offer-made and Acquired imply a commitment threshold and therefore
+    remain blocked while a red STOP issue is unresolved.
+    """
+    stage = str(stage or "")
+    tasks = [dict(x) for x in (tasks or [])]
+    hard_stage = stage in {"Ready to offer", "Offer made", "Acquired"}
+    evidence_blocked = str(readiness_status or "").upper() == "BID BLOCKED" or any(
+        str(t.get("priority") or "").lower() == "stop"
+        and str(t.get("evidence_status") or "Open").lower() != "resolved"
+        for t in tasks
+        if str(t.get("source") or "auto") == "auto"
+    )
+    if hard_stage and evidence_blocked:
+        return False, f"Lotly will not move this deal to {stage} while a red STOP item remains unresolved. Clear the underlying evidence first."
+    return True, ""
 
 def _planning_timeline(planning_items: Iterable[dict]) -> list[dict]:
     out = []

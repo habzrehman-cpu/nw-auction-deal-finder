@@ -252,6 +252,9 @@ CREATE TABLE IF NOT EXISTS deal_workspace (
   stage TEXT NOT NULL DEFAULT 'New',
   next_action TEXT,
   follow_up_date TEXT,
+  solicitor_name TEXT,
+  solicitor_email TEXT,
+  solicitor_phone TEXT,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(property_id) REFERENCES properties(id)
 );
@@ -282,7 +285,10 @@ CREATE TABLE IF NOT EXISTS deal_tasks (
   title TEXT NOT NULL,
   detail TEXT,
   priority TEXT DEFAULT 'check',
+  task_group TEXT DEFAULT 'pre_offer',
+  destination TEXT,
   status TEXT DEFAULT 'Open',
+  evidence_status TEXT DEFAULT 'Open',
   source TEXT DEFAULT 'auto',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -354,6 +360,19 @@ LEGAL_SUMMARY_MIGRATIONS = {
 }
 
 
+DEAL_WORKSPACE_MIGRATIONS = {
+    "solicitor_name": "TEXT",
+    "solicitor_email": "TEXT",
+    "solicitor_phone": "TEXT",
+}
+
+DEAL_TASK_MIGRATIONS = {
+    "task_group": "TEXT DEFAULT 'pre_offer'",
+    "destination": "TEXT",
+    "evidence_status": "TEXT DEFAULT 'Open'",
+}
+
+
 UNDERWRITING_MIGRATIONS = {
     "purchase_vat_pct": "REAL",
     "vat_recoverable": "INTEGER",
@@ -397,6 +416,14 @@ class Database:
             for name, sql_type in UNDERWRITING_MIGRATIONS.items():
                 if name not in uw_existing:
                     con.execute(f"ALTER TABLE underwriting_overrides ADD COLUMN {name} {sql_type}")
+            workspace_existing = {r[1] for r in con.execute("PRAGMA table_info(deal_workspace)").fetchall()}
+            for name, sql_type in DEAL_WORKSPACE_MIGRATIONS.items():
+                if name not in workspace_existing:
+                    con.execute(f"ALTER TABLE deal_workspace ADD COLUMN {name} {sql_type}")
+            task_existing = {r[1] for r in con.execute("PRAGMA table_info(deal_tasks)").fetchall()}
+            for name, sql_type in DEAL_TASK_MIGRATIONS.items():
+                if name not in task_existing:
+                    con.execute(f"ALTER TABLE deal_tasks ADD COLUMN {name} {sql_type}")
             con.commit()
 
     def upsert(self, lot: dict):
@@ -1092,7 +1119,10 @@ class Database:
     def workspace_for(self, property_id):
         with closing(self.connect()) as con:
             row = con.execute("SELECT * FROM deal_workspace WHERE property_id=?", (property_id,)).fetchone()
-        return dict(row) if row else {"property_id": property_id, "stage": "New", "next_action": "", "follow_up_date": ""}
+        return dict(row) if row else {
+            "property_id": property_id, "stage": "New", "next_action": "", "follow_up_date": "",
+            "solicitor_name": "", "solicitor_email": "", "solicitor_phone": "",
+        }
 
     def save_workspace(self, property_id, stage="New", next_action="", follow_up_date=""):
         now = datetime.now(timezone.utc).isoformat()
@@ -1102,6 +1132,18 @@ class Database:
                 ON CONFLICT(property_id) DO UPDATE SET stage=excluded.stage,next_action=excluded.next_action,
                 follow_up_date=excluded.follow_up_date,updated_at=excluded.updated_at""",
                 (property_id, stage or "New", next_action or "", follow_up_date or "", now),
+            )
+            con.commit()
+
+    def save_solicitor_contact(self, property_id, name="", email="", phone=""):
+        now = datetime.now(timezone.utc).isoformat()
+        with closing(self.connect()) as con:
+            con.execute(
+                """INSERT INTO deal_workspace(property_id,stage,next_action,follow_up_date,solicitor_name,solicitor_email,solicitor_phone,updated_at)
+                VALUES(?, 'New', '', '', ?, ?, ?, ?)
+                ON CONFLICT(property_id) DO UPDATE SET solicitor_name=excluded.solicitor_name,
+                solicitor_email=excluded.solicitor_email,solicitor_phone=excluded.solicitor_phone,updated_at=excluded.updated_at""",
+                (property_id, str(name or "")[:300], str(email or "")[:300], str(phone or "")[:100], now),
             )
             con.commit()
 
@@ -1133,6 +1175,11 @@ class Database:
             con.commit()
 
     def sync_auto_tasks(self, property_id, tasks):
+        """Synchronise evidence-driven actions without erasing their history.
+
+        `status` records whether the buyer has done the action. `evidence_status` records
+        whether Lotly still sees the underlying issue. Those states are intentionally separate.
+        """
         now = datetime.now(timezone.utc).isoformat()
         keys = []
         with closing(self.connect()) as con:
@@ -1142,28 +1189,36 @@ class Database:
                     continue
                 keys.append(key)
                 con.execute(
-                    """INSERT INTO deal_tasks(property_id,task_key,category,title,detail,priority,status,source,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,'auto',?,?)
+                    """INSERT INTO deal_tasks(
+                    property_id,task_key,category,title,detail,priority,task_group,destination,status,evidence_status,source,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,'Open','auto',?,?)
                     ON CONFLICT(property_id,task_key) DO UPDATE SET
-                    category=excluded.category,title=excluded.title,detail=excluded.detail,priority=excluded.priority,updated_at=excluded.updated_at""",
+                    category=excluded.category,title=excluded.title,detail=excluded.detail,priority=excluded.priority,
+                    task_group=excluded.task_group,destination=excluded.destination,evidence_status='Open',updated_at=excluded.updated_at""",
                     (property_id, key, task.get("category") or "General", task.get("title") or "Check item",
-                     task.get("detail") or "", task.get("priority") or "check", "Open", now, now),
+                     task.get("detail") or "", task.get("priority") or "check", task.get("group") or "pre_offer",
+                     task.get("destination") or "", "Open", now, now),
                 )
             if keys:
                 placeholders = ",".join("?" for _ in keys)
                 con.execute(
-                    f"DELETE FROM deal_tasks WHERE property_id=? AND source='auto' AND task_key NOT IN ({placeholders})",
-                    [property_id] + keys,
+                    f"UPDATE deal_tasks SET evidence_status='Resolved',updated_at=? WHERE property_id=? AND source='auto' AND task_key NOT IN ({placeholders}) AND evidence_status!='Resolved'",
+                    [now, property_id] + keys,
                 )
             else:
-                con.execute("DELETE FROM deal_tasks WHERE property_id=? AND source='auto'", (property_id,))
+                con.execute(
+                    "UPDATE deal_tasks SET evidence_status='Resolved',updated_at=? WHERE property_id=? AND source='auto' AND evidence_status!='Resolved'",
+                    (now, property_id),
+                )
             con.commit()
 
     def tasks_for(self, property_id):
         with closing(self.connect()) as con:
             return [dict(r) for r in con.execute(
                 """SELECT * FROM deal_tasks WHERE property_id=?
-                ORDER BY CASE priority WHEN 'stop' THEN 0 WHEN 'check' THEN 1 ELSE 2 END,
+                ORDER BY CASE evidence_status WHEN 'Resolved' THEN 1 ELSE 0 END,
+                CASE task_group WHEN 'must_resolve' THEN 0 WHEN 'pre_offer' THEN 1 WHEN 'negotiation' THEN 2 ELSE 3 END,
+                CASE priority WHEN 'stop' THEN 0 WHEN 'check' THEN 1 ELSE 2 END,
                 CASE status WHEN 'Open' THEN 0 ELSE 1 END, id""", (property_id,)
             ).fetchall()]
 
@@ -1185,7 +1240,7 @@ class Database:
         key = f"custom-{int(datetime.now(timezone.utc).timestamp()*1000000)}"
         with closing(self.connect()) as con:
             cur = con.execute(
-                "INSERT INTO deal_tasks(property_id,task_key,category,title,detail,priority,status,source,created_at,updated_at) VALUES(?,?,?,?,?,'check','Open','manual',?,?)",
+                "INSERT INTO deal_tasks(property_id,task_key,category,title,detail,priority,task_group,destination,status,evidence_status,source,created_at,updated_at) VALUES(?,?,?,?,?,'check','pre_offer','','Open','Manual','manual',?,?)",
                 (property_id, key, category or "General", title[:500], str(detail or "")[:2000], now, now),
             )
             con.commit()
