@@ -541,6 +541,28 @@ st.markdown(
 .deal-proof-banner strong {color:#0B1F33;}
 @media(max-width:1100px){.deal-signal-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-snapshot-lower{grid-template-columns:1fr;}.deal-maxbid-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-risk-row{grid-template-columns:78px 1fr;}.deal-risk-detail{grid-column:2;}}
 
+
+
+/* v1.13.6 beginner-first Legal & Planning */
+.deal-plain-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;background:#F7FBFA;border:1px solid #DDEBE7;border-radius:14px;padding:13px 14px;margin:4px 0 10px;}
+.deal-plain-intro .title{font-size:1.05rem;font-weight:900;color:#0B1F33;letter-spacing:-.025em;margin-bottom:3px;}
+.deal-plain-intro .copy{font-size:.68rem;color:#5F7387;line-height:1.42;max-width:760px;}
+.deal-plain-legend{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
+.deal-plain-pill{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:5px 8px;font-size:.53rem;font-weight:900;letter-spacing:.05em;border:1px solid transparent;white-space:nowrap;}
+.deal-plain-pill.stop{background:#FDEDEC;color:#B42318;border-color:#F6C7C3}.deal-plain-pill.check{background:#FFF7E5;color:#8E6100;border-color:#EFD59A}.deal-plain-pill.clear{background:#ECF9F3;color:#08786F;border-color:#C5E8DC}
+.deal-plain-gate{display:grid;grid-template-columns:150px 1fr;gap:14px;align-items:center;border-radius:14px;padding:13px 14px;margin:0 0 12px;border:1px solid #E1E8EB;background:#fff;}
+.deal-plain-gate.stop{background:#FFF4F3;border-color:#F2C9C4}.deal-plain-gate.check{background:#FFF9EC;border-color:#EED8A5}.deal-plain-gate.clear{background:#F1FAF7;border-color:#C7E8DE}
+.deal-plain-gate .gate-word{font-size:1.02rem;font-weight:950;letter-spacing:.04em}.deal-plain-gate.stop .gate-word{color:#B42318}.deal-plain-gate.check .gate-word{color:#8E6100}.deal-plain-gate.clear .gate-word{color:#08786F}
+.deal-plain-gate .gate-title{font-size:.88rem;font-weight:880;color:#0B1F33;line-height:1.25}.deal-plain-gate .gate-copy{font-size:.65rem;color:#607489;line-height:1.42;margin-top:3px}
+.deal-plain-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 12px;}
+.deal-plain-card{background:#fff;border:1px solid #E1E8EB;border-radius:13px;padding:11px 12px;min-height:142px;}
+.deal-plain-card.stop{background:#FFF8F7;border-color:#F0CBC6}.deal-plain-card.check{background:#FFFCF5;border-color:#ECDDB6}.deal-plain-card.clear{background:#F8FCFB;border-color:#D2EAE4}
+.deal-plain-card .card-top{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:7px}.deal-plain-card .card-title{font-size:.72rem;font-weight:850;color:#17324B}.deal-plain-card .status{border-radius:999px;padding:3px 6px;font-size:.48rem;font-weight:900;letter-spacing:.05em}.deal-plain-card.stop .status{background:#FDEDEC;color:#B42318}.deal-plain-card.check .status{background:#FFF2CC;color:#8E6100}.deal-plain-card.clear .status{background:#E9F7F1;color:#08786F}
+.deal-plain-card .answer{font-size:.78rem;font-weight:850;color:#0B1F33;line-height:1.28;margin-bottom:6px}.deal-plain-card .why{font-size:.59rem;line-height:1.38;color:#6B7D90}.deal-plain-card .why strong{color:#52677A}.deal-plain-card .next{font-size:.57rem;line-height:1.35;color:#52677A;margin-top:6px;padding-top:6px;border-top:1px solid rgba(225,232,235,.8)}.deal-plain-card .next strong{color:#17324B}
+.deal-simple-next{background:linear-gradient(135deg,#F0FAF7,#FAFDFC);border:1px solid #CFE9E3;border-radius:14px;padding:12px 14px;margin:0 0 12px}.deal-simple-next .label{font-size:.54rem;text-transform:uppercase;letter-spacing:.09em;color:#08786F;font-weight:900}.deal-simple-next .action{font-size:.9rem;font-weight:900;color:#0B1F33;margin-top:3px}.deal-simple-next .sub{font-size:.63rem;color:#607489;line-height:1.42;margin-top:3px}
+.deal-doc-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:6px 0 10px}.deal-doc-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #E3E9EB;border-radius:10px;padding:8px 9px;font-size:.62rem;color:#52677A}.deal-doc-item strong{color:#17324B}.deal-doc-item .ok{color:#08786F;font-weight:850}.deal-doc-item .missing{color:#B42318;font-weight:850}.deal-doc-item .review{color:#8E6100;font-weight:850}
+@media(max-width:1150px){.deal-plain-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-doc-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.deal-plain-gate{grid-template-columns:1fr}.deal-plain-legend{justify-content:flex-start}}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -2349,58 +2371,245 @@ def render_deal_room(chosen):
             st.info("No auction-history observations stored yet. Future refreshes and historical backfill will populate this timeline.")
 
     with tabs[5]:
-        pcol, lcol = st.columns(2)
-        with pcol:
-            st.markdown("### Planning intelligence")
-            pstate = planning_state(chosen)
-            if pstate == "SCREENED":
-                st.success(f"SCREENED | Known planning/designation risk {float(chosen.get('planning_risk_score') or 0):.1f}/10 | Coverage varies by authority")
-            elif pstate == "ERROR":
-                st.error("Planning screen failed. Risk is UNKNOWN.")
-            else:
-                st.warning("Planning not screened. Risk is UNKNOWN.")
-            if st.button("Refresh planning", key=f"plan_{chosen['id']}", use_container_width=True):
-                try:
-                    with st.spinner("Checking official planning data..."):
-                        refresh_property_planning(db, chosen)
-                        sync_cloud("property planning refresh")
-                except Exception as exc:
-                    st.error(str(exc))
-                st.rerun()
-            if planning_items:
-                frame = pd.DataFrame([{
-                    "Type": i.get("kind"), "Dataset": i.get("dataset"), "Reference": i.get("reference"),
-                    "Record": i.get("name"), "Severity": i.get("severity"), "Subject": bool(i.get("likely_subject")),
-                    "Distance": i.get("distance_miles"), "Source": i.get("source_url"),
-                } for i in planning_items])
-                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"Source": st.column_config.LinkColumn("Source"), "Distance": st.column_config.NumberColumn(format="%.2f mi")})
-            else:
-                st.caption("No planning records are stored for this property. A zero count is not a clean-planning certificate.")
 
-        with lcol:
-            st.markdown("### Legal-pack intelligence")
-            lstate = legal_state(chosen)
-            completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
-            verified_docs_count = int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0)
-            candidate_docs_count = int(legal_summary.get("candidate_document_count") if legal_summary.get("candidate_document_count") is not None else chosen.get("legal_candidate_document_count") or 0)
-            rejected_docs_count = int(legal_summary.get("rejected_document_count") or chosen.get("legal_rejected_document_count") or 0)
-            if lstate == "VERIFIED" and completeness >= 100:
-                st.success(f"CORE LEGAL PACK VERIFIED | Known-document risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
-            elif lstate == "VERIFIED":
-                st.warning(f"PARTIAL VERIFIED LEGAL EVIDENCE | Core pack {completeness}% complete | BID BLOCKED until missing core documents are verified")
-            elif lstate == "VERIFIED NO TEXT":
-                st.warning("LOT-BOUND DOCUMENTS FOUND, TEXT UNREADABLE | Manual review required before bidding.")
-            elif lstate == "CANDIDATES ONLY":
-                st.warning("LEGAL PACK NOT VERIFIED | Candidate links exist, but no authoritative lot-bound legal document passed the Property Identity Lock. Risk is UNKNOWN.")
-            elif lstate == "UNVERIFIED":
-                st.warning("LEGAL EVIDENCE NEEDS RE-VERIFYING | Saved extraction predates the v1.10.3 purge policy. Refresh to re-check every stored document and remove stale derived evidence.")
-            elif lstate == "ERROR":
-                st.error("Legal-pack check failed. Risk is UNKNOWN.")
+        # v1.13.6 — beginner-first legal and planning screen. The default view
+        # translates evidence into simple STOP / CHECK / CLEAR decisions; source
+        # records remain available below for experienced users and advisers.
+        _simple_pstate = planning_state(chosen)
+        _simple_lstate = legal_state(chosen)
+        _simple_extracted = legal_summary.get("extracted_fields") or chosen.get("legal_extracted_fields") or {}
+        _simple_sources = _simple_extracted.get("field_sources") or {}
+        _simple_complete = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
+        _simple_missing = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
+        _simple_available = legal_summary.get("available_components") or chosen.get("legal_available_components") or []
+        _simple_pack_changed = bool(legal_summary.get("pack_changed") or chosen.get("legal_pack_changed"))
+        _simple_legal_complete = _simple_lstate == "VERIFIED" and _simple_complete >= 100 and not _simple_pack_changed
+        _simple_risk_flags = legal_summary.get("risk_flags") or chosen.get("legal_risk_flags") or []
+        _simple_critical_flags = [f for f in _simple_risk_flags if int(f.get("severity") or 0) >= 4]
+        _simple_review_flags = [f for f in _simple_risk_flags if int(f.get("severity") or 0) in (2, 3)]
+        _simple_tenure = str(chosen.get("tenure") or "Unknown")
+        _simple_lease = _simple_extracted.get("lease_years_remaining")
+        if _simple_lease is None:
+            _simple_lease = chosen.get("legal_lease_years") or chosen.get("listing_lease_years")
+        try:
+            _simple_lease = float(_simple_lease) if _simple_lease is not None else None
+        except Exception:
+            _simple_lease = None
+        _simple_is_leasehold = "lease" in _simple_tenure.lower() or _simple_lease is not None
+        _simple_is_flat = any(x in str(chosen.get("property_type") or "").lower() for x in ("flat", "apartment", "maisonette"))
+        _simple_planning_serious = [
+            i for i in (planning_items or [])
+            if int(i.get("severity") or 0) >= 3 and (i.get("likely_subject") or i.get("kind") == "constraint")
+        ]
+        _simple_planning_risk = float(chosen.get("planning_risk_score") or 0)
+
+        def _simple_card(status, title, answer, why, next_step):
+            status = status.upper()
+            tone = status.lower()
+            return (
+                f'<div class="deal-plain-card {tone}"><div class="card-top"><div class="card-title">{html.escape(str(title))}</div>'
+                f'<span class="status">{html.escape(status)}</span></div><div class="answer">{html.escape(str(answer))}</div>'
+                f'<div class="why"><strong>Why it matters:</strong> {html.escape(str(why))}</div>'
+                f'<div class="next"><strong>Next:</strong> {html.escape(str(next_step))}</div></div>'
+            )
+
+        # 1) Core legal pack
+        if _simple_legal_complete:
+            _pack_status, _pack_answer = "CLEAR", f"Core legal pack verified ({_simple_complete}% complete)"
+            _pack_next = "Still ask your solicitor to confirm the latest pack and any auction-day addendum."
+        else:
+            _pack_status, _pack_answer = "STOP", f"Legal pack is not fully verified ({_simple_complete}% complete)"
+            _pack_next = "Get the latest title, special conditions and any missing documents before bidding."
+        _pack_why = "These documents set the legal terms you will be buying under. Missing or stale documents can change the deal after you have committed."
+
+        # 2) Ownership/title identity
+        _title_verified = _simple_sources.get("title_number") == "verified legal document"
+        _owner_verified = any(_simple_sources.get(k) == "verified legal document" for k in ("seller_name", "proprietor_name"))
+        if _title_verified and _owner_verified:
+            _title_status, _title_answer = "CLEAR", "Title and owner are evidenced"
+        elif _title_verified:
+            _title_status, _title_answer = "CHECK", "Title is evidenced; owner still needs confirmation"
+        else:
+            _title_status, _title_answer = "STOP" if not _simple_legal_complete else "CHECK", "Title ownership is not fully evidenced"
+        _title_why = "You need to know exactly what interest is being sold and who has the right to sell it."
+        _title_next = "Ask the solicitor to confirm the title number, registered owner and any charges/restrictions."
+
+        # 3) Tenure / lease
+        if _simple_is_leasehold:
+            if _simple_lease is None:
+                _lease_status, _lease_answer = "STOP", "Lease term is not confirmed"
+                _lease_next = "Confirm the exact unexpired lease term before setting a final bid."
+            elif _simple_lease < 80:
+                _lease_status, _lease_answer = "STOP", f"Short lease: about {_simple_lease:.0f} years remaining"
+                _lease_next = "Price the lease extension and lender impact before bidding."
+            elif _simple_lease < 85:
+                _lease_status, _lease_answer = "CHECK", f"Lease is about {_simple_lease:.0f} years"
+                _lease_next = "Ask about extension cost, lender policy and resale impact."
             else:
-                st.warning("LEGAL PACK NOT VERIFIED | Risk is UNKNOWN and bid approval is blocked.")
-            if st.button("Fetch / refresh legal pack", key=f"legal_{chosen['id']}", use_container_width=True):
+                _lease_status, _lease_answer = "CLEAR", f"Lease term looks acceptable: about {_simple_lease:.0f} years"
+                _lease_next = "Solicitor should still confirm the exact term and review clauses."
+        elif _simple_tenure.lower() == "freehold":
+            _lease_status, _lease_answer = ("CLEAR", "Freehold shown") if _simple_legal_complete else ("CHECK", "Freehold shown but not fully verified")
+            _lease_next = "Confirm the freehold title and any estate/rentcharge obligations."
+        else:
+            _lease_status, _lease_answer = "CHECK", "Tenure is not fully confirmed"
+            _lease_next = "Confirm whether the property is freehold or leasehold."
+        _lease_why = "Lease length and tenure can affect mortgageability, resale value and future costs."
+
+        # 4) Charges / major works / buyer costs
+        _has_arrears = bool(_simple_extracted.get("arrears_flag"))
+        _has_major_works = bool(_simple_extracted.get("section20_or_major_works_flag"))
+        _service_charge = _simple_extracted.get("service_charge_amount")
+        _ground_rent = _simple_extracted.get("ground_rent_amount")
+        if _has_arrears or _has_major_works:
+            _cost_status, _cost_answer = "CHECK", "Possible arrears or major works are mentioned"
+            _cost_next = "Get the exact amount and confirm who pays it after completion."
+        elif _simple_is_leasehold and _service_charge is None and _ground_rent is None:
+            _cost_status, _cost_answer = "CHECK", "Ongoing leasehold costs are not yet clear"
+            _cost_next = "Confirm service charge, ground rent, reserve fund and planned works."
+        else:
+            _cost_status, _cost_answer = ("CLEAR", "No major cost warning detected") if _simple_legal_complete else ("CHECK", "Costs still need evidence")
+            _cost_next = "Check buyer fees, service charges and seller costs before fixing the bid ceiling."
+        _cost_why = "Unexpected service charges, arrears, major works or auction fees can wipe out apparent profit."
+
+        # 5) Occupation / tenancy
+        _tenancy = _simple_extracted.get("tenancy_type")
+        if _tenancy:
+            _occ_status, _occ_answer = "CHECK", f"Occupation/tenancy wording detected: {_tenancy}"
+            _occ_next = "Confirm who occupies the property, rent, rights and how vacant possession works."
+        elif _simple_legal_complete:
+            _occ_status, _occ_answer = "CLEAR", "No occupation issue detected in verified evidence"
+            _occ_next = "Ask the solicitor to confirm vacant possession or the tenancy position."
+        else:
+            _occ_status, _occ_answer = "CHECK", "Occupation position is not yet confirmed"
+            _occ_next = "Confirm whether anyone lives in or has rights over the property."
+        _occ_why = "An occupier or tenancy can affect when you can use, refurbish, let or sell the property."
+
+        # 6) Building safety
+        _building_flag = bool(_simple_extracted.get("ews1_or_cladding_flag") or _simple_extracted.get("fire_safety_flag"))
+        if _building_flag:
+            _build_status, _build_answer = "STOP", "Building-safety wording needs professional review"
+            _build_next = "Confirm EWS1/cladding/fire-safety position and lender acceptability before bidding."
+        elif _simple_is_flat:
+            _build_status, _build_answer = "CHECK", "No major building-safety issue detected, but this is a flat"
+            _build_next = "Confirm EWS1/cladding/fire-safety position if relevant to the block."
+        else:
+            _build_status, _build_answer = ("CLEAR", "No building-safety warning detected") if _simple_legal_complete else ("CHECK", "Building-safety evidence is incomplete")
+            _build_next = "Review survey and legal evidence for material safety liabilities."
+        _build_why = "Building-safety liabilities can affect lending, insurance, service charges and resale."
+
+        # 7) Planning
+        if _simple_pstate != "SCREENED":
+            _plan_status, _plan_answer = "STOP", "Planning has not been screened"
+            _plan_next = "Run the planning check before treating the deal as bid-ready."
+        elif _simple_planning_serious or _simple_planning_risk >= 3.0:
+            _plan_status, _plan_answer = "CHECK", "Planning/designation issues need review"
+            _plan_next = "Open the planning evidence and confirm any constraint or refusal affecting your intended use."
+        else:
+            _plan_status, _plan_answer = "CLEAR", "No material planning issue detected by the screen"
+            _plan_next = "Still confirm the local authority record if your strategy depends on conversion or development."
+        _plan_why = "Planning constraints can stop extensions, conversions, change of use or development plans."
+
+        # 8) Completion and deposit terms
+        _completion_days = legal_summary.get("completion_days") or chosen.get("legal_completion_days")
+        _deposit_pct = legal_summary.get("deposit_pct") if legal_summary.get("deposit_pct") is not None else chosen.get("legal_deposit_pct")
+        if _completion_days is None or _deposit_pct is None:
+            _terms_status, _terms_answer = "CHECK", "Completion/deposit terms are not fully confirmed"
+            _terms_next = "Confirm deposit, completion deadline and every buyer/admin fee."
+        elif float(_completion_days) < 15 or float(_deposit_pct) > 10:
+            _terms_status, _terms_answer = "CHECK", f"Fast/strong auction terms: {_completion_days} days, {float(_deposit_pct):.0f}% deposit"
+            _terms_next = "Make sure funds and solicitor are ready before bidding."
+        else:
+            _terms_status, _terms_answer = "CLEAR", f"Terms identified: {_completion_days} days, {float(_deposit_pct):.0f}% deposit"
+            _terms_next = "Confirm the figures against the latest special conditions before bidding."
+        _terms_why = "Auction purchases are binding quickly; missing the completion deadline can put your deposit at risk."
+
+        _simple_cards = [
+            (_pack_status, "Legal pack", _pack_answer, _pack_why, _pack_next),
+            (_title_status, "Ownership & title", _title_answer, _title_why, _title_next),
+            (_lease_status, "Tenure / lease", _lease_answer, _lease_why, _lease_next),
+            (_cost_status, "Costs & major works", _cost_answer, _cost_why, _cost_next),
+            (_occ_status, "Occupation", _occ_answer, _occ_why, _occ_next),
+            (_build_status, "Building safety", _build_answer, _build_why, _build_next),
+            (_plan_status, "Planning", _plan_answer, _plan_why, _plan_next),
+            (_terms_status, "Auction terms", _terms_answer, _terms_why, _terms_next),
+        ]
+        _simple_statuses = [x[0] for x in _simple_cards]
+        if _simple_critical_flags or "STOP" in _simple_statuses:
+            _gate_tone, _gate_word, _gate_title = "stop", "STOP", "Do not bid yet"
+            _gate_copy = "One or more essential checks are unresolved. Lotly will keep the bid gate closed until the red items are dealt with."
+        elif "CHECK" in _simple_statuses:
+            _gate_tone, _gate_word, _gate_title = "check", "CHECK", "Promising, but get the amber items confirmed"
+            _gate_copy = "No automatic stop is showing, but there are points a solicitor, lender or surveyor should confirm before you commit money."
+        else:
+            _gate_tone, _gate_word, _gate_title = "clear", "CLEAR", "No blocker found in the evidence Lotly has"
+            _gate_copy = "This means Lotly has not found an unresolved blocker. It does not replace your solicitor's final legal advice."
+
+        st.markdown(
+            '<div class="deal-plain-intro"><div><div class="title">Legal & planning — plain English</div>'
+            '<div class="copy">You do not need to understand auction conveyancing. Lotly translates the evidence into three simple states. '
+            '<strong>STOP</strong> means do not bid yet. <strong>CHECK</strong> means get the point confirmed. <strong>CLEAR</strong> means no blocker was found in the evidence Lotly has.</div></div>'
+            '<div class="deal-plain-legend"><span class="deal-plain-pill stop">STOP</span><span class="deal-plain-pill check">CHECK</span><span class="deal-plain-pill clear">CLEAR</span></div></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="deal-plain-gate {_gate_tone}"><div class="gate-word">{html.escape(_gate_word)}</div>'
+            f'<div><div class="gate-title">{html.escape(_gate_title)}</div><div class="gate-copy">{html.escape(_gate_copy)}</div></div></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="deal-plain-grid">' + ''.join(_simple_card(*x) for x in _simple_cards) + '</div>', unsafe_allow_html=True)
+        if _simple_critical_flags:
+            _critical_labels = "; ".join(str(f.get("label") or "Critical legal issue") for f in _simple_critical_flags[:4])
+            st.error("Important legal issue detected — do not bid until reviewed: " + _critical_labels)
+        elif _simple_review_flags:
+            _review_labels = "; ".join(str(f.get("label") or "Legal point to review") for f in _simple_review_flags[:4])
+            st.warning("Legal points to check before bidding: " + _review_labels)
+
+        # Core document checklist — only the documents needed to understand bid readiness.
+        _core_docs = ["Title register", "Title plan", "Special conditions"]
+        if _simple_is_leasehold:
+            _core_docs.append("Lease")
+        _available_lower = {str(x).lower() for x in _simple_available}
+        _missing_lower = {str(x).lower() for x in _simple_missing}
+        _doc_html = []
+        for _doc in _core_docs:
+            if _doc.lower() in _available_lower:
+                _doc_html.append(f'<div class="deal-doc-item"><strong>{html.escape(_doc)}</strong><span class="ok">FOUND</span></div>')
+            elif _doc.lower() in _missing_lower:
+                _doc_html.append(f'<div class="deal-doc-item"><strong>{html.escape(_doc)}</strong><span class="missing">MISSING</span></div>')
+            else:
+                _doc_html.append(f'<div class="deal-doc-item"><strong>{html.escape(_doc)}</strong><span class="review">CHECK</span></div>')
+        _addendum_text = "FOUND" if bool(legal_summary.get("has_addendum") or chosen.get("legal_has_addendum")) else "CHECK LATEST"
+        _addendum_class = "ok" if _addendum_text == "FOUND" else "review"
+        _doc_html.append(f'<div class="deal-doc-item"><strong>Latest addendum</strong><span class="{_addendum_class}">{_addendum_text}</span></div>')
+        st.markdown('<div class="deal-facts-title">Documents Lotly is looking for</div><div class="deal-doc-grid">' + ''.join(_doc_html) + '</div>', unsafe_allow_html=True)
+
+        # Simple next action and two obvious refresh controls.
+        if not _simple_legal_complete:
+            _simple_next_action = "Get and verify the latest legal pack + addendum"
+            _simple_next_reason = "The legal pack is the main bid blocker. Once verified, Lotly can safely extract the title, lease, costs and completion terms."
+        elif _build_status == "STOP":
+            _simple_next_action = "Get the building-safety position confirmed"
+            _simple_next_reason = "Building-safety wording can affect financeability and future liability, so it needs professional confirmation before a bid."
+        elif _lease_status in {"STOP", "CHECK"}:
+            _simple_next_action = "Confirm the lease and ongoing leasehold costs"
+            _simple_next_reason = "Lease length, ground rent, service charge and planned works can materially change value and mortgageability."
+        elif _plan_status in {"STOP", "CHECK"}:
+            _simple_next_action = "Complete the planning review"
+            _simple_next_reason = "Your intended strategy may depend on permissions or constraints that need to be understood before committing capital."
+        else:
+            _simple_next_action = "Send Lotly's questions to your solicitor for final confirmation"
+            _simple_next_reason = "Lotly has completed its screening. The solicitor should now confirm the legal position before you bid."
+        st.markdown(
+            f'<div class="deal-simple-next"><div class="label">What to do next</div><div class="action">{html.escape(_simple_next_action)}</div>'
+            f'<div class="sub">{html.escape(_simple_next_reason)}</div></div>', unsafe_allow_html=True,
+        )
+
+        _refresh_legal_col, _refresh_plan_col = st.columns(2)
+        with _refresh_legal_col:
+            if st.button("Refresh legal pack", key=f"legal_simple_{chosen['id']}", use_container_width=True):
                 try:
-                    with st.spinner("Checking legal-pack links and permitted/authenticated sources..."):
+                    with st.spinner("Checking the latest legal-pack evidence..."):
                         refresh_property_legal(db, chosen, legal_access=legal_access, cloud_store=cloud_store)
                         if companies_house_api_key:
                             try:
@@ -2408,223 +2617,309 @@ def render_deal_room(chosen):
                             except Exception:
                                 pass
                         sync_cloud("property legal/company refresh")
+                    st.success("Legal evidence refreshed.")
+                except Exception as exc:
+                    st.error(str(exc))
+                st.rerun()
+        with _refresh_plan_col:
+            if st.button("Refresh planning check", key=f"plan_simple_{chosen['id']}", use_container_width=True):
+                try:
+                    with st.spinner("Checking official planning data..."):
+                        refresh_property_planning(db, chosen)
+                        sync_cloud("property planning refresh")
+                    st.success("Planning evidence refreshed.")
                 except Exception as exc:
                     st.error(str(exc))
                 st.rerun()
 
-            extracted = chosen.get("legal_extracted_fields") or {}
-            legal_evidence = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
-            miss = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
-            lm1, lm2, lm3, lm4, lm5 = st.columns(5)
-            lm1.metric("Core pack", f"{completeness}%")
-            lm2.metric("Verified docs", verified_docs_count)
-            lm3.metric("Candidates", candidate_docs_count)
-            lm4.metric("Rejected", rejected_docs_count)
-            lm5.metric("Known risk", f"{float(chosen.get('legal_risk_score') or 0):.1f}/10" if verified_docs_count else "Unknown")
-            if int(legal_summary.get("pack_index_count") or chosen.get("legal_pack_index_count") or 0):
-                st.caption(f"Lot-specific legal-pack index verified: {int(legal_summary.get('pack_index_count') or chosen.get('legal_pack_index_count') or 0)}")
-            if miss:
-                st.warning("Missing / not yet evidenced: " + ", ".join(miss))
-            legal_warnings = legal_summary.get("warnings") or chosen.get("legal_warnings") or []
-            for warning in legal_warnings[:4]:
-                warning_text = str(warning)
-                if any(term in warning_text.lower() for term in ("permission required", "login", "captcha", "manual")):
-                    st.info(warning_text)
+        _simple_questions = solicitor_questions(chosen, legal_summary)
+        if _simple_questions:
+            with st.expander("Questions to send your solicitor", expanded=False):
+                st.caption("You can copy these directly into an email. They are prompts for your solicitor, not legal advice from Lotly.")
+                for _q in _simple_questions[:8]:
+                    st.write(f"- {_q}")
+                _questions_text = "Questions for solicitor — " + clean_address(chosen) + "\n\n" + "\n".join(f"{i+1}. {q}" for i, q in enumerate(_simple_questions))
+                st.download_button("Download solicitor questions", _questions_text, file_name=f"solicitor-questions-{chosen.get('postcode') or chosen.get('id')}.txt".replace(" ", "-"), mime="text/plain", key=f"solicitor_q_{chosen['id']}")
+
+        st.caption("Beginner view: Lotly simplifies the evidence so you can see what stops a bid and what simply needs checking. CLEAR means no blocker was found in the evidence Lotly has; it is not a legal opinion.")
+
+        with st.expander("Advanced evidence & source records", expanded=False):
+            pcol, lcol = st.columns(2)
+            with pcol:
+                st.markdown("### Planning intelligence")
+                pstate = planning_state(chosen)
+                if pstate == "SCREENED":
+                    st.success(f"SCREENED | Known planning/designation risk {float(chosen.get('planning_risk_score') or 0):.1f}/10 | Coverage varies by authority")
+                elif pstate == "ERROR":
+                    st.error("Planning screen failed. Risk is UNKNOWN.")
                 else:
-                    st.caption(warning_text)
-
-            revalidation = legal_summary.get("revalidation_report") or chosen.get("legal_revalidation_report") or {}
-            if revalidation.get("checked"):
-                downgraded = int(revalidation.get("downgraded") or 0)
-                rejected = int(revalidation.get("rejected") or 0)
-                purged = int(revalidation.get("purged_findings") or 0)
-                retained = int(revalidation.get("retained_verified") or 0)
-                tone = st.warning if (downgraded or rejected or purged) else st.success
-                tone(
-                    f"Evidence revalidation complete: {int(revalidation.get('checked') or 0)} stored document(s) checked | "
-                    f"{retained} retained as verified | {downgraded} downgraded | {rejected} cross-property rejected."
-                )
-                if purged:
-                    st.caption("Stale rent, seller/company, contact and legal-risk findings derived from downgraded documents were purged and recalculated from verified evidence only.")
-
-            pack_change = legal_summary.get("pack_change") or {}
-            if legal_summary.get("pack_changed") or pack_change.get("changed"):
-                st.error("LEGAL PACK CHANGED since the previous saved snapshot - re-review before bidding.")
-                change_bits = []
-                if pack_change.get("added"):
-                    change_bits.append("Added: " + ", ".join(pack_change.get("added") or []))
-                if pack_change.get("modified"):
-                    change_bits.append("Modified: " + ", ".join(pack_change.get("modified") or []))
-                if pack_change.get("removed"):
-                    change_bits.append("Removed: " + ", ".join(pack_change.get("removed") or []))
-                if change_bits:
-                    st.caption(" | ".join(change_bits))
-
-            field_sources = extracted.get("field_sources") or {}
-            legal_facts = []
-            def add_legal_fact(label, key, value):
-                source = field_sources.get(key)
-                if value not in (None, "", False) and source:
-                    legal_facts.append([label, value, source])
-
-            add_legal_fact("Registered proprietor / seller", "seller_name" if extracted.get("seller_name") else "proprietor_name", extracted.get("seller_name") or extracted.get("proprietor_name"))
-            add_legal_fact("Seller / disposal type", "seller_type", extracted.get("seller_type"))
-            add_legal_fact("Title number", "title_number", extracted.get("title_number"))
-            add_legal_fact("Company number", "company_number", extracted.get("company_number"))
-            add_legal_fact("Registered office", "registered_office", extracted.get("registered_office"))
-            add_legal_fact("Title price paid", "title_price_paid", money(extracted.get("title_price_paid")) if extracted.get("title_price_paid") is not None else None)
-            add_legal_fact("Title price date", "title_price_paid_date", extracted.get("title_price_paid_date"))
-            add_legal_fact("Lease remaining", "lease_years_remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else None)
-            add_legal_fact("Lease start", "lease_start_date", extracted.get("lease_start_date"))
-            add_legal_fact("Ground rent", "ground_rent_amount", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else None)
-            add_legal_fact("Service charge", "service_charge_amount", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else None)
-            add_legal_fact("Seller costs charged to buyer", "seller_costs_amount", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else None)
-            add_legal_fact("Tenancy / occupation", "tenancy_type", extracted.get("tenancy_type"))
-            add_legal_fact("Passing rent", "tenancy_rent_amount", (money(extracted.get("tenancy_rent_amount")) + (f" per {extracted.get('tenancy_rent_period')}" if extracted.get("tenancy_rent_period") else "")) if extracted.get("tenancy_rent_amount") is not None else None)
-            add_legal_fact("Tenancy end / expiry", "tenancy_end_date", extracted.get("tenancy_end_date"))
-            positive_flags = [
-                ("Reserve / sinking fund wording", "reserve_fund_flag"),
-                ("Section 20 / major works wording", "section20_or_major_works_flag"),
-                ("Assignment restriction wording", "assignment_restriction_flag"),
-                ("Rights / easements wording", "rights_easements_flag"),
-                ("Restrictive covenant wording", "restrictive_covenant_flag"),
-                ("Overage / clawback wording", "overage_clawback_flag"),
-                ("Arrears wording", "arrears_flag"),
-                ("EWS1 / cladding wording", "ews1_or_cladding_flag"),
-                ("Fire / building-safety wording", "fire_safety_flag"),
-            ]
-            for label, key in positive_flags:
-                if extracted.get(key) and field_sources.get(key):
-                    legal_facts.append([label, "Detected - review source evidence", field_sources.get(key)])
-            if int(extracted.get("registered_charge_count") or 0) > 0 and field_sources.get("registered_charge_count"):
-                legal_facts.append(["Registered charge references", int(extracted.get("registered_charge_count") or 0), field_sources.get("registered_charge_count")])
-            if legal_state(chosen) == "VERIFIED":
-                if chosen.get("legal_completion_days"):
-                    legal_facts.append(["Completion", f"{chosen.get('legal_completion_days')} days", "verified legal document"])
-                if chosen.get("legal_deposit_pct") is not None:
-                    legal_facts.append(["Deposit", pct(chosen.get("legal_deposit_pct")), "verified legal document"])
-                if chosen.get("legal_vat_flag"):
-                    legal_facts.append(["VAT / option-to-tax wording", "Detected", "verified legal document"])
-                if chosen.get("legal_has_addendum"):
-                    legal_facts.append(["Addendum", "Detected - verify latest version", "verified legal document"])
-
-            if legal_facts:
-                st.markdown("#### What we can actually evidence")
-                st.dataframe(pd.DataFrame(legal_facts, columns=["Legal fact", "Evidence", "Source tier"]), hide_index=True, use_container_width=True)
-            else:
-                st.caption("No verified legal facts have been extracted yet. Candidate/rejected material is intentionally excluded from the deal decision.")
-
-            if legal_evidence:
-                st.markdown("#### Evidence trail")
-                evidence_frame = pd.DataFrame([{
-                    "Finding": e.get("finding"), "Value": e.get("value"), "Document": e.get("document"),
-                    "Page": e.get("page"), "Evidence": e.get("excerpt"),
-                } for e in legal_evidence])
-                st.dataframe(evidence_frame, hide_index=True, use_container_width=True)
-                st.caption("Page references are generated from the uploaded/public PDF text where page boundaries are extractable. Always verify against the original document.")
-
-            contacts = chosen.get("legal_contacts") or []
-            if contacts:
-                st.markdown("#### Professional contacts in the pack")
-                st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
-                st.caption("Only professional/business contacts found in the legal evidence are surfaced; the app does not search for private personal contact details.")
-
-            docs = db.legal_documents_for(chosen["id"])
-            if docs:
-                st.markdown("#### Document identity checks")
-                st.caption("Every automatic file is scored against this property's postcode/address/lot identity before it can influence the deal.")
-                doc_rows = []
-                for d in docs:
-                    meta = d.get("metadata") or {}
-                    tier = meta.get("evidence_tier") or "legacy/unverified"
-                    status = meta.get("identity_status") or ("verified" if meta.get("verified_for_lot") else "unverified")
-                    reasons = meta.get("identity_reasons") or []
-                    conflicts = meta.get("identity_conflicts") or []
-                    rejection = meta.get("rejection_reason") or ""
-                    why = rejection or ("; ".join(conflicts[:2]) if conflicts else "; ".join(reasons[:2]))
-                    doc_rows.append({
-                        "Name": d.get("name"),
-                        "Class": meta.get("document_class") or d.get("doc_type") or "Unclassified",
-                        "Identity": status.title(),
-                        "Match": int(meta.get("identity_score")) if meta.get("identity_score") is not None else None,
-                        "Evidence tier": tier,
-                        "Why": why,
-                        "Cloud": "Stored" if meta.get("cloud_storage_path") else "-",
-                        "URL": d.get("url"),
-                    })
-                frame = pd.DataFrame(doc_rows)
-                st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
-                    "Match": st.column_config.ProgressColumn("Property match", min_value=0, max_value=100, format="%d%%"),
-                    "URL": st.column_config.LinkColumn("Source"),
-                })
-
-                rejected_docs = [d for d in docs if (d.get("metadata") or {}).get("evidence_tier") == "rejected-cross-property"]
-                if rejected_docs:
-                    with st.expander(f"Rejected by Property Identity Lock ({len(rejected_docs)})", expanded=False):
-                        for d in rejected_docs:
-                            meta = d.get("metadata") or {}
-                            st.markdown(f"**{d.get('name') or 'Document'}**")
-                            st.caption(meta.get("rejection_reason") or "; ".join(meta.get("identity_conflicts") or []) or "Property identity mismatch")
-
-                cloud_docs = [d for d in docs if (d.get("metadata") or {}).get("cloud_storage_path")]
-                if cloud_store and cloud_docs:
-                    selected_doc_name = st.selectbox("Stored original", [d.get("name") for d in cloud_docs], key=f"cloud_doc_{chosen['id']}")
-                    selected_doc = next(d for d in cloud_docs if d.get("name") == selected_doc_name)
-                    if st.button("Retrieve original from private cloud", key=f"retrieve_doc_{chosen['id']}", use_container_width=True):
-                        try:
-                            path = (selected_doc.get("metadata") or {}).get("cloud_storage_path")
-                            st.session_state[f"cloud_doc_bytes_{chosen['id']}"] = cloud_store.download_bytes(path)
-                            st.session_state[f"cloud_doc_name_{chosen['id']}"] = selected_doc_name
-                        except Exception as exc:
-                            st.error(f"Could not retrieve original: {exc}")
-                    stored_bytes = st.session_state.get(f"cloud_doc_bytes_{chosen['id']}")
-                    stored_name = st.session_state.get(f"cloud_doc_name_{chosen['id']}")
-                    if stored_bytes and stored_name == selected_doc_name:
-                        st.download_button("Download retrieved original", stored_bytes, file_name=stored_name, key=f"download_cloud_{chosen['id']}", use_container_width=True)
-
-            uploads = st.file_uploader(
-                "Upload legal pack (PDF/TXT or ZIP containing PDFs)", type=["pdf", "txt", "zip"],
-                accept_multiple_files=True, key=f"upload_{chosen['id']}"
-            )
-            if uploads and st.button("Analyse & save legal pack", key=f"analyse_upload_{chosen['id']}", type="primary", use_container_width=True):
-                try:
-                    parsed = []
-                    with st.spinner("Parsing legal documents and building evidence trail..."):
-                        for f in uploads:
-                            for doc in uploaded_documents(f.name, f.getvalue()):
-                                raw = doc.pop("_raw_bytes", b"")
-                                if cloud_store and raw:
-                                    try:
-                                        path = cloud_store.upload_legal_document(chosen["id"], doc.get("name") or f.name, raw, doc.get("sha256") or "document")
-                                        doc.setdefault("metadata", {})["cloud_storage_path"] = path
-                                        doc["access_status"] = "uploaded, parsed and stored privately" if doc.get("text_content") else "uploaded and stored; no extractable text"
-                                    except Exception as cloud_exc:
-                                        doc.setdefault("metadata", {})["cloud_storage_error"] = str(cloud_exc)[:300]
-                                parsed.append(doc)
-                        save_uploaded_legal_documents(db, chosen, parsed)
-                        if companies_house_api_key:
-                            try:
-                                refresh_property_company(db, chosen, companies_house_api_key)
-                            except Exception:
-                                pass
-                        sync_cloud("legal pack/company upload", quiet=False)
-                    st.success(f"Analysed {len(parsed)} legal document(s).")
+                    st.warning("Planning not screened. Risk is UNKNOWN.")
+                if st.button("Refresh planning", key=f"plan_{chosen['id']}", use_container_width=True):
+                    try:
+                        with st.spinner("Checking official planning data..."):
+                            refresh_property_planning(db, chosen)
+                            sync_cloud("property planning refresh")
+                    except Exception as exc:
+                        st.error(str(exc))
                     st.rerun()
-                except Exception as exc:
-                    st.error(f"Legal pack could not be analysed: {exc}")
+                if planning_items:
+                    frame = pd.DataFrame([{
+                        "Type": i.get("kind"), "Dataset": i.get("dataset"), "Reference": i.get("reference"),
+                        "Record": i.get("name"), "Severity": i.get("severity"), "Subject": bool(i.get("likely_subject")),
+                        "Distance": i.get("distance_miles"), "Source": i.get("source_url"),
+                    } for i in planning_items])
+                    st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"Source": st.column_config.LinkColumn("Source"), "Distance": st.column_config.NumberColumn(format="%.2f mi")})
+                else:
+                    st.caption("No planning records are stored for this property. A zero count is not a clean-planning certificate.")
 
-            risk_flags = legal_summary.get("risk_flags") or chosen.get("legal_risk_flags") or []
-            if risk_flags:
-                st.markdown("#### Legal risk register")
-                risk_frame = pd.DataFrame([{
-                    "Severity": f.get("severity"), "Issue": f.get("label"), "Document": f.get("document") or "-",
-                    "Page": f.get("page"), "Evidence": f.get("excerpt") or ""
-                } for f in sorted(risk_flags, key=lambda x: int(x.get("severity") or 0), reverse=True)])
-                st.dataframe(risk_frame, hide_index=True, use_container_width=True)
-            st.markdown("#### Questions for your solicitor")
-            for question in solicitor_questions(chosen, legal_summary):
-                st.write(f"- {question}")
-            st.caption("Automated legal-pack analysis is triage only. The latest complete pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.")
+            with lcol:
+                st.markdown("### Legal-pack intelligence")
+                lstate = legal_state(chosen)
+                completeness = int(legal_summary.get("pack_completeness_pct") or chosen.get("legal_pack_completeness_pct") or 0)
+                verified_docs_count = int(legal_summary.get("verified_document_count") or chosen.get("legal_verified_document_count") or 0)
+                candidate_docs_count = int(legal_summary.get("candidate_document_count") if legal_summary.get("candidate_document_count") is not None else chosen.get("legal_candidate_document_count") or 0)
+                rejected_docs_count = int(legal_summary.get("rejected_document_count") or chosen.get("legal_rejected_document_count") or 0)
+                if lstate == "VERIFIED" and completeness >= 100:
+                    st.success(f"CORE LEGAL PACK VERIFIED | Known-document risk {float(chosen.get('legal_risk_score') or 0):.1f}/10")
+                elif lstate == "VERIFIED":
+                    st.warning(f"PARTIAL VERIFIED LEGAL EVIDENCE | Core pack {completeness}% complete | BID BLOCKED until missing core documents are verified")
+                elif lstate == "VERIFIED NO TEXT":
+                    st.warning("LOT-BOUND DOCUMENTS FOUND, TEXT UNREADABLE | Manual review required before bidding.")
+                elif lstate == "CANDIDATES ONLY":
+                    st.warning("LEGAL PACK NOT VERIFIED | Candidate links exist, but no authoritative lot-bound legal document passed the Property Identity Lock. Risk is UNKNOWN.")
+                elif lstate == "UNVERIFIED":
+                    st.warning("LEGAL EVIDENCE NEEDS RE-VERIFYING | Saved extraction predates the v1.10.3 purge policy. Refresh to re-check every stored document and remove stale derived evidence.")
+                elif lstate == "ERROR":
+                    st.error("Legal-pack check failed. Risk is UNKNOWN.")
+                else:
+                    st.warning("LEGAL PACK NOT VERIFIED | Risk is UNKNOWN and bid approval is blocked.")
+                if st.button("Fetch / refresh legal pack", key=f"legal_{chosen['id']}", use_container_width=True):
+                    try:
+                        with st.spinner("Checking legal-pack links and permitted/authenticated sources..."):
+                            refresh_property_legal(db, chosen, legal_access=legal_access, cloud_store=cloud_store)
+                            if companies_house_api_key:
+                                try:
+                                    refresh_property_company(db, chosen, companies_house_api_key)
+                                except Exception:
+                                    pass
+                            sync_cloud("property legal/company refresh")
+                    except Exception as exc:
+                        st.error(str(exc))
+                    st.rerun()
+
+                extracted = chosen.get("legal_extracted_fields") or {}
+                legal_evidence = legal_summary.get("evidence") or chosen.get("legal_evidence") or []
+                miss = legal_summary.get("missing_components") or chosen.get("legal_missing_components") or []
+                lm1, lm2, lm3, lm4, lm5 = st.columns(5)
+                lm1.metric("Core pack", f"{completeness}%")
+                lm2.metric("Verified docs", verified_docs_count)
+                lm3.metric("Candidates", candidate_docs_count)
+                lm4.metric("Rejected", rejected_docs_count)
+                lm5.metric("Known risk", f"{float(chosen.get('legal_risk_score') or 0):.1f}/10" if verified_docs_count else "Unknown")
+                if int(legal_summary.get("pack_index_count") or chosen.get("legal_pack_index_count") or 0):
+                    st.caption(f"Lot-specific legal-pack index verified: {int(legal_summary.get('pack_index_count') or chosen.get('legal_pack_index_count') or 0)}")
+                if miss:
+                    st.warning("Missing / not yet evidenced: " + ", ".join(miss))
+                legal_warnings = legal_summary.get("warnings") or chosen.get("legal_warnings") or []
+                for warning in legal_warnings[:4]:
+                    warning_text = str(warning)
+                    if any(term in warning_text.lower() for term in ("permission required", "login", "captcha", "manual")):
+                        st.info(warning_text)
+                    else:
+                        st.caption(warning_text)
+
+                revalidation = legal_summary.get("revalidation_report") or chosen.get("legal_revalidation_report") or {}
+                if revalidation.get("checked"):
+                    downgraded = int(revalidation.get("downgraded") or 0)
+                    rejected = int(revalidation.get("rejected") or 0)
+                    purged = int(revalidation.get("purged_findings") or 0)
+                    retained = int(revalidation.get("retained_verified") or 0)
+                    tone = st.warning if (downgraded or rejected or purged) else st.success
+                    tone(
+                        f"Evidence revalidation complete: {int(revalidation.get('checked') or 0)} stored document(s) checked | "
+                        f"{retained} retained as verified | {downgraded} downgraded | {rejected} cross-property rejected."
+                    )
+                    if purged:
+                        st.caption("Stale rent, seller/company, contact and legal-risk findings derived from downgraded documents were purged and recalculated from verified evidence only.")
+
+                pack_change = legal_summary.get("pack_change") or {}
+                if legal_summary.get("pack_changed") or pack_change.get("changed"):
+                    st.error("LEGAL PACK CHANGED since the previous saved snapshot - re-review before bidding.")
+                    change_bits = []
+                    if pack_change.get("added"):
+                        change_bits.append("Added: " + ", ".join(pack_change.get("added") or []))
+                    if pack_change.get("modified"):
+                        change_bits.append("Modified: " + ", ".join(pack_change.get("modified") or []))
+                    if pack_change.get("removed"):
+                        change_bits.append("Removed: " + ", ".join(pack_change.get("removed") or []))
+                    if change_bits:
+                        st.caption(" | ".join(change_bits))
+
+                field_sources = extracted.get("field_sources") or {}
+                legal_facts = []
+                def add_legal_fact(label, key, value):
+                    source = field_sources.get(key)
+                    if value not in (None, "", False) and source:
+                        legal_facts.append([label, value, source])
+
+                add_legal_fact("Registered proprietor / seller", "seller_name" if extracted.get("seller_name") else "proprietor_name", extracted.get("seller_name") or extracted.get("proprietor_name"))
+                add_legal_fact("Seller / disposal type", "seller_type", extracted.get("seller_type"))
+                add_legal_fact("Title number", "title_number", extracted.get("title_number"))
+                add_legal_fact("Company number", "company_number", extracted.get("company_number"))
+                add_legal_fact("Registered office", "registered_office", extracted.get("registered_office"))
+                add_legal_fact("Title price paid", "title_price_paid", money(extracted.get("title_price_paid")) if extracted.get("title_price_paid") is not None else None)
+                add_legal_fact("Title price date", "title_price_paid_date", extracted.get("title_price_paid_date"))
+                add_legal_fact("Lease remaining", "lease_years_remaining", f"{float(extracted.get('lease_years_remaining')):.1f} years" if extracted.get("lease_years_remaining") is not None else None)
+                add_legal_fact("Lease start", "lease_start_date", extracted.get("lease_start_date"))
+                add_legal_fact("Ground rent", "ground_rent_amount", money(extracted.get("ground_rent_amount")) if extracted.get("ground_rent_amount") is not None else None)
+                add_legal_fact("Service charge", "service_charge_amount", money(extracted.get("service_charge_amount")) if extracted.get("service_charge_amount") is not None else None)
+                add_legal_fact("Seller costs charged to buyer", "seller_costs_amount", money(extracted.get("seller_costs_amount")) if extracted.get("seller_costs_amount") is not None else None)
+                add_legal_fact("Tenancy / occupation", "tenancy_type", extracted.get("tenancy_type"))
+                add_legal_fact("Passing rent", "tenancy_rent_amount", (money(extracted.get("tenancy_rent_amount")) + (f" per {extracted.get('tenancy_rent_period')}" if extracted.get("tenancy_rent_period") else "")) if extracted.get("tenancy_rent_amount") is not None else None)
+                add_legal_fact("Tenancy end / expiry", "tenancy_end_date", extracted.get("tenancy_end_date"))
+                positive_flags = [
+                    ("Reserve / sinking fund wording", "reserve_fund_flag"),
+                    ("Section 20 / major works wording", "section20_or_major_works_flag"),
+                    ("Assignment restriction wording", "assignment_restriction_flag"),
+                    ("Rights / easements wording", "rights_easements_flag"),
+                    ("Restrictive covenant wording", "restrictive_covenant_flag"),
+                    ("Overage / clawback wording", "overage_clawback_flag"),
+                    ("Arrears wording", "arrears_flag"),
+                    ("EWS1 / cladding wording", "ews1_or_cladding_flag"),
+                    ("Fire / building-safety wording", "fire_safety_flag"),
+                ]
+                for label, key in positive_flags:
+                    if extracted.get(key) and field_sources.get(key):
+                        legal_facts.append([label, "Detected - review source evidence", field_sources.get(key)])
+                if int(extracted.get("registered_charge_count") or 0) > 0 and field_sources.get("registered_charge_count"):
+                    legal_facts.append(["Registered charge references", int(extracted.get("registered_charge_count") or 0), field_sources.get("registered_charge_count")])
+                if legal_state(chosen) == "VERIFIED":
+                    if chosen.get("legal_completion_days"):
+                        legal_facts.append(["Completion", f"{chosen.get('legal_completion_days')} days", "verified legal document"])
+                    if chosen.get("legal_deposit_pct") is not None:
+                        legal_facts.append(["Deposit", pct(chosen.get("legal_deposit_pct")), "verified legal document"])
+                    if chosen.get("legal_vat_flag"):
+                        legal_facts.append(["VAT / option-to-tax wording", "Detected", "verified legal document"])
+                    if chosen.get("legal_has_addendum"):
+                        legal_facts.append(["Addendum", "Detected - verify latest version", "verified legal document"])
+
+                if legal_facts:
+                    st.markdown("#### What we can actually evidence")
+                    st.dataframe(pd.DataFrame(legal_facts, columns=["Legal fact", "Evidence", "Source tier"]), hide_index=True, use_container_width=True)
+                else:
+                    st.caption("No verified legal facts have been extracted yet. Candidate/rejected material is intentionally excluded from the deal decision.")
+
+                if legal_evidence:
+                    st.markdown("#### Evidence trail")
+                    evidence_frame = pd.DataFrame([{
+                        "Finding": e.get("finding"), "Value": e.get("value"), "Document": e.get("document"),
+                        "Page": e.get("page"), "Evidence": e.get("excerpt"),
+                    } for e in legal_evidence])
+                    st.dataframe(evidence_frame, hide_index=True, use_container_width=True)
+                    st.caption("Page references are generated from the uploaded/public PDF text where page boundaries are extractable. Always verify against the original document.")
+
+                contacts = chosen.get("legal_contacts") or []
+                if contacts:
+                    st.markdown("#### Professional contacts in the pack")
+                    st.dataframe(pd.DataFrame(contacts), hide_index=True, use_container_width=True)
+                    st.caption("Only professional/business contacts found in the legal evidence are surfaced; the app does not search for private personal contact details.")
+
+                docs = db.legal_documents_for(chosen["id"])
+                if docs:
+                    st.markdown("#### Document identity checks")
+                    st.caption("Every automatic file is scored against this property's postcode/address/lot identity before it can influence the deal.")
+                    doc_rows = []
+                    for d in docs:
+                        meta = d.get("metadata") or {}
+                        tier = meta.get("evidence_tier") or "legacy/unverified"
+                        status = meta.get("identity_status") or ("verified" if meta.get("verified_for_lot") else "unverified")
+                        reasons = meta.get("identity_reasons") or []
+                        conflicts = meta.get("identity_conflicts") or []
+                        rejection = meta.get("rejection_reason") or ""
+                        why = rejection or ("; ".join(conflicts[:2]) if conflicts else "; ".join(reasons[:2]))
+                        doc_rows.append({
+                            "Name": d.get("name"),
+                            "Class": meta.get("document_class") or d.get("doc_type") or "Unclassified",
+                            "Identity": status.title(),
+                            "Match": int(meta.get("identity_score")) if meta.get("identity_score") is not None else None,
+                            "Evidence tier": tier,
+                            "Why": why,
+                            "Cloud": "Stored" if meta.get("cloud_storage_path") else "-",
+                            "URL": d.get("url"),
+                        })
+                    frame = pd.DataFrame(doc_rows)
+                    st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
+                        "Match": st.column_config.ProgressColumn("Property match", min_value=0, max_value=100, format="%d%%"),
+                        "URL": st.column_config.LinkColumn("Source"),
+                    })
+
+                    rejected_docs = [d for d in docs if (d.get("metadata") or {}).get("evidence_tier") == "rejected-cross-property"]
+                    if rejected_docs:
+                        with st.expander(f"Rejected by Property Identity Lock ({len(rejected_docs)})", expanded=False):
+                            for d in rejected_docs:
+                                meta = d.get("metadata") or {}
+                                st.markdown(f"**{d.get('name') or 'Document'}**")
+                                st.caption(meta.get("rejection_reason") or "; ".join(meta.get("identity_conflicts") or []) or "Property identity mismatch")
+
+                    cloud_docs = [d for d in docs if (d.get("metadata") or {}).get("cloud_storage_path")]
+                    if cloud_store and cloud_docs:
+                        selected_doc_name = st.selectbox("Stored original", [d.get("name") for d in cloud_docs], key=f"cloud_doc_{chosen['id']}")
+                        selected_doc = next(d for d in cloud_docs if d.get("name") == selected_doc_name)
+                        if st.button("Retrieve original from private cloud", key=f"retrieve_doc_{chosen['id']}", use_container_width=True):
+                            try:
+                                path = (selected_doc.get("metadata") or {}).get("cloud_storage_path")
+                                st.session_state[f"cloud_doc_bytes_{chosen['id']}"] = cloud_store.download_bytes(path)
+                                st.session_state[f"cloud_doc_name_{chosen['id']}"] = selected_doc_name
+                            except Exception as exc:
+                                st.error(f"Could not retrieve original: {exc}")
+                        stored_bytes = st.session_state.get(f"cloud_doc_bytes_{chosen['id']}")
+                        stored_name = st.session_state.get(f"cloud_doc_name_{chosen['id']}")
+                        if stored_bytes and stored_name == selected_doc_name:
+                            st.download_button("Download retrieved original", stored_bytes, file_name=stored_name, key=f"download_cloud_{chosen['id']}", use_container_width=True)
+
+                uploads = st.file_uploader(
+                    "Upload legal pack (PDF/TXT or ZIP containing PDFs)", type=["pdf", "txt", "zip"],
+                    accept_multiple_files=True, key=f"upload_{chosen['id']}"
+                )
+                if uploads and st.button("Analyse & save legal pack", key=f"analyse_upload_{chosen['id']}", type="primary", use_container_width=True):
+                    try:
+                        parsed = []
+                        with st.spinner("Parsing legal documents and building evidence trail..."):
+                            for f in uploads:
+                                for doc in uploaded_documents(f.name, f.getvalue()):
+                                    raw = doc.pop("_raw_bytes", b"")
+                                    if cloud_store and raw:
+                                        try:
+                                            path = cloud_store.upload_legal_document(chosen["id"], doc.get("name") or f.name, raw, doc.get("sha256") or "document")
+                                            doc.setdefault("metadata", {})["cloud_storage_path"] = path
+                                            doc["access_status"] = "uploaded, parsed and stored privately" if doc.get("text_content") else "uploaded and stored; no extractable text"
+                                        except Exception as cloud_exc:
+                                            doc.setdefault("metadata", {})["cloud_storage_error"] = str(cloud_exc)[:300]
+                                    parsed.append(doc)
+                            save_uploaded_legal_documents(db, chosen, parsed)
+                            if companies_house_api_key:
+                                try:
+                                    refresh_property_company(db, chosen, companies_house_api_key)
+                                except Exception:
+                                    pass
+                            sync_cloud("legal pack/company upload", quiet=False)
+                        st.success(f"Analysed {len(parsed)} legal document(s).")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Legal pack could not be analysed: {exc}")
+
+                risk_flags = legal_summary.get("risk_flags") or chosen.get("legal_risk_flags") or []
+                if risk_flags:
+                    st.markdown("#### Legal risk register")
+                    risk_frame = pd.DataFrame([{
+                        "Severity": f.get("severity"), "Issue": f.get("label"), "Document": f.get("document") or "-",
+                        "Page": f.get("page"), "Evidence": f.get("excerpt") or ""
+                    } for f in sorted(risk_flags, key=lambda x: int(x.get("severity") or 0), reverse=True)])
+                    st.dataframe(risk_frame, hide_index=True, use_container_width=True)
+                st.markdown("#### Questions for your solicitor")
+                for question in solicitor_questions(chosen, legal_summary):
+                    st.write(f"- {question}")
+                st.caption("Automated legal-pack analysis is triage only. The latest complete pack/addendum and legal acceptability must be confirmed by the buyer's solicitor before bidding.")
 
     with tabs[6]:
         if st.button("Retry location / motorway enrichment", key=f"geo_retry_{chosen['id']}", use_container_width=True):

@@ -475,6 +475,17 @@ def deal_readiness(row: dict) -> dict:
         legal_detail = "Legal pack not verified: authoritative lot-bound legal documents are still missing or unverified"
     add("Legal pack", 20, "complete" if legal_complete else "partial" if legal_partial else "missing",
         legal_detail, blocker=not legal_complete)
+    # Verified legal evidence can still contain a serious issue. For novice buyers,
+    # do not let a complete pack create a false sense of safety: a severity-4/5
+    # verified legal finding keeps the bid gate closed until a solicitor reviews it.
+    critical_legal_flags = [
+        f for f in (row.get("legal_risk_flags") or [])
+        if int(f.get("severity") or 0) >= 4
+    ]
+    if critical_legal_flags:
+        labels = ", ".join(str(f.get("label") or "Critical legal issue") for f in critical_legal_flags[:3])
+        add("Critical legal issue", 0, "missing",
+            f"Professional review required before bidding: {labels}", blocker=True)
     works_missing = bool(row.get("works_missing"))
     add("Works / capex", 8, "missing" if works_missing else "complete", "Works estimate required" if works_missing else "No unresolved works-budget gate", blocker=works_missing)
     tenure = str(row.get("tenure") or "Unknown")
