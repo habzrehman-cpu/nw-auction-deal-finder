@@ -4,7 +4,7 @@ from __future__ import annotations
 import requests
 import re
 
-from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents, revalidate_saved_legal_documents
+from .legal import analyse_online_legal_pack, analyse_legal_documents, compare_legal_documents, revalidate_saved_legal_documents, uploaded_documents
 from .legal_access import LegalAccessConfig
 from .planning import analyse_planning_property
 from .companies_house import CompaniesHouseClient, company_due
@@ -32,12 +32,71 @@ def refresh_property_planning(db, row, session=None):
     return summary
 
 
+
+def _reparse_stored_user_uploads(row, documents, cloud_store=None):
+    """Re-run retained user-upload originals through the current parser when possible.
+
+    Legal document classification/extraction improves over time.  A normal evidence
+    refresh must therefore re-parse the *original bytes* rather than merely retaining
+    the text/doc_type produced by an older release.  Originals are retrieved only
+    from the configured private cloud path already attached to the saved evidence.
+    If an original is unavailable we keep the existing evidence and report that the
+    user may need to upload it again; we never silently discard it.
+    """
+    report = {"attempted": 0, "reprocessed": 0, "failed": 0, "notes": []}
+    if not cloud_store:
+        return list(documents or []), report
+
+    rebuilt = []
+    for original in list(documents or []):
+        meta = original.get("metadata") or {}
+        if str(meta.get("origin") or "") != "user-upload":
+            rebuilt.append(original)
+            continue
+        storage_path = str(meta.get("cloud_storage_path") or "").strip()
+        if not storage_path:
+            rebuilt.append(original)
+            continue
+
+        report["attempted"] += 1
+        try:
+            raw = cloud_store.download_bytes(storage_path)
+            if not raw:
+                raise RuntimeError("stored original could not be retrieved")
+            reparsed = uploaded_documents(original.get("name") or "stored legal document", raw)
+            if not reparsed:
+                raise RuntimeError("current parser returned no legal document")
+            for doc in reparsed:
+                doc.pop("_raw_bytes", None)
+                new_meta = doc.setdefault("metadata", {})
+                # Keep persistence/audit provenance from the original stored record.
+                new_meta["cloud_storage_path"] = storage_path
+                if meta.get("uploaded_container") and not new_meta.get("uploaded_container"):
+                    new_meta["uploaded_container"] = meta.get("uploaded_container")
+                new_meta["reprocessed_from_stored_original"] = True
+                doc["access_status"] = (
+                    "stored user upload re-analysed with the current legal parser"
+                    if doc.get("text_content") else
+                    "stored user upload re-analysed; no extractable text"
+                )
+                rebuilt.append(doc)
+            report["reprocessed"] += 1
+        except Exception as exc:
+            report["failed"] += 1
+            report["notes"].append(
+                f"Could not re-analyse stored upload '{original.get('name') or 'document'}': {str(exc)[:220]}"
+            )
+            rebuilt.append(original)
+    return rebuilt, report
+
+
 def refresh_property_legal(db, row, session=None, legal_access: LegalAccessConfig | None = None, cloud_store=None):
     # Revalidate everything already stored *before* we merge in a fresh online
     # acquisition. This is the v1.10.3 purge step that prevents old bad evidence
     # from surviving a firewall upgrade merely because the provider is unavailable.
     existing_raw = db.legal_documents_for(row["id"])
-    existing, revalidation = revalidate_saved_legal_documents(row, existing_raw)
+    existing_reparsed, stored_reparse = _reparse_stored_user_uploads(row, existing_raw, cloud_store=cloud_store)
+    existing, revalidation = revalidate_saved_legal_documents(row, existing_reparsed)
 
     online_summary, online_docs = analyse_online_legal_pack(row, session=session, access_config=legal_access)
     online_warnings = list(online_summary.get("warnings") or [])
@@ -82,6 +141,13 @@ def refresh_property_legal(db, row, session=None, legal_access: LegalAccessConfi
     for note in revalidation.get("notes") or []:
         summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [note]))
     summary["revalidation_report"] = revalidation
+    summary["stored_upload_reprocess"] = stored_reparse
+    if stored_reparse.get("reprocessed"):
+        summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [
+            f"Re-analysed {stored_reparse.get('reprocessed')} retained user-uploaded legal document(s) from the stored originals using the current parser."
+        ]))
+    for note in stored_reparse.get("notes") or []:
+        summary["warnings"] = list(dict.fromkeys((summary.get("warnings") or []) + [note]))
 
     # Compare against the revalidated prior snapshot, not the old trust labels. A
     # policy-driven downgrade is a purge event, not a provider pack-change alarm.

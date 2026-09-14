@@ -2694,15 +2694,19 @@ def render_deal_room(chosen):
                     _after_verified = int(_refreshed_legal.get("verified_document_count") or 0)
                     _after_candidates = int(_refreshed_legal.get("candidate_document_count") or 0)
                     _after_complete = int(_refreshed_legal.get("pack_completeness_pct") or 0)
+                    _stored_reparse = _refreshed_legal.get("stored_upload_reprocess") or {}
+                    _reprocessed_stored = int(_stored_reparse.get("reprocessed") or 0)
+                    _failed_stored = int(_stored_reparse.get("failed") or 0)
                     _provider = provider_for_lot(chosen, str(chosen.get("url") or ""))
                     _access = provider_access_status(legal_access, _provider)
                     _access_status = str(_access.get("status") or "")
                     _warnings = " ".join(str(x) for x in (_refreshed_legal.get("warnings") or []))
 
                     if _after_verified > _before_verified or _after_complete > _before_complete:
+                        _prefix = (f"Re-analysed {_reprocessed_stored} stored uploaded document(s) with the current parser. " if _reprocessed_stored else "")
                         _notice = (
                             "success",
-                            f"Legal evidence improved: {_after_verified} verified document(s), {_after_complete}% of the core pack evidenced."
+                            _prefix + f"Legal evidence improved: {_after_verified} verified document(s), {_after_complete}% of the core pack evidenced."
                         )
                     elif _after_verified == 0 and _after_candidates > 0:
                         _reason = "Lotly found possible legal-pack links, but none passed the property-identity and verification checks."
@@ -2727,10 +2731,13 @@ def render_deal_room(chosen):
                             _reason + " This does not mean the property has no legal pack. Download the pack from the auction listing and upload it below."
                         )
                     else:
-                        _notice = (
-                            "info",
-                            f"Refresh completed. The verified legal evidence is unchanged at {_after_verified} document(s) and {_after_complete}% completeness."
-                        )
+                        if _reprocessed_stored:
+                            _text = f"Re-analysed {_reprocessed_stored} stored uploaded legal document(s) with the current parser. The verified evidence is now {_after_verified} document(s) and {_after_complete}% completeness."
+                            if _failed_stored:
+                                _text += f" {_failed_stored} stored original(s) could not be retrieved and may need to be uploaded again."
+                        else:
+                            _text = f"Refresh completed. The verified legal evidence is unchanged at {_after_verified} document(s) and {_after_complete}% completeness."
+                        _notice = ("info", _text)
                     st.session_state[_legal_refresh_notice_key] = _notice
                 except Exception as exc:
                     st.session_state[_legal_refresh_notice_key] = ("error", f"Legal-pack refresh failed: {exc}")
